@@ -13,6 +13,8 @@ import type { PoolView, Snapshot } from "./types";
 
 const EV = {
   v2Swap: parseAbiItem("event Swap(address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out, address indexed to)"),
+  // ZealousSwap pairs emit the V2 Swap with an extra bool (topic 0x697a7825…)
+  zSwap: parseAbiItem("event Swap(address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out, address indexed to, bool flag)"),
   v3Swap: parseAbiItem("event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)"),
   v2Burn: parseAbiItem("event Burn(address indexed sender, uint256 amount0, uint256 amount1, address indexed to)"),
   v3Burn: parseAbiItem("event Burn(address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1)"),
@@ -25,6 +27,7 @@ const LEND = {
   liquidation: parseAbiItem("event LiquidationCall(address indexed collateralAsset, address indexed debtAsset, address indexed user, uint256 debtToCover, uint256 liquidatedCollateralAmount, address liquidator, bool receiveAToken)"),
 };
 
+const INDEX_VERSION = "2";      // 2: ZealousSwap swap event
 const CHUNK = 50_000;          // blocks per getLogs call (both RPCs answer 50k in < 0.5 s)
 const MAX_CHUNKS = 12;         // per chain per tick; a 7-day backfill finishes in one or two ticks
 const BACKFILL_SEC = 7 * 86_400;
@@ -73,7 +76,9 @@ async function indexChain(s: Snapshot, chain: ChainKey) {
   const latest = Number(head.number);
   const key = `idx:${chain}`;
   let from: number;
-  const cur = await getMeta(key);
+  // bump INDEX_VERSION when the event set changes: the chain is re-read from the backfill start
+  const fresh = (await getMeta(`idx_version:${chain}`)) === INDEX_VERSION;
+  const cur = fresh ? await getMeta(key) : null;
   if (cur) from = Number(cur) + 1;
   else {
     const past = await c.getBlock({ blockNumber: BigInt(Math.max(1, latest - 100_000)) });
@@ -81,6 +86,7 @@ async function indexChain(s: Snapshot, chain: ChainKey) {
     from = Math.max(1, latest - Math.round(BACKFILL_SEC / spb));
     const start = await c.getBlock({ blockNumber: BigInt(from) });
     await setMeta(`idx_start:${chain}`, String(Number(start.timestamp) * 1000));
+    await setMeta(`idx_version:${chain}`, INDEX_VERSION);
   }
   let chunks = 0, dexRows = 0, lendRows = 0;
   while (from <= latest && chunks < MAX_CHUNKS) {
@@ -91,7 +97,7 @@ async function indexChain(s: Snapshot, chain: ChainKey) {
     const range = { fromBlock: BigInt(from), toBlock: BigInt(to) };
 
     const [dexLogs, lendLogs] = await Promise.all([
-      pools.size ? c.getLogs({ events: [EV.v2Swap, EV.v3Swap, EV.v2Burn, EV.v3Burn], ...range }) : Promise.resolve([]),
+      pools.size ? c.getLogs({ events: [EV.v2Swap, EV.zSwap, EV.v3Swap, EV.v2Burn, EV.v3Burn], ...range }) : Promise.resolve([]),
       kaskad ? c.getLogs({ address: KASKAD.pool, events: Object.values(LEND), ...range }) : Promise.resolve([]),
     ]);
 
