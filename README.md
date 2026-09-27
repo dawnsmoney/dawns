@@ -47,7 +47,10 @@ src/
     vaults/               phase 5 concept
     brand/                logo, colours, type
   components/             UI (server by default, "use client" where interactive)
-  lib/data.ts             sample data, provenance trails, watch rules
+  lib/snapshot.ts         builds the live snapshot every page renders from
+  lib/chain/              on-chain readers (Kaskad, UniV2 DEXs, balances)
+  lib/llama.ts            DefiLlama client
+  lib/rules.ts            watch rule definitions
   lib/format.ts           number and date formatting
 public/brand/             logo SVGs
 ```

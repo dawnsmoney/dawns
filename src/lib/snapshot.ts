@@ -23,9 +23,12 @@ const DAY = 86_400;
 /* ---------- small helpers ---------- */
 const day = (t: number) => Math.floor(t / DAY) * DAY;
 const initials = (name: string) => {
-  const w = name.replace(/[^A-Za-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
-  return (w.length > 1 && /^[A-Z]/.test(w[1]) && !/^V\d$/.test(w[1]) ? w[0][0] + w[1][0] : w[0].slice(0, 1)).toUpperCase();
+  const w = name.replace(/[^A-Za-z0-9 ]/g, " ").split(/\s+/).filter((x) => x && !/^V\d$/i.test(x));
+  if (w.length > 1) return (w[0][0] + w[1][0]).toUpperCase();
+  const caps = w[0].match(/[A-Z]/g) ?? [];
+  return (caps.length >= 2 ? caps[0] + caps[1] : w[0][0]).toUpperCase();
 };
+const prettyCategory = (c: string) => ({ Dexs: "DEX", "Staking Pool": "Staking", Lending: "Lending", Launchpad: "Launchpad" } as Record<string, string>)[c] ?? c;
 const normSym = (s: string) => (/^(w?i?kas|wikas|ikas|wkas)$/i.test(s) ? "KAS" : s.toUpperCase().replace(/^CBBTC$/, "BTC").replace(/^WBTC$/, "BTC"));
 const category = (c: string): ProtocolView["kind"] => (/lend/i.test(c) ? "lending" : /dex/i.test(c) ? "dex" : "other");
 
@@ -35,6 +38,30 @@ function dailySeries(pts: { date: number; totalLiquidityUSD: number }[] | undefi
   for (const p of pts) m.set(day(p.date), p.totalLiquidityUSD);
   return [...m.entries()].sort((a, b) => a[0] - b[0]).map(([t, v]) => ({ t: t * 1000, v }));
 }
+/**
+ * DefiLlama history sometimes carries mispriced days (5-10x spikes that revert).
+ * Flag any day more than 2x (or under 0.5x) the median of its 7-day neighbourhood.
+ */
+function outlierMask(vals: number[]): boolean[] {
+  return vals.map((v, i) => {
+    const w = vals.slice(Math.max(0, i - 3), i + 4).filter((x) => x > 0).sort((a, b) => a - b);
+    if (w.length < 3) return false;
+    const med = w[Math.floor(w.length / 2)];
+    return med > 0 && (v > med * 2 || v < med * 0.5);
+  });
+}
+function cleanSeries(series: Pt[]): { series: Pt[]; removed: number } {
+  const mask = outlierMask(series.map((p) => p.v));
+  const out: Pt[] = [];
+  let removed = 0;
+  series.forEach((p, i) => {
+    // never drop the latest point; the current value is checked separately
+    if (mask[i] && i < series.length - 1) { removed++; const prev = out[out.length - 1]; if (prev) out.push({ t: p.t, v: prev.v }); }
+    else out.push(p);
+  });
+  return { series: out, removed };
+}
+
 function change(series: Pt[], days: number): number | null {
   if (series.length < days + 1) return null;
   const now = series[series.length - 1].v, then = series[series.length - 1 - days].v;
@@ -61,7 +88,11 @@ function tokenFlows(lp: LlamaProtocol) {
       byDay.set(d, slot);
     }
   }
-  const days = [...byDay.keys()].sort((a, b) => a - b);
+  const allDays = [...byDay.keys()].sort((a, b) => a - b);
+  const totals = allDays.map((d) => Object.values(byDay.get(d)!.usd).reduce((a, b) => a + b, 0));
+  const bad = outlierMask(totals);
+  // skip mispriced days entirely so they cannot create phantom flows or price moves
+  const days = allDays.filter((_, i) => !bad[i] || i === allDays.length - 1);
   const flows: Pt[] = [];
   for (let i = 1; i < days.length; i++) {
     const a = byDay.get(days[i - 1])!, b = byDay.get(days[i])!;
@@ -95,7 +126,7 @@ function lendingView(k: KaskadState, book: PriceBook): { markets: MarketView[]; 
     const mkt = book.get(normSym(m.symbol).toLowerCase()) ?? null;
     return {
       symbol: m.symbol, asset: m.asset, price: m.price, marketPrice: mkt,
-      oracleDeviation: mkt ? m.price / mkt - 1 : null,
+      oracleDeviation: mkt && m.oracleOk ? m.price / mkt - 1 : null, oracleOk: m.oracleOk, oracleError: m.oracleError,
       supplied: m.supplied, borrowed: m.borrowed, cash: m.cash,
       suppliedUsd: m.suppliedUsd, borrowedUsd: m.borrowedUsd, cashUsd: m.cashUsd,
       utilization: m.utilization, supplyApy: m.supplyApy, borrowApr: m.borrowApr,
@@ -170,13 +201,14 @@ async function build(): Promise<Snapshot> {
 
   const protocols: ProtocolView[] = items.map((it, i) => {
     const lp = details[i];
-    const history = dailySeries(lp?.tvl).slice(-90);
+    const cleaned = cleanSeries(dailySeries(lp?.tvl).slice(-97));
+    const history = cleaned.series.slice(-90);
     const tf = lp ? tokenFlows(lp) : { flows: [], priceEffect: 0, qtyEffect: 0, comp: {} };
     const llamaTvl = it.tvl;
     const borrowedLlama = lp?.currentChainTvls?.borrowed ?? null;
     const kind = category(it.category);
     const base: ProtocolView = {
-      id: it.slug, name: it.name, letter: initials(it.name), category: it.category, kind,
+      id: it.slug, name: it.name, letter: initials(it.name), category: prettyCategory(it.category), kind, historyCleaned: cleaned.removed,
       chains: it.chains.filter((c) => c === "Igra" || c === "Kasplex"), site: it.url ? it.url.replace(/^https?:\/\//, "").replace(/\/.*$/, "") : null,
       tvl: llamaTvl, llamaTvl, d24: change(history, 1), d7: change(history, 7), history,
       tokens: Object.entries(tf.comp).map(([sym, v]) => ({ sym, usd: v })).sort((a, b) => b.usd - a.usd),
@@ -194,7 +226,7 @@ async function build(): Promise<Snapshot> {
       base.borrowed = view.borrowedUsd;
       base.lending = view;
       base.asOf = { chain: "igra", block: kaskad.block, timestamp: kaskad.timestamp };
-      base.tokens = view.markets.map((m) => ({ sym: normSym(m.symbol), usd: m.suppliedUsd })).sort((a, b) => b.usd - a.usd);
+      base.tokens = view.markets.map((m) => ({ sym: normSym(m.symbol), usd: m.cashUsd })).sort((a, b) => b.usd - a.usd);
       base.verifiedShare = 1;
       const blk = `#${kaskad.block.toLocaleString("en-US")} · Igra`;
       prov[`${it.slug}-sup`] = { label: "Total supplied", value: usdFull(view.suppliedUsd), trail: [["Contract", `Pool data provider ${kaskad.dataProvider}`], ["Block", blk], ["Read", "getReserveData(asset).totalAToken for each market"], ["Price", "Kaskad price oracle getAssetPrice (8-decimal USD)"], ["Calculation", view.markets.map((m) => `${m.symbol} ${usd(m.suppliedUsd)}`).join(" + ")]], note: "This is what Kaskad owes its suppliers.", links: [explorerAddress("igra", kaskad.dataProvider), explorerBlock("igra", kaskad.block)] };
@@ -230,6 +262,11 @@ async function build(): Promise<Snapshot> {
         else if (m.utilization >= 0.8) signals.push({ t: "warn", p: it.slug, rule: "util", strong: `Kaskad ${m.symbol} utilization is ${pct(m.utilization)}`, rest: `. Only ${usd(m.cashUsd)} of ${usd(m.suppliedUsd)} is withdrawable now.` });
         if (m.frozen) signals.push({ t: "warn", p: it.slug, rule: "contract", strong: `Kaskad ${m.symbol} market is frozen`, rest: `. No new supply or borrowing; existing positions can repay and withdraw. It holds ${usd(m.suppliedUsd)} of supply.` });
         if (m.oracleDeviation != null && Math.abs(m.oracleDeviation) >= 0.02) signals.push({ t: "warn", p: it.slug, rule: "contract", strong: `Kaskad's ${m.symbol} oracle is ${pct(Math.abs(m.oracleDeviation))} ${m.oracleDeviation > 0 ? "above" : "below"} market`, rest: ` (oracle $${m.price.toPrecision(4)}, market $${m.marketPrice?.toPrecision(4)}).` });
+      }
+      const broken = view.markets.filter((m) => !m.oracleOk);
+      if (broken.length) {
+        signals.push({ t: "warn", p: it.slug, rule: "contract", strong: `Kaskad's price oracle reverted for ${broken.map((m) => m.symbol).join(", ")}`, rest: ` at block #${kaskad.block.toLocaleString("en-US")} (error ${broken[0].oracleError}). Borrowing and liquidations read this oracle; dawns valued these markets at market prices instead.` });
+        base.flags.push(["warn", `Oracle reverting (${broken.length}/${view.markets.length})`]);
       }
       if (!kaskad.aclAdminIsContract) signals.push({ t: "warn", p: it.slug, rule: "contract", strong: "Kaskad's ACL admin is a single key", rest: " (an EOA, not a multisig or timelock). It can change roles that control pausing, listings and risk settings." });
       const worst = view.markets.some((m) => m.utilization >= 0.95) ? "crit" : view.markets.some((m) => m.utilization >= 0.8 || m.frozen) ? "warn" : "good";

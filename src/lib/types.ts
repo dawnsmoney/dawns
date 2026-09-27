@@ -11,7 +11,7 @@ export interface ContractRow { n: string; addr: string; chain: "igra" | "kasplex
 
 export interface MarketView {
   symbol: string; asset: string; aToken: string;
-  price: number; marketPrice: number | null; oracleDeviation: number | null;
+  price: number; marketPrice: number | null; oracleDeviation: number | null; oracleOk: boolean; oracleError: string | null;
   supplied: number; borrowed: number; cash: number;
   suppliedUsd: number; borrowedUsd: number; cashUsd: number;
   utilization: number; supplyApy: number; borrowApr: number;
@@ -37,6 +37,7 @@ export interface ProtocolView {
   d24: number | null;
   d7: number | null;
   history: Pt[];
+  historyCleaned: number;
   tokens: { sym: string; usd: number }[];
   flows: Pt[];
   priceEffect24: number;

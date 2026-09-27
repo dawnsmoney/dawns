@@ -76,7 +76,7 @@ function History({ p }: { p: ProtocolView }) {
   return (
     <>
       <RangeChart title={p.lending ? "Withdrawable liquidity (TVL)" : "Value locked"} label={`${p.name} TVL`} zero dates={p.history.map((h) => h.t)} series={[{ name: "TVL", color: SERIES[1], values: p.history.map((h) => h.v) }]} />
-      <p className="foot">Daily history from DefiLlama{p.source === "onchain" ? `. Today's figure on this page is read on-chain (${usd(p.tvl)}); DefiLlama currently shows ${usd(p.llamaTvl)}.` : "."}</p>
+      <p className="foot">Daily history from DefiLlama{p.historyCleaned > 0 ? ` (${p.historyCleaned} mispriced day${p.historyCleaned > 1 ? "s" : ""} smoothed out)` : ""}{p.source === "onchain" ? `. Today's figure on this page is read on-chain (${usd(p.tvl)}); DefiLlama currently shows ${usd(p.llamaTvl)}.` : "."}</p>
     </>
   );
 }
@@ -195,9 +195,9 @@ function Liquidity({ p }: { p: ProtocolView }) {
             {p.lending.markets.map((m) => (
               <tr key={m.symbol}>
                 <td><b>{m.symbol}</b></td>
-                <td>${m.price.toPrecision(5)}</td>
+                <td>{m.oracleOk ? `$${m.price.toPrecision(5)}` : <span className="down">Reverted</span>}</td>
                 <td>{m.marketPrice != null ? `$${m.marketPrice.toPrecision(5)}` : "—"}</td>
-                <td className={m.oracleDeviation != null && Math.abs(m.oracleDeviation) >= 0.02 ? "down" : "muted"}>{m.oracleDeviation != null ? `${m.oracleDeviation >= 0 ? "+" : ""}${(m.oracleDeviation * 100).toFixed(2)}%` : "—"}</td>
+                <td className={m.oracleDeviation != null && Math.abs(m.oracleDeviation) >= 0.02 ? "down" : "muted"}>{m.oracleDeviation != null ? `${m.oracleDeviation >= 0 ? "+" : ""}${(m.oracleDeviation * 100).toFixed(2)}%` : m.oracleOk ? "—" : m.oracleError}</td>
               </tr>
             ))}
           </tbody>
@@ -214,7 +214,7 @@ function Assets({ p }: { p: ProtocolView }) {
   const colors = comp.map((c, i) => (assetColor(c.sym) !== "#6E6788" ? assetColor(c.sym) : SERIES[(i + 2) % 5]));
   return (
     <div className="card">
-      <div className="c-head"><h3>{p.lending ? "Supplied assets" : "Assets held"}</h3><span className="tag">{usd(tot)}</span></div>
+      <div className="c-head"><h3>{p.lending ? "Cash held by asset" : "Assets held"}</h3><span className="tag">{usd(tot)}</span></div>
       <div className="stack">{comp.map((c, i) => (<i key={c.sym} style={{ width: `${(c.usd / tot) * 100}%`, background: colors[i] }} />))}</div>
       <div className="comp">{comp.slice(0, 8).map((c) => (<div key={c.sym}><AssetCoin a={c.sym} size={28} /><span>{c.sym}</span><b>{usd(c.usd)}</b><small>{pct(c.usd / tot)}</small></div>))}</div>
     </div>

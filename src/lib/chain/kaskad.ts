@@ -44,6 +44,7 @@ export interface KaskadMarket {
   price: number; // oracle, USD
   oracleSource: Address | null;
   oracleOk: boolean;
+  oracleError: string | null;
   supplied: number; // tokens
   borrowed: number;
   cash: number; // underlying held by the aToken contract
@@ -107,7 +108,7 @@ export async function readKaskad(fallbackPrice?: (symbol: string) => number | nu
         c.readContract({ address: dp, abi: dpAbi, functionName: "getReserveData", args: [a], ...at }),
         c.readContract({ address: dp, abi: dpAbi, functionName: "getReserveConfigurationData", args: [a], ...at }),
         // the oracle reverts on calls pinned to a block number, so read it at "latest"
-        c.readContract({ address: oracle, abi: oracleAbi, functionName: "getAssetPrice", args: [a] }).catch(() => null),
+        c.readContract({ address: oracle, abi: oracleAbi, functionName: "getAssetPrice", args: [a] }).catch((e: Error) => ({ error: (e.message.match(/0x[0-9a-f]{8}\b/i)?.[0] ?? "revert") })),
         c.readContract({ address: oracle, abi: oracleAbi, functionName: "getSourceOfAsset", args: [a], ...at }).catch(() => null),
         c.readContract({ address: dp, abi: dpAbi, functionName: "getPaused", args: [a], ...at }).catch(() => null),
         c.readContract({ address: dp, abi: dpAbi, functionName: "getReserveCaps", args: [a], ...at }),
@@ -115,11 +116,12 @@ export async function readKaskad(fallbackPrice?: (symbol: string) => number | nu
       ]);
       const dec = Number(cfg[0]);
       const cashRaw = await c.readContract({ address: a, abi: erc20, functionName: "balanceOf", args: [addrs[0]], ...at });
-      let price = px == null ? NaN : Number(px) / Number(unit);
+      const oracleError = typeof px === "object" && px !== null ? px.error : null;
+      let price = oracleError ? NaN : Number(px as bigint) / Number(unit);
       if (!isFinite(price)) price = fallbackPrice?.(t.symbol) ?? 0;
       const supplied = num(d[2], dec), borrowed = num(d[3] + d[4], dec), cash = num(cashRaw, dec);
       const m: KaskadMarket = {
-        symbol: t.symbol, asset: a, aToken: addrs[0], debtToken: addrs[2], decimals: dec, price, oracleSource: src, oracleOk: px != null,
+        symbol: t.symbol, asset: a, aToken: addrs[0], debtToken: addrs[2], decimals: dec, price, oracleSource: src, oracleOk: !oracleError, oracleError,
         supplied, borrowed, cash,
         suppliedUsd: supplied * price, borrowedUsd: borrowed * price, cashUsd: cash * price,
         utilization: supplied > 0 ? borrowed / supplied : 0,

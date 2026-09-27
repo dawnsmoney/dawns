@@ -185,7 +185,7 @@ export default async function Home() {
                 {s.eco.dates.length > 2
                   ? <RangeChart title="Value locked by protocol" label="Kaspa DeFi TVL by protocol" series={stackSeries} dates={s.eco.dates} stacked zero legend height={260} />
                   : <p className="muted">History unavailable this run.</p>}
-                <p className="foot">Daily history from DefiLlama.</p>
+                <p className="foot">Daily history from DefiLlama, with mispriced days smoothed out.</p>
               </div>
               <div className="card">
                 <div className="c-head"><h3>What moved TVL</h3><span className="tag">last day</span></div>
