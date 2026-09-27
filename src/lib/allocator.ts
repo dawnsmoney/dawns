@@ -34,6 +34,10 @@ export interface Plan {
 
 const STABLE = /^(usdc|usdt|usd₮|usdt0|usdc\.e|dai)$/i;
 const isStable = (a: string) => STABLE.test(a);
+const KAS = /^(w?i?kas|wikas|ikas|wkas)$/i;
+const isCore = (a: string) => STABLE.test(a) || KAS.test(a);
+/** Most of the amount that may sit in liquidity pools, by exit window: what you get back depends on the pool price. */
+const LP_MAX: Record<ExitNeed, number> = { instant: 0.3, days: 0.6, weeks: 1 };
 const pctS = (x: number, d = 1) => `${(x * 100).toFixed(d)}%`;
 const usdS = (x: number) => (x >= 1e6 ? `$${(x / 1e6).toFixed(2)}M` : x >= 1e3 ? `$${(x / 1e3).toFixed(1)}K` : `$${Math.round(x)}`);
 
@@ -63,6 +67,7 @@ export function allocate(opps: Opportunity[], p: Policy): Plan {
     const allStable = o.assets.every(isStable);
     if (p.risk === "low" && !allStable) { out(o, "Low risk: stablecoins only"); continue; }
     if (p.risk === "medium" && o.kind === "lp" && ((o.ilAtMove ?? 0) >= 0.05 || (o.turnover ?? 0) >= 3 || o.status !== "good")) { out(o, o.status !== "good" ? `Medium risk: marked "${o.statusText}"` : "Medium risk: price swings too large for this pool"); continue; }
+    if (p.exit === "instant" && o.kind === "lp" && !o.assets.every(isCore)) { out(o, "You may need the money at any moment: only pools of KAS and stablecoins"); continue; }
     if (p.exit === "instant" && o.status === "warn" && o.kind === "supply") { out(o, "You need instant exits and this market is tight"); continue; }
 
     // how much of the amount this line can take
@@ -86,12 +91,16 @@ export function allocate(opps: Opportunity[], p: Policy): Plan {
   // weights ∝ score, filled in rounds so capped lines hand their room to the others
   const alloc = new Map<string, number>();
   for (let round = 0; round < 8 && left > 1; round++) {
-    const open = picked.filter((c) => (alloc.get(c.o.id) ?? 0) < c.cap - 0.5 && (byProtocol.get(c.o.protocol) ?? 0) < caps.perProtocol * p.amount - 0.5);
+    const lpUsed = picked.filter((c) => c.o.kind === "lp").reduce((s, c) => s + (alloc.get(c.o.id) ?? 0), 0);
+    const lpRoom = LP_MAX[p.exit] * p.amount - lpUsed;
+    const open = picked.filter((c) => (alloc.get(c.o.id) ?? 0) < c.cap - 0.5 && (byProtocol.get(c.o.protocol) ?? 0) < caps.perProtocol * p.amount - 0.5 && (c.o.kind !== "lp" || lpRoom > 0.5));
     const wsum = open.reduce((s, c) => s + c.score, 0);
     if (!open.length || wsum <= 0) break;
     let used = 0;
+    const lpWant = open.filter((c) => c.o.kind === "lp").reduce((s, c) => s + (left * c.score) / wsum, 0);
+    const lpScale = lpWant > lpRoom ? lpRoom / lpWant : 1;
     for (const c of open) {
-      const want = (left * c.score) / wsum;
+      const want = ((left * c.score) / wsum) * (c.o.kind === "lp" ? lpScale : 1);
       const room = Math.min(c.cap - (alloc.get(c.o.id) ?? 0), caps.perProtocol * p.amount - (byProtocol.get(c.o.protocol) ?? 0));
       const give = Math.max(0, Math.min(want, room));
       alloc.set(c.o.id, (alloc.get(c.o.id) ?? 0) + give);
@@ -120,7 +129,8 @@ export function allocate(opps: Opportunity[], p: Policy): Plan {
   const notes = [
     `At most ${pctS(caps.perProtocol, 0)} in any one protocol and ${pctS(caps.perLine, 0)} in any one position.`,
     `No position is larger than ${pctS(caps.poolShare, 0)} of its pool or market, so you can leave without moving the price.`,
-    p.exit === "instant" ? "Lending markets must hold at least 3× your position in withdrawable cash." : p.exit === "days" ? "Lending markets must hold at least 1.5× your position in withdrawable cash." : "Lending markets must hold at least your position in withdrawable cash.",
+    ...(LP_MAX[p.exit] < 1 ? [`At most ${pctS(LP_MAX[p.exit], 0)} in liquidity pools: what you get back from a pool depends on its price when you leave.`] : []),
+    p.exit === "instant" ? "Lending markets must hold at least 3× your position in withdrawable cash. Pools only if both tokens are KAS or stablecoins." : p.exit === "days" ? "Lending markets must hold at least 1.5× your position in withdrawable cash." : "Lending markets must hold at least your position in withdrawable cash.",
     "Yields are native only (borrowers and traders). Token incentives are not counted.",
   ];
   return { lines, cash, excluded, blended, notes };
