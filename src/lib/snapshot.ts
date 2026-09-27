@@ -2,7 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import type { Address } from "viem";
 import { readKaskad, KASKAD, type KaskadState } from "./chain/kaskad";
-import { readUniV2, readBalances, pricePools, type PriceBook, type PricedPool } from "./chain/dex";
+import { readUniV2, readUniV3, readBalances, readBondingNative, buildPriceMap, valuePools, type PriceBook, type PricedPool, type RawPool } from "./chain/dex";
 import { explorerAddress, explorerBlock, type ChainKey } from "./chain/clients";
 import { kaspaProtocols, llamaProtocol, llamaPrices, llamaChange24h, dexSummary, feesSummary, type LlamaProtocol, type LlamaListItem } from "./llama";
 import { usd, usdFull, pct } from "./format";
@@ -17,6 +17,20 @@ const KASDEX_TOKENS: Address[] = [
   "0x46346F49b4fe8c640c5FCdbed2d6741056FEB959", // USDT
   "0x69790024D44504F05973E127197E6df17e283859", // WETH
 ];
+/** DEXs read pool by pool. Addresses come from each protocol's own app config. */
+type DexSource = { chain: ChainKey; kind: "v2" | "v3"; factory: Address };
+const DEX_ADAPTERS: Record<string, { sources: DexSource[]; note?: string }> = {
+  zealousswap: { sources: [{ chain: "igra", kind: "v2", factory: ZEALOUS_FACTORY }, { chain: "kasplex", kind: "v2", factory: ZEALOUS_FACTORY }], note: "Farm and Infinity Pool deposits are not counted as liquidity." },
+  "kaspacom-dex": { sources: [{ chain: "igra", kind: "v2", factory: "0x21350BcDa9E81731CF4cDE3DbC457e3de2739c01" }, { chain: "kasplex", kind: "v2", factory: "0xa9CBa43A407c9Eb30933EA21f7b9D74A128D613c" }] },
+  "krokoswap-v3": { sources: [{ chain: "kasplex", kind: "v3", factory: "0x0dfb1Bb755d872EA1fa4d95E4ad0c2E6317Ce9B9" }], note: "Concentrated-liquidity pools are valued at the tokens they hold; positions out of range still count." },
+  "krokoswap-v2": { sources: [{ chain: "kasplex", kind: "v2", factory: "0x4373b7Fcf5059A785843cD224129e01d243Aef71" }] },
+};
+const IGRA_ATTESTATION = "0xc24Df70E408739aeF6bF594fd41db4632dF49188" as Address;
+const IGRA_TOKEN = "0x093d77d397f8accbaee0820345e9e700b1233cd1" as Address;
+const LFG_FACTORIES: { chain: ChainKey; factory: Address }[] = [
+  { chain: "igra", factory: "0x765331F7a008c0609543aCCa6209d91636BceEAC" },
+  { chain: "kasplex", factory: "0xb19219AF8a65522f13B51f6401093c8342E27e9D" },
+];
 const FLOOR = 10_000;
 const DAY = 86_400;
 
@@ -24,8 +38,9 @@ const DAY = 86_400;
 const day = (t: number) => Math.floor(t / DAY) * DAY;
 const initials = (name: string) => {
   const w = name.replace(/[^A-Za-z0-9 ]/g, " ").split(/\s+/).filter((x) => x && !/^V\d$/i.test(x));
-  if (w.length > 1) return (w[0][0] + w[1][0]).toUpperCase();
   const caps = w[0].match(/[A-Z]/g) ?? [];
+  if (caps.length >= 2) return caps[0] + caps[1];
+  if (w.length > 1) return (w[0][0] + w[1][0]).toUpperCase();
   return (caps.length >= 2 ? caps[0] + caps[1] : w[0][0]).toUpperCase();
 };
 const prettyCategory = (c: string) => ({ Dexs: "DEX", "Staking Pool": "Staking", Lending: "Lending", Launchpad: "Launchpad" } as Record<string, string>)[c] ?? c;
@@ -40,14 +55,14 @@ function dailySeries(pts: { date: number; totalLiquidityUSD: number }[] | undefi
 }
 /**
  * DefiLlama history sometimes carries mispriced days (5-10x spikes that revert).
- * Flag any day more than 2x (or under 0.5x) the median of its 7-day neighbourhood.
+ * Flag any day more than 1.75x above (or below) the median of its 7-day neighbourhood.
  */
 function outlierMask(vals: number[]): boolean[] {
   return vals.map((v, i) => {
     const w = vals.slice(Math.max(0, i - 3), i + 4).filter((x) => x > 0).sort((a, b) => a - b);
     if (w.length < 3) return false;
     const med = w[Math.floor(w.length / 2)];
-    return med > 0 && (v > med * 2 || v < med * 0.5);
+    return med > 0 && (v > med * 1.75 || v < med / 1.75);
   });
 }
 function cleanSeries(series: Pt[]): { series: Pt[]; removed: number } {
@@ -153,7 +168,7 @@ function poolViews(pools: PricedPool[], total: number): PoolView[] {
     .map((p) => ({
       chain: p.chain, pair: p.pair, symbols: [p.t0.symbol, p.t1.symbol] as [string, string], usd: p.usd, share: total ? p.usd / total : 0,
       reserves: [p.r0, p.r1] as [number, number],
-      impact10k: p.usd > 0 ? 1e4 / (p.usd / 2 + 1e4) : null,
+      impact10k: p.kind === "v2" && p.usd > 0 ? 1e4 / (p.usd / 2 + 1e4) : null,
     }));
 }
 
@@ -178,26 +193,37 @@ async function build(): Promise<Snapshot> {
   put("zeal", "coingecko:zeal"); put("nacho", "coingecko:nacho-the-kat"); put("kskd", "coingecko:kaskad"); put("igra", "coingecko:igra");
 
   // on-chain reads
-  const [kaskad, zIgra, zKasplex, kasdex] = await Promise.all([
+  const dexJobs = Object.entries(DEX_ADAPTERS).flatMap(([slug, a]) => a.sources.map((src) => ({ slug, src })));
+  const [kaskad, kasdex, attest, lfg, dexReads] = await Promise.all([
     safe("Kaskad on-chain", () => readKaskad((sym) => book.get(normSym(sym).toLowerCase()) ?? null)),
-    safe("Zealous Igra on-chain", () => readUniV2("igra", ZEALOUS_FACTORY)),
-    safe("Zealous Kasplex on-chain", () => readUniV2("kasplex", ZEALOUS_FACTORY)),
     safe("KasDex on-chain", () => readBalances("igra", KASDEX, KASDEX_TOKENS)),
+    safe("Igra Attestation on-chain", () => readBalances("igra", IGRA_ATTESTATION, [IGRA_TOKEN])),
+    Promise.all(LFG_FACTORIES.map((f) => safe(`KaspaCom LFG ${f.chain}`, () => readBondingNative(f.chain, f.factory)))),
+    Promise.all(dexJobs.map((j) => safe(`${j.slug} ${j.src.chain} on-chain`, () => (j.src.kind === "v3" ? readUniV3(j.src.chain, j.src.factory) : readUniV2(j.src.chain, j.src.factory))))),
   ]);
+  const dexBySlug = new Map<string, { src: DexSource; read: NonNullable<(typeof dexReads)[number]> }[]>();
+  dexJobs.forEach((j, i) => { const r = dexReads[i]; if (r) dexBySlug.set(j.slug, [...(dexBySlug.get(j.slug) ?? []), { src: j.src, read: r }]); });
+  const zIgra = dexBySlug.get("zealousswap")?.find((x) => x.src.chain === "igra")?.read ?? null;
+  const anyKasplex = dexReads.find((r) => r?.chain === "kasplex") ?? null;
   const kasPx = kasUsd ?? (kaskad?.markets.find((m) => /kas/i.test(m.symbol))?.price ?? null);
 
   // DefiLlama detail for every protocol in the ecosystem (history + composition)
   const items: LlamaListItem[] = (list ?? []).sort((a, b) => b.tvl - a.tvl);
   const details = await Promise.all(items.map((p) => safe(`DefiLlama ${p.slug}`, () => llamaProtocol(p.slug))));
-  const volZ = await dexSummary("zealousswap");
-  const feesZ = await feesSummary("zealousswap");
+  const dexSlugs = Object.keys(DEX_ADAPTERS);
+  const [vols, fees] = await Promise.all([Promise.all(dexSlugs.map(dexSummary)), Promise.all(dexSlugs.map(feesSummary))]);
+  const volBy = Object.fromEntries(dexSlugs.map((s, i) => [s, vols[i]]));
+  const feeBy = Object.fromEntries(dexSlugs.map((s, i) => [s, fees[i]]));
+  // one price map across every V2 pool on both networks, so thin DEXs borrow prices from deep ones
+  const allRaw: RawPool[] = dexReads.flatMap((r) => r?.pools ?? []);
+  const pxMap = kasPx ? buildPriceMap(allRaw, kasPx, book) : new Map<string, number>();
 
   const prov: Record<string, Provenance> = {};
   const signals: Signal[] = [];
   const blocks: Snapshot["blocks"] = {};
   if (kaskad) blocks.igra = { block: kaskad.block, timestamp: kaskad.timestamp };
   else if (zIgra) blocks.igra = { block: zIgra.block, timestamp: zIgra.timestamp };
-  if (zKasplex) blocks.kasplex = { block: zKasplex.block, timestamp: zKasplex.timestamp };
+  if (anyKasplex) blocks.kasplex = { block: anyKasplex.block, timestamp: anyKasplex.timestamp };
 
   const protocols: ProtocolView[] = items.map((it, i) => {
     const lp = details[i];
@@ -276,33 +302,86 @@ async function build(): Promise<Snapshot> {
       if (!kaskad.aclAdminIsContract) base.flags.push(["warn", "Admin is a single key"]);
     }
 
-    /* --- Zealous: every pair on Igra and Kasplex --- */
-    if (it.slug === "zealousswap" && (zIgra || zKasplex) && kasPx) {
-      const raw = [...(zIgra?.pools ?? []), ...(zKasplex?.pools ?? [])];
-      const priced = pricePools(raw, kasPx, book);
+    /* --- DEXs read pool by pool (UniV2 pairs, UniV3 pools) --- */
+    const dexRead = dexBySlug.get(it.slug);
+    if (dexRead?.length && kasPx) {
+      const adapter = DEX_ADAPTERS[it.slug];
+      const raw = dexRead.flatMap((x) => x.read.pools);
+      const priced = valuePools(raw, pxMap);
       const total = priced.reduce((s, p) => s + p.usd, 0);
       const pools = poolViews(priced, total);
+      const pairCount = dexRead.reduce((s, x) => s + x.read.pairCount, 0);
+      const vol = volBy[it.slug], fee = feeBy[it.slug];
+      const first = dexRead[0].read;
       base.source = "onchain";
       base.tvl = total;
-      base.verifiedShare = total ? pools.filter((p) => p.usd > 0).reduce((s, p) => s + p.usd, 0) / total : null;
-      base.asOf = zIgra ? { chain: "igra", block: zIgra.block, timestamp: zIgra.timestamp } : { chain: "kasplex", block: zKasplex!.block, timestamp: zKasplex!.timestamp };
-      base.dex = { pools, pairCount: (zIgra?.pairCount ?? 0) + (zKasplex?.pairCount ?? 0), byChain: { igra: priced.filter((p) => p.chain === "igra").reduce((s, p) => s + p.usd, 0), kasplex: priced.filter((p) => p.chain === "kasplex").reduce((s, p) => s + p.usd, 0) }, vol24: volZ.vol24, vol7: volZ.vol7, fees24: feesZ };
+      base.verifiedShare = 1;
+      base.asOf = { chain: first.chain, block: first.block, timestamp: first.timestamp };
+      const byChain = (c: ChainKey) => priced.filter((p) => p.chain === c).reduce((s, p) => s + p.usd, 0);
+      base.dex = { pools, pairCount, byChain: { igra: byChain("igra"), kasplex: byChain("kasplex") }, vol24: vol?.vol24 ?? null, vol7: vol?.vol7 ?? null, fees24: fee ?? null };
       const comp: Record<string, number> = {};
-      for (const p of priced) { if (p.p0 != null) comp[normSym(p.t0.symbol)] = (comp[normSym(p.t0.symbol)] ?? 0) + p.usd / 2; if (p.p1 != null) comp[normSym(p.t1.symbol)] = (comp[normSym(p.t1.symbol)] ?? 0) + p.usd / 2; }
+      for (const p of priced) {
+        const add = (sym: string, v: number) => { const k = normSym(sym); comp[k] = (comp[k] ?? 0) + v; };
+        if (p.kind === "v3") { if (p.p0 != null) add(p.t0.symbol, p.r0 * p.p0); if (p.p1 != null) add(p.t1.symbol, p.r1 * p.p1); }
+        else { if (p.p0 != null) add(p.t0.symbol, p.usd / 2); if (p.p1 != null) add(p.t1.symbol, p.usd / 2); }
+      }
       base.tokens = Object.entries(comp).map(([sym, v]) => ({ sym, usd: v })).sort((a, b) => b.usd - a.usd);
-      prov[`${it.slug}-tvl`] = { label: "Total liquidity", value: usdFull(total), trail: [["Contract", `Factory ${ZEALOUS_FACTORY} on Igra and Kasplex`], ["Blocks", [zIgra && `Igra #${zIgra.block.toLocaleString("en-US")}`, zKasplex && `Kasplex #${zKasplex.block.toLocaleString("en-US")}`].filter(Boolean).join(" · ")], ["Read", `allPairs() → getReserves() on ${base.dex.pairCount} pairs`], ["Price", `KAS wrappers at the KAS market price ($${kasPx.toPrecision(4)}), stablecoins at $1, other tokens from their deepest KAS or stable pair`], ["Calculation", "Σ pools, each valued at 2 × its priced side"]], note: "Farm and Infinity Pool deposits are not counted as liquidity.", links: [explorerAddress("igra", ZEALOUS_FACTORY), explorerAddress("kasplex", ZEALOUS_FACTORY)] };
-      if (volZ.vol24 != null) prov[`${it.slug}-vol`] = { label: "24h volume", value: usdFull(volZ.vol24), trail: [["Source", "DefiLlama DEX volume API"], ["Status", "dawns will read Swap events directly once the indexer runs"]] };
-      if (feesZ != null) prov[`${it.slug}-fee`] = { label: "24h fees", value: usdFull(feesZ), trail: [["Source", "DefiLlama fees API"]] };
-      base.contracts = [
-        { n: "Factory (Igra)", addr: ZEALOUS_FACTORY, chain: "igra", up: "Immutable (UniV2)", admin: "Fee setter", pause: "No", t: "good" },
-        { n: "Factory (Kasplex)", addr: ZEALOUS_FACTORY, chain: "kasplex", up: "Immutable (UniV2)", admin: "Fee setter", pause: "No", t: "good" },
+      const kinds = [...new Set(adapter.sources.map((x) => x.kind))];
+      prov[`${it.slug}-tvl`] = {
+        label: "Total liquidity", value: usdFull(total),
+        trail: [
+          ["Contracts", dexRead.map((x) => `${x.src.kind.toUpperCase()} factory ${x.src.factory} (${x.src.chain === "igra" ? "Igra" : "Kasplex"})`).join(" · ")],
+          ["Blocks", dexRead.map((x) => `${x.src.chain === "igra" ? "Igra" : "Kasplex"} #${x.read.block.toLocaleString("en-US")}`).join(" · ")],
+          ["Read", kinds.includes("v3") ? `PoolCreated logs → balanceOf() of both tokens on ${pairCount} pools` : `allPairs() → getReserves() on ${pairCount} pairs`],
+          ["Price", `KAS wrappers at the KAS market price ($${kasPx.toPrecision(4)}), stablecoins at $1, other tokens from their deepest V2 pool against a priced token (across all Kaspa DEXs)`],
+          ["Calculation", kinds.includes("v3") ? "Σ pools, each valued at the priced tokens it holds" : "Σ pools, each valued at 2 × its smaller priced side"],
+        ],
+        note: adapter.note,
+        links: dexRead.map((x) => explorerAddress(x.src.chain, x.src.factory)),
+      };
+      if (vol?.vol24 != null) prov[`${it.slug}-vol`] = { label: "24h volume", value: usdFull(vol.vol24), trail: [["Source", "DefiLlama DEX volume API"], ["Status", "dawns will read Swap events directly once the indexer runs"]] };
+      if (fee != null) prov[`${it.slug}-fee`] = { label: "24h fees", value: usdFull(fee), trail: [["Source", "DefiLlama fees API"]] };
+      base.contracts = dexRead.map((x) => ({ n: `${x.src.kind === "v3" ? "V3" : "V2"} factory (${x.src.chain === "igra" ? "Igra" : "Kasplex"})`, addr: x.src.factory, chain: x.src.chain, up: x.src.kind === "v3" ? "Immutable (UniV3)" : "Immutable (UniV2)", admin: x.src.kind === "v3" ? "Owner sets fee tiers" : "Fee setter", pause: "No", t: "good" as Status }));
+      base.canVerify = [
+        [kinds.includes("v3") ? "Balances of every pool" : "Reserves of every pair", `${pairCount} pools on ${[...new Set(dexRead.map((x) => x.src.chain))].map((c) => (c === "igra" ? "Igra" : "Kasplex")).join(" and ")}`, "On-chain"],
+        ["Token metadata", "symbol() and decimals() per token", "On-chain"],
+        ...(kinds.includes("v2") ? [["Price impact by trade size", "Constant-product maths on live reserves", "Derived"] as [string, string, string]] : []),
       ];
-      base.canVerify = [["Reserves of every pair", `getReserves() on ${base.dex.pairCount} pairs, two networks`, "On-chain"], ["Token metadata", "symbol() and decimals() per token", "On-chain"], ["Price impact by trade size", "Constant-product maths on live reserves", "Derived"]];
-      base.cannotVerify = [["Swap volume and fees", "Taken from DefiLlama until the indexer reads Swap events"], ["Infinity Pool and farm deposits", "Separate contracts, not yet read"]];
+      base.cannotVerify = [["Swap volume and fees", "Taken from DefiLlama until the indexer reads Swap events"], ...(it.slug === "zealousswap" ? [["Infinity Pool and farm deposits", "Separate contracts, not yet read"] as [string, string]] : [])];
       const top = pools[0];
       base.status = top && top.share > 0.6 ? "warn" : "good";
       base.statusText = base.status === "warn" ? "Concentrated" : "Healthy";
       if (top && top.share > 0.6) base.flags.push(["warn", `${top.symbols.join("/")} holds ${pct(top.share, 0)} of liquidity`]);
+    }
+
+    /* --- Igra Attestation: IGRA locked by attesters --- */
+    if (it.slug === "igra-attestation" && attest) {
+      const b = attest.balances[0];
+      const px = book.get("igra") ?? 0;
+      const total = (b?.amount ?? 0) * px;
+      base.source = "onchain"; base.tvl = total; base.verifiedShare = px ? 1 : 0;
+      base.asOf = { chain: "igra", block: attest.block, timestamp: attest.timestamp };
+      base.tokens = [{ sym: "IGRA", usd: total }];
+      base.contracts = [{ n: "Attestation Diamond", addr: IGRA_ATTESTATION, chain: "igra", up: "Diamond (upgradeable facets)", admin: "Igra Labs", pause: "Unknown", t: "warn" }, { n: "IGRA token", addr: IGRA_TOKEN, chain: "igra", up: "—", admin: "—", pause: "—", t: "info" }];
+      base.canVerify = [["IGRA locked by attesters", "IGRA.balanceOf(Attestation Diamond)", "On-chain"]];
+      base.cannotVerify = [["Slashing and unlock schedule", "Per-attester locks (6 months) are not decoded yet"], ["IGRA price", "Market price from DefiLlama; IGRA liquidity is thin"]];
+      prov[`${it.slug}-tvl`] = { label: "IGRA locked", value: usdFull(total), trail: [["Contract", `Attestation Diamond ${IGRA_ATTESTATION}`], ["Block", `#${attest.block.toLocaleString("en-US")} · Igra`], ["Read", "IGRA.balanceOf(diamond)"], ["Amount", `${Math.round(b?.amount ?? 0).toLocaleString("en-US")} IGRA`], ["Price", `$${px.toPrecision(3)} per IGRA (DefiLlama)`]], note: "Attesters lock IGRA for about six months as a security deposit for state validation. Deposits can be slashed.", links: [explorerAddress("igra", IGRA_ATTESTATION)] };
+      base.status = "good"; base.statusText = "Healthy";
+    }
+
+    /* --- KaspaCom LFG: native KAS in bonding curves --- */
+    if (it.slug === "kaspacom-lfg" && kasPx && lfg.some(Boolean)) {
+      const reads = lfg.filter((x): x is NonNullable<typeof x> => x !== null);
+      const kas = reads.reduce((s, r) => s + r.kas, 0);
+      const total = kas * kasPx;
+      base.source = "onchain"; base.tvl = total; base.verifiedShare = 1;
+      base.asOf = { chain: reads[0].chain, block: reads[0].block, timestamp: reads[0].timestamp };
+      base.tokens = [{ sym: "KAS", usd: total }];
+      base.contracts = LFG_FACTORIES.map((f) => ({ n: `Bonding factory (${f.chain === "igra" ? "Igra" : "Kasplex"})`, addr: f.factory, chain: f.chain, up: "Unknown", admin: "Unknown", pause: "Unknown", t: "info" as Status }));
+      base.canVerify = [["Native KAS held by every live bonding curve", `getAllBondingCurves() → getBalance(), ${reads.reduce((s, r) => s + r.curves, 0)} curves`, "On-chain"]];
+      base.cannotVerify = [["Graduated tokens", "Liquidity that moved to a DEX is counted under that DEX"]];
+      prov[`${it.slug}-tvl`] = { label: "KAS in bonding curves", value: usdFull(total), trail: [["Contracts", reads.map((r) => `${r.chain === "igra" ? "Igra" : "Kasplex"}: factory + ${r.curves} curves`).join(" · ")], ["Read", "native balance of the factory and every curve"], ["Amount", `${Math.round(kas).toLocaleString("en-US")} KAS`], ["Price", `$${kasPx.toPrecision(4)} per KAS`]] };
+      base.status = base.floor ? "info" : "good"; base.statusText = base.floor ? "Below monitoring floor" : "Healthy";
     }
 
     /* --- KasDex: single-contract AMM --- */
@@ -328,7 +407,7 @@ async function build(): Promise<Snapshot> {
       base.cannotVerify = [["Everything on this page", "dawns does not read this protocol's contracts yet. Figures come from DefiLlama."]];
       prov[`${it.slug}-tvl`] = { label: "Total value locked", value: usdFull(llamaTvl), trail: [["Source", `DefiLlama /protocol/${it.slug}`], ["Chains", base.chains.join(", ")], ["Status", "Not yet read on-chain by dawns"]] };
     }
-    if (base.floor) { base.status = "info"; base.statusText = "Below monitoring floor"; }
+    if (base.floor) { base.status = "info"; base.statusText = "Below monitoring floor"; base.flags = []; }
 
     // cross-check signal
     if (base.source === "onchain" && llamaTvl > 0 && Math.abs(base.tvl / llamaTvl - 1) > 0.15) {

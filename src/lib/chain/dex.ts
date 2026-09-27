@@ -1,5 +1,5 @@
 import "server-only";
-import { parseAbi, type Address } from "viem";
+import { parseAbi, parseAbiItem, type Address } from "viem";
 import { clients, pool, type ChainKey } from "./clients";
 
 const factoryAbi = parseAbi([
@@ -19,7 +19,7 @@ const erc20 = parseAbi([
 ]);
 
 export interface TokenMeta { address: Address; symbol: string; decimals: number }
-export interface RawPool { chain: ChainKey; pair: Address; t0: TokenMeta; t1: TokenMeta; r0: number; r1: number }
+export interface RawPool { chain: ChainKey; kind: "v2" | "v3"; pair: Address; t0: TokenMeta; t1: TokenMeta; r0: number; r1: number; fee?: number }
 
 const metaCache = new Map<string, TokenMeta>();
 async function tokenMeta(chain: ChainKey, a: Address, blockNumber: bigint): Promise<TokenMeta> {
@@ -51,7 +51,7 @@ export async function readUniV2(chain: ChainKey, factory: Address) {
       c.readContract({ address: pair, abi: pairAbi, functionName: "getReserves", ...at }),
     ]);
     const [t0, t1] = await Promise.all([tokenMeta(chain, a0, block.number), tokenMeta(chain, a1, block.number)]);
-    const p: RawPool = { chain, pair, t0, t1, r0: Number(res[0]) / 10 ** t0.decimals, r1: Number(res[1]) / 10 ** t1.decimals };
+    const p: RawPool = { chain, kind: "v2", pair, t0, t1, r0: Number(res[0]) / 10 ** t0.decimals, r1: Number(res[1]) / 10 ** t1.decimals };
     return p;
   });
   return { chain, block: Number(block.number), timestamp: Number(block.timestamp), pairCount: n, pools: pools.filter((p): p is RawPool => p !== null) };
@@ -70,6 +70,41 @@ export async function readBalances(chain: ChainKey, holder: Address, tokens: Add
   return { chain, block: Number(block.number), timestamp: Number(block.timestamp), balances: rows.filter((r): r is NonNullable<typeof r> => r !== null) };
 }
 
+
+const poolCreated = parseAbiItem("event PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)");
+const bondingAbi = parseAbi(["function getAllBondingCurves() view returns (address[])"]);
+
+/** Read every pool of a Uniswap V3 style factory: pools from PoolCreated logs, value from token balances. */
+export async function readUniV3(chain: ChainKey, factory: Address) {
+  const c = clients[chain];
+  const block = await c.getBlock();
+  const logs = await c.getLogs({ address: factory, event: poolCreated, fromBlock: BigInt(0), toBlock: block.number });
+  const at = { blockNumber: block.number };
+  const pools = await pool(logs, 6, async (l) => {
+    const { token0, token1, fee, pool: addr } = l.args as { token0: Address; token1: Address; fee: number; pool: Address };
+    const [t0, t1] = await Promise.all([tokenMeta(chain, token0, block.number), tokenMeta(chain, token1, block.number)]);
+    const [b0, b1] = await Promise.all([
+      c.readContract({ address: token0, abi: erc20, functionName: "balanceOf", args: [addr], ...at }),
+      c.readContract({ address: token1, abi: erc20, functionName: "balanceOf", args: [addr], ...at }),
+    ]);
+    const p: RawPool = { chain, kind: "v3", pair: addr, t0, t1, r0: Number(b0) / 10 ** t0.decimals, r1: Number(b1) / 10 ** t1.decimals, fee: Number(fee) };
+    return p;
+  });
+  return { chain, block: Number(block.number), timestamp: Number(block.timestamp), pairCount: logs.length, pools: pools.filter((p): p is RawPool => p !== null) };
+}
+
+/** Native KAS held by a bonding-curve factory and every curve it created (launchpads). */
+export async function readBondingNative(chain: ChainKey, factory: Address) {
+  const c = clients[chain];
+  const block = await c.getBlock();
+  const at = { blockNumber: block.number };
+  const curves = await c.readContract({ address: factory, abi: bondingAbi, functionName: "getAllBondingCurves", ...at });
+  const owners = [factory, ...curves];
+  const bals = await pool(owners, 8, (o) => c.getBalance({ address: o, ...at }));
+  const kas = bals.reduce<number>((s, b) => s + (b == null ? 0 : Number(b) / 1e18), 0);
+  return { chain, block: Number(block.number), timestamp: Number(block.timestamp), curves: curves.length, kas };
+}
+
 /* ---------- pricing ---------- */
 const KAS_SYMBOLS = /^(w?i?kas|wikas|ikas|wkas)$/i;
 const STABLES = /^(usdc|usdt|usdt0|usdc\.e|dai|usd₮)$/i;
@@ -77,11 +112,11 @@ const STABLES = /^(usdc|usdt|usdt0|usdc\.e|dai|usd₮)$/i;
 export type PriceBook = Map<string, number>; // lowercased symbol → USD
 
 /**
- * Price every token in the pool set. Anchors: KAS wrappers at the KAS market price,
+ * Build a token price map from V2 pools. Anchors: KAS wrappers at the KAS market price,
  * stablecoins and majors from the external book. Other tokens take their price from
- * the deepest pool that pairs them with an anchored token.
+ * the deepest V2 pool that pairs them with an already-priced token.
  */
-export function pricePools(pools: RawPool[], kasUsd: number, book: PriceBook) {
+export function buildPriceMap(pools: RawPool[], kasUsd: number, book: PriceBook) {
   const px = new Map<string, number>(); // chain:address → usd
   const key = (p: RawPool, t: TokenMeta) => `${p.chain}:${t.address.toLowerCase()}`;
   const anchor = (t: TokenMeta) => {
@@ -90,26 +125,32 @@ export function pricePools(pools: RawPool[], kasUsd: number, book: PriceBook) {
     return book.get(t.symbol.toLowerCase());
   };
   for (const p of pools) for (const t of [p.t0, p.t1]) { const a = anchor(t); if (a != null) px.set(key(p, t), a); }
-  // two passes of derivation through the deepest anchored pair
-  for (let pass = 0; pass < 2; pass++) {
+  const v2 = pools.filter((p) => p.kind === "v2");
+  for (let pass = 0; pass < 3; pass++) {
     const best = new Map<string, { depth: number; price: number }>();
-    for (const p of pools) {
+    for (const p of v2) {
       const k0 = key(p, p.t0), k1 = key(p, p.t1);
       const p0 = px.get(k0), p1 = px.get(k1);
-      if (p0 != null && p1 == null && p.r1 > 0) { const depth = p.r0 * p0; const cand = (p.r0 * p0) / p.r1; if ((best.get(k1)?.depth ?? 0) < depth) best.set(k1, { depth, price: cand }); }
-      if (p1 != null && p0 == null && p.r0 > 0) { const depth = p.r1 * p1; const cand = (p.r1 * p1) / p.r0; if ((best.get(k0)?.depth ?? 0) < depth) best.set(k0, { depth, price: cand }); }
+      if (p0 != null && p1 == null && p.r1 > 0) { const depth = p.r0 * p0; if ((best.get(k1)?.depth ?? 0) < depth) best.set(k1, { depth, price: depth / p.r1 }); }
+      if (p1 != null && p0 == null && p.r0 > 0) { const depth = p.r1 * p1; if ((best.get(k0)?.depth ?? 0) < depth) best.set(k0, { depth, price: depth / p.r0 }); }
     }
-    // ignore prices derived from dust pools (< $500 on the anchored side)
+    // ignore prices derived from dust pools (< $500 on the priced side)
     best.forEach((v, k) => { if (v.depth >= 500) px.set(k, v.price); });
   }
+  return px;
+}
+
+/** Value pools with a price map. V2: 2 × the smaller priced side. V3: sum of priced balances. */
+export function valuePools(pools: RawPool[], px: Map<string, number>) {
+  const key = (p: RawPool, t: TokenMeta) => `${p.chain}:${t.address.toLowerCase()}`;
   return pools.map((p) => {
-    const p0 = px.get(key(p, p.t0)), p1 = px.get(key(p, p.t1));
-    // value a pool by its priced side ×2, preferring the anchor-priced side
+    const p0 = px.get(key(p, p.t0)) ?? null, p1 = px.get(key(p, p.t1)) ?? null;
     let usd = 0;
-    if (p0 != null && p1 != null) usd = Math.min(p.r0 * p0, p.r1 * p1) * 2;
+    if (p.kind === "v3") usd = (p0 != null ? p.r0 * p0 : 0) + (p1 != null ? p.r1 * p1 : 0);
+    else if (p0 != null && p1 != null) usd = Math.min(p.r0 * p0, p.r1 * p1) * 2;
     else if (p0 != null) usd = p.r0 * p0 * 2;
     else if (p1 != null) usd = p.r1 * p1 * 2;
-    return { ...p, p0: p0 ?? null, p1: p1 ?? null, usd };
+    return { ...p, p0, p1, usd };
   });
 }
-export type PricedPool = ReturnType<typeof pricePools>[number];
+export type PricedPool = ReturnType<typeof valuePools>[number];
