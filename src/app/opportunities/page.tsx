@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Banner } from "@/components/Banner";
 import { DataBridge } from "@/components/providers";
 import { OpportunityTable } from "@/components/opportunities";
@@ -65,8 +66,8 @@ export default async function OpportunitiesPage() {
           </div>
         </div>
         <div className="preview" style={{ marginTop: 18 }}>
-          <span>A high rate next to a blocked exit is a warning, not an opportunity. Next: dawns builds an allocation from your risk level and exit window.</span>
-          <button className="btn iris" type="button" disabled>Build an allocation</button>
+          <span>A high rate next to a blocked exit is a warning, not an opportunity. dawns can turn these into a split that fits your risk and exit window.</span>
+          <Link className="btn iris" href="/allocate">Build an allocation</Link>
         </div>
       </div>
     </>

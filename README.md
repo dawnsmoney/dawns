@@ -56,6 +56,9 @@ src/
   lib/alerts.ts           history writes, signal lifecycle, alert delivery, morning report
   lib/indexer.ts          event index: DEX swaps/removals, Kaskad flows, bridge exits → L1 payouts
   lib/history.ts          reads dawns' own history and index back into the snapshot
+  lib/opportunities.ts    native yield next to exit liquidity, rate stability and price exposure
+  lib/allocator.ts        advisory allocator: policy (risk, exit window, amount) → split with reasons
+  lib/auth/               wallet sign-in: Kaspa (KasWare, Kastle; Schnorr/ECDSA) and EVM (EIP-6963), sessions
   lib/telegram.ts         Bot API client, webhook self-setup
   lib/llama.ts            DefiLlama client
   lib/rules.ts            watch rule definitions
@@ -85,4 +88,4 @@ The tick registers the Telegram webhook by itself on production, so there is no 
 1. Per-account lending positions (health factors, bad debt) from the Kaskad event index
 2. Fee rates per DEX read on-chain, so fees stop depending on DefiLlama
 3. Decode the guardian multisig behind the bridge Entry address
-4. Allocation: user profile, risk and exit policy; Telegram alerts on each user's own rules
+4. Allocation: link Telegram to the profile and alert on each user's own rules and holdings

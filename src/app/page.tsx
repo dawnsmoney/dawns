@@ -220,7 +220,7 @@ export default async function Home() {
           <div className="now"><span className="n">1 · LIVE</span><b>Intelligence</b><p>Protocol health, flows, the Igra bridge, and the source of every number.</p></div>
           <div className="now"><span className="n">2 · LIVE</span><b>Watch &amp; alerts</b><p>Telegram alerts on liquidity, utilization, large exits and bridge backing.</p></div>
           <div className="now"><span className="n">3 · BETA</span><b>Opportunities</b><p>Native yield next to exit liquidity, rate stability and price exposure.</p></div>
-          <div><span className="n">4 · NEXT</span><b>Allocation</b><p>Your profile, risk and exit policy turned into a portfolio, with alerts on your own rules.</p></div>
+          <div className="now"><span className="n">4 · BETA</span><b>Allocation</b><p>Your risk and exit window turned into a split, explained line by line. Sign in with any wallet.</p></div>
           <div><span className="n">5</span><b>Vaults</b><p>Managed, policy-bound strategies. Non-custodial.</p></div>
         </div>
       </section>

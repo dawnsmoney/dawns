@@ -60,6 +60,18 @@ const SCHEMA = [
     payout_address text not null, amount_sompi bigint not null,
     paid_tx text, paid_at timestamptz, paid_sompi bigint, last_checked timestamptz, checks int not null default 0)`,
   `create index if not exists bridge_exits_open on bridge_exits (paid_tx, last_checked)`,
+  // accounts: a user is one or more wallets that signed in
+  `create table if not exists users (id text primary key, created_at timestamptz not null default now())`,
+  `create table if not exists wallets (
+    address text primary key, kind text not null, user_id text not null references users(id) on delete cascade,
+    created_at timestamptz not null default now(), last_seen timestamptz)`,
+  `create table if not exists sessions (
+    token_hash text primary key, user_id text not null references users(id) on delete cascade,
+    created_at timestamptz not null default now(), expires_at timestamptz not null)`,
+  `create table if not exists auth_nonces (
+    nonce text primary key, address text not null, message text not null, expires_at timestamptz not null, used boolean not null default false)`,
+  `create table if not exists profiles (
+    user_id text primary key references users(id) on delete cascade, policy jsonb not null, updated_at timestamptz not null default now())`,
 ];
 
 let ready: Promise<void> | null = null;
