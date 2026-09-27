@@ -5,6 +5,7 @@ import { readKaskad, KASKAD, type KaskadState } from "./chain/kaskad";
 import { readUniV2, readUniV3, readBalances, readBondingNative, buildPriceMap, valuePools, type PriceBook, type PricedPool, type RawPool } from "./chain/dex";
 import { readIgraBridge, IGRA_BRIDGE } from "./chain/bridge";
 import { readOwn } from "./history";
+import { buildOpportunities } from "./opportunities";
 import { explorerAddress, explorerBlock, type ChainKey } from "./chain/clients";
 import { kaspaProtocols, llamaProtocol, llamaPrices, llamaChange24h, dexSummary, feesSummary, type LlamaProtocol, type LlamaListItem } from "./llama";
 import { usd, usdFull, pct } from "./format";
@@ -325,7 +326,8 @@ export async function buildSnapshot(): Promise<Snapshot> {
       base.verifiedShare = 1;
       base.asOf = { chain: first.chain, block: first.block, timestamp: first.timestamp };
       const byChain = (c: ChainKey) => priced.filter((p) => p.chain === c).reduce((s, p) => s + p.usd, 0);
-      base.dex = { pools, pairCount, byChain: { igra: byChain("igra"), kasplex: byChain("kasplex") }, vol24: vol?.vol24 ?? null, vol7: vol?.vol7 ?? null, fees24: fee ?? null };
+      base.dex = { pools, pairCount, byChain: { igra: byChain("igra"), kasplex: byChain("kasplex") }, vol24: vol?.vol24 ?? null, vol7: vol?.vol7 ?? null, fees24: fee?.fees24 ?? null,
+        feeRate: fee?.fees7 && vol?.vol7 ? fee.fees7 / vol.vol7 : null, lpShare: fee?.fees7 && fee.lp7 != null ? Math.min(1, fee.lp7 / fee.fees7) : null };
       const comp: Record<string, number> = {};
       for (const p of priced) {
         const add = (sym: string, v: number) => { const k = normSym(sym); comp[k] = (comp[k] ?? 0) + v; };
@@ -347,7 +349,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
         links: dexRead.map((x) => explorerAddress(x.src.chain, x.src.factory)),
       };
       if (vol?.vol24 != null) prov[`${it.slug}-vol`] = { label: "24h volume", value: usdFull(vol.vol24), trail: [["Source", "DefiLlama DEX volume API"], ["Status", "dawns will read Swap events directly once the indexer runs"]] };
-      if (fee != null) prov[`${it.slug}-fee`] = { label: "24h fees", value: usdFull(fee), trail: [["Source", "DefiLlama fees API"]] };
+      if (fee?.fees24 != null) prov[`${it.slug}-fee`] = { label: "24h fees", value: usdFull(fee.fees24), trail: [["Source", "DefiLlama fees API"], ...(fee.fees7 && vol?.vol7 ? [["Fee rate", `${pct(fee.fees7 / vol.vol7, 2)} of volume (7-day fees ÷ 7-day volume)`] as [string, string]] : []), ...(fee.fees7 && fee.lp7 != null ? [["To liquidity providers", `${pct(Math.min(1, fee.lp7 / fee.fees7), 0)} of fees (DefiLlama supply-side revenue)`] as [string, string]] : [])] };
       base.contracts = dexRead.map((x) => ({ n: `${x.src.kind === "v3" ? "V3" : "V2"} factory (${x.src.chain === "igra" ? "Igra" : "Kasplex"})`, addr: x.src.factory, chain: x.src.chain, up: x.src.kind === "v3" ? "Immutable (UniV3)" : "Immutable (UniV2)", admin: x.src.kind === "v3" ? "Owner sets fee tiers" : "Fee setter", pause: "No", t: "good" as Status }));
       base.canVerify = [
         [kinds.includes("v3") ? "Balances of every pool" : "Reserves of every pair", `${pairCount} pools on ${[...new Set(dexRead.map((x) => x.src.chain))].map((c) => (c === "igra" ? "Igra" : "Kasplex")).join(" and ")}`, "On-chain"],
@@ -548,7 +550,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
       composition: Object.entries(comp).map(([sym, v]) => ({ sym, usd: v })).sort((a, b) => b.usd - a.usd),
       intraday: own?.eco.length && own.eco.length >= 2 ? [...own.eco.slice(0, -1), { t: Date.now(), v: tvl }] : [],
     },
-    bridge: bridge ?? null, signals, prov, errors,
+    bridge: bridge ?? null, opportunities: buildOpportunities(protocols, own ?? null, Date.now()), signals, prov, errors,
   };
 }
 

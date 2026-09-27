@@ -48,9 +48,9 @@ export async function dexSummary(slug: string) {
     return { vol24: j.total24h ?? null, vol7: j.total7d ?? null };
   } catch { return { vol24: null, vol7: null }; }
 }
+/** Fees paid by traders, and the part that goes to liquidity providers (supply side). */
 export async function feesSummary(slug: string) {
-  try {
-    const j = await get<{ total24h?: number }>(`${API}/summary/fees/${slug}?excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true`);
-    return j.total24h ?? null;
-  } catch { return null; }
+  const q = (t: string) => get<{ total24h?: number; total7d?: number }>(`${API}/summary/fees/${slug}?excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true&dataType=${t}`).catch(() => ({} as { total24h?: number; total7d?: number }));
+  const [f, lp] = await Promise.all([q("dailyFees"), q("dailySupplySideRevenue")]);
+  return { fees24: f.total24h ?? null, fees7: f.total7d ?? null, lp7: lp.total7d ?? null };
 }

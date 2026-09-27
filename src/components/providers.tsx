@@ -210,7 +210,6 @@ function WatchModal({ p, onClose, toast }: { p: ProtoLite; onClose: () => void; 
                 <Bell />{ch.includes("telegram") ? "Telegram connected · open again" : "Get alerts on Telegram"}
               </a>
             ) : <label><input type="checkbox" disabled />Telegram (soon)</label>}
-            <label><input type="checkbox" disabled />Email (soon)</label>
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}>

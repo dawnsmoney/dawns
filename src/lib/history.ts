@@ -12,6 +12,9 @@ export interface OwnData {
   indexedSince: number | null;        // ms: the later of the two chains' index start
   indexedUpTo: number | null;         // ms: the earlier of the two chains' cursor timestamps
   exits: ExitRow[];
+  pairs: Map<string, { vol24: number; vol7: number; swaps24: number }>;
+  pairRange: Map<string, { min: number; max: number; hours: number }>;   // price of token0 in token1
+  marketRange: Map<string, { apyMin: number; apyMax: number; utilMin: number; utilMax: number; hours: number }>; // "protocol:SYMBOL"
   exitStats: { indexed: number; unchecked: number; paid: number; unpaid: number; unpaidKas: number; late: number; lateKas: number; medianHours: number | null; checkedSince: number | null };
 }
 export interface ExitRow { tx: string; request_id: number | null; block: number; at: number; payout: string; kas: number; paid_tx: string | null; paid_at: number | null; paid_kas: number | null }
@@ -23,7 +26,7 @@ export async function readOwn(): Promise<OwnData | null> {
   const q = sql();
   const safe = <T,>(p: Promise<unknown>) => (p as Promise<T>).catch(() => [] as unknown as T); // tables may not exist before the first tick
   type R = Record<string, unknown>;
-  const [hourly, back24, eco, backing, dexAgg, dexDays, lendAgg, top, meta, exits, exitStats] = await Promise.all([
+  const [hourly, back24, eco, backing, dexAgg, dexDays, lendAgg, top, meta, exits, exitStats, pairAgg, pairRng, mktRng] = await Promise.all([
     safe<R[]>(q.query(`select protocol, extract(epoch from date_trunc('hour', taken_at)) * 1000 as t, avg(tvl) as v
       from protocol_metrics where taken_at > now() - interval '7 days' group by 1, 2 order by 2`)),
     safe<R[]>(q.query(`select distinct on (protocol) protocol, tvl from protocol_metrics
@@ -64,6 +67,17 @@ export async function readOwn(): Promise<OwnData | null> {
         percentile_cont(0.5) within group (order by extract(epoch from paid_at - requested_at) / 3600) filter (where paid_tx is not null and requested_at > now() - interval '30 days') as median_h,
         extract(epoch from min(last_checked) filter (where paid_tx is null and requested_at > now() - interval '30 days')) * 1000 as checked_since
       from bridge_exits`)),
+    safe<R[]>(q.query(`select pair,
+        coalesce(sum(usd) filter (where t > now() - interval '24 hours'), 0) as vol24,
+        coalesce(sum(usd), 0) as vol7,
+        count(*) filter (where t > now() - interval '24 hours') as swaps24
+      from dex_events where kind = 'swap' and t > now() - interval '7 days' group by pair`)),
+    safe<R[]>(q.query(`select pair, min(reserve1 / reserve0) as lo, max(reserve1 / reserve0) as hi,
+        extract(epoch from max(taken_at) - min(taken_at)) / 3600 as hours
+      from pool_metrics where taken_at > now() - interval '7 days' and reserve0 > 0 and reserve1 > 0 group by pair`)),
+    safe<R[]>(q.query(`select protocol || ':' || market as k, min(supply_apy) as apy_lo, max(supply_apy) as apy_hi,
+        min(util) as util_lo, max(util) as util_hi, extract(epoch from max(taken_at) - min(taken_at)) / 3600 as hours
+      from market_metrics where taken_at > now() - interval '7 days' group by 1`)),
   ]);
 
   const series = new Map<string, Pt[]>();
@@ -99,6 +113,9 @@ export async function readOwn(): Promise<OwnData | null> {
   const s = exitStats[0] ?? {};
   return {
     series, at24, activity, indexedSince, indexedUpTo,
+    pairs: new Map(pairAgg.map((r) => [String(r.pair).toLowerCase(), { vol24: n(r.vol24), vol7: n(r.vol7), swaps24: n(r.swaps24) }])),
+    pairRange: new Map(pairRng.map((r) => [String(r.pair).toLowerCase(), { min: n(r.lo), max: n(r.hi), hours: n(r.hours) }])),
+    marketRange: new Map(mktRng.map((r) => [String(r.k), { apyMin: n(r.apy_lo), apyMax: n(r.apy_hi), utilMin: n(r.util_lo), utilMax: n(r.util_hi), hours: n(r.hours) }])),
     eco: eco.map((r) => ({ t: n(r.t), v: n(r.v) })),
     backing: backing.map((r) => ({ t: n(r.t), v: n(r.v) })),
     exits: exits.map((r) => ({ tx: String(r.tx), request_id: r.request_id == null ? null : n(r.request_id), block: n(r.block), at: n(r.at), payout: String(r.payout), kas: n(r.kas), paid_tx: (r.paid_tx as string) ?? null, paid_at: r.paid_at == null ? null : n(r.paid_at), paid_kas: r.paid_kas == null ? null : n(r.paid_kas) })),

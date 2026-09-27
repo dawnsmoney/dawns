@@ -11,7 +11,7 @@ const NAV = [
   { href: "/", label: "Kaspa DeFi", dot: true },
   { href: "/protocols", label: "Protocols" },
   { href: "/bridge", label: "Bridge" },
-  { href: "/opportunities", label: "Opportunities", soon: "Next" },
+  { href: "/opportunities", label: "Opportunities", soon: "Beta" },
   { href: "/vaults", label: "Vaults", soon: "Later" },
 ];
 

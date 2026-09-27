@@ -81,6 +81,8 @@ export interface ProtocolView {
   dex?: {
     pools: PoolView[]; pairCount: number; byChain: { igra: number; kasplex: number };
     vol24: number | null; vol7: number | null; fees24: number | null;
+    /** trading fee per unit of volume, and the share of it paid to LPs (DefiLlama fees ÷ volume, 7 days) */
+    feeRate: number | null; lpShare: number | null;
   };
 }
 
@@ -104,6 +106,24 @@ export interface BridgeState {
   payouts?: { indexed: number; unchecked: number; paid: number; unpaid: number; unpaidKas: number; late: number; lateKas: number; medianHours: number | null; checkedSince: number | null };
 }
 
+/** A place to earn native yield, shown next to what it costs to get out. */
+export interface Opportunity {
+  id: string; kind: "supply" | "lp";
+  protocol: string; pname: string; chain: "igra" | "kasplex";
+  name: string; assets: string[];
+  apy: number | null;              // native yield only
+  apyBasis: string;                // how the yield was measured
+  apyRange: [number, number] | null; rangeHours: number;  // own history
+  size: number;                    // USD in the market or pool
+  exitNow: number | null;          // USD that can leave right now
+  exitShare: number | null;        // exitNow ÷ size (lending)
+  vol24: number | null; swaps24: number | null; turnover: number | null; // LP
+  priceMove: number | null; ilAtMove: number | null;                     // LP: 7d price range and the LP shortfall at that move
+  status: Status; statusText: string;
+  notes: string[];
+  pair?: string; feeTier?: number | null;
+}
+
 export interface Snapshot {
   asOf: number;
   buildMs: number;
@@ -119,6 +139,7 @@ export interface Snapshot {
     intraday: Pt[];
   };
   bridge: BridgeState | null;
+  opportunities: Opportunity[];
   signals: Signal[];
   prov: Record<string, Provenance>;
   errors: string[];

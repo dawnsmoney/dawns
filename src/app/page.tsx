@@ -217,10 +217,10 @@ export default async function Home() {
       <section className="s wrap">
         <div className="s-head"><h2>From daylight to capital</h2><p>Information first. Capital products come once people trust the data.</p></div>
         <div className="road">
-          <div className="now"><span className="n">1 · LIVE</span><b>Intelligence</b><p>Protocol health, flows, and the source of every number.</p></div>
-          <div className="now"><span className="n">2 · BETA</span><b>Watch &amp; alerts</b><p>Your thresholds on liquidity, utilization and risk changes.</p></div>
-          <div><span className="n">3 · NEXT</span><b>Opportunities</b><p>Yield shown next to the health of whoever pays it.</p></div>
-          <div><span className="n">4</span><b>Allocation</b><p>A portfolio built from your risk and exit policy.</p></div>
+          <div className="now"><span className="n">1 · LIVE</span><b>Intelligence</b><p>Protocol health, flows, the Igra bridge, and the source of every number.</p></div>
+          <div className="now"><span className="n">2 · LIVE</span><b>Watch &amp; alerts</b><p>Telegram alerts on liquidity, utilization, large exits and bridge backing.</p></div>
+          <div className="now"><span className="n">3 · BETA</span><b>Opportunities</b><p>Native yield next to exit liquidity, rate stability and price exposure.</p></div>
+          <div><span className="n">4 · NEXT</span><b>Allocation</b><p>Your profile, risk and exit policy turned into a portfolio, with alerts on your own rules.</p></div>
           <div><span className="n">5</span><b>Vaults</b><p>Managed, policy-bound strategies. Non-custodial.</p></div>
         </div>
       </section>

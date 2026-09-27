@@ -85,4 +85,4 @@ The tick registers the Telegram webhook by itself on production, so there is no 
 1. Per-account lending positions (health factors, bad debt) from the Kaskad event index
 2. Fee rates per DEX read on-chain, so fees stop depending on DefiLlama
 3. Decode the guardian multisig behind the bridge Entry address
-4. Email alerts
+4. Allocation: user profile, risk and exit policy; Telegram alerts on each user's own rules
