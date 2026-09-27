@@ -43,12 +43,19 @@ const SCHEMA = [
   `create index if not exists alerts_sent_idx on alerts_sent (chat_id, signal_key, sent_at desc)`,
   `create index if not exists protocol_metrics_t on protocol_metrics (taken_at)`,
   `create table if not exists meta (k text primary key, v text not null)`,
+  // first-party product events: no cookies, no IP; user id only when signed in
+  `create table if not exists app_events (t timestamptz not null default now(), name text not null, path text, user_id text, props jsonb)`,
+  `create index if not exists app_events_t on app_events (t desc)`,
   // event index (dawns' own reads of contract logs)
   `create table if not exists dex_events (
     chain text not null, tx text not null, log_index int not null, block bigint not null, t timestamptz not null,
     protocol text not null, pair text not null, kind text not null, usd double precision not null, label text,
     primary key (chain, tx, log_index))`,
   `create index if not exists dex_events_pt on dex_events (protocol, t desc)`,
+  // the fee each V2 swap actually paid, from its reserves just before the swap (Sync − swap amounts)
+  `create table if not exists fee_samples (
+    chain text not null, tx text not null, log_index int not null, t timestamptz not null, protocol text not null, pair text not null, fee double precision not null,
+    primary key (chain, tx, log_index))`,
   `create table if not exists lending_events (
     chain text not null, tx text not null, log_index int not null, block bigint not null, t timestamptz not null,
     protocol text not null, kind text not null, market text not null, account text, amount double precision, usd double precision not null,
@@ -74,6 +81,14 @@ const SCHEMA = [
     user_id text primary key references users(id) on delete cascade, policy jsonb not null, updated_at timestamptz not null default now())`,
   `alter table profiles add column if not exists plan jsonb`,
   `alter table telegram_chats add column if not exists user_id text`,
+  `create table if not exists watch_rules (
+    user_id text not null references users(id) on delete cascade, protocol text not null, entry jsonb not null,
+    updated_at timestamptz not null default now(), primary key (user_id, protocol))`,
+  // every Kaskad account that ever supplied or borrowed, and its latest position
+  `create table if not exists kaskad_accounts (address text primary key, first_block bigint not null)`,
+  `create table if not exists kaskad_positions (
+    address text primary key, collateral_usd double precision not null, debt_usd double precision not null,
+    hf double precision, lt double precision, updated_at timestamptz not null)`,
   `create table if not exists telegram_links (token text primary key, user_id text not null, expires_at timestamptz not null)`,
   // alerts computed for one user's followed plan
   `create table if not exists user_signals (

@@ -46,6 +46,8 @@ const initials = (name: string) => {
   if (w.length > 1) return (w[0][0] + w[1][0]).toUpperCase();
   return (caps.length >= 2 ? caps[0] + caps[1] : w[0][0]).toUpperCase();
 };
+/** Hand-picked where two names would share initials (KasDex and KaspaCom DEX are both "KD"). */
+const LETTERS: Record<string, string> = { kasdex: "KX", "kaspacom-dex": "KC", "kaspacom-lfg": "KL" };
 const prettyCategory = (c: string) => ({ Dexs: "DEX", "Staking Pool": "Staking", Lending: "Lending", Launchpad: "Launchpad" } as Record<string, string>)[c] ?? c;
 const normSym = (s: string) => (/^(w?i?kas|wikas|ikas|wkas)$/i.test(s) ? "KAS" : s.toUpperCase().replace(/^CBBTC$/, "BTC").replace(/^WBTC$/, "BTC"));
 const category = (c: string): ProtocolView["kind"] => (/lend/i.test(c) ? "lending" : /dex/i.test(c) ? "dex" : "other");
@@ -144,7 +146,7 @@ function lendingView(k: KaskadState, book: PriceBook): { markets: MarketView[]; 
     const mkt = book.get(normSym(m.symbol).toLowerCase()) ?? null;
     return {
       symbol: m.symbol, asset: m.asset, price: m.price, marketPrice: mkt,
-      oracleDeviation: mkt && m.oracleOk ? m.price / mkt - 1 : null, oracleOk: m.oracleOk, oracleError: m.oracleError,
+      oracleDeviation: mkt && m.oracleOk ? m.price / mkt - 1 : null, oracleOk: m.oracleOk, oracleError: m.oracleError, oracleUpdatedAt: m.oracleUpdatedAt, oracleMaxAge: m.oracleMaxAge, debtToken: m.debtToken,
       supplied: m.supplied, borrowed: m.borrowed, cash: m.cash,
       suppliedUsd: m.suppliedUsd, borrowedUsd: m.borrowedUsd, cashUsd: m.cashUsd,
       utilization: m.utilization, supplyApy: m.supplyApy, borrowApr: m.borrowApr,
@@ -172,7 +174,7 @@ function poolViews(pools: PricedPool[], total: number): PoolView[] {
       chain: p.chain, pair: p.pair, symbols: [p.t0.symbol, p.t1.symbol] as [string, string], usd: p.usd, share: total ? p.usd / total : 0,
       reserves: [p.r0, p.r1] as [number, number],
       impact10k: p.kind === "v2" && p.usd > 0 ? 1e4 / (p.usd / 2 + 1e4) : null,
-      kind: p.kind, fee: p.fee ?? null,
+      kind: p.kind, fee: p.fee ?? null, lpShare: p.lpShare ?? null,
       tk: [{ a: p.t0.address, d: p.t0.decimals, px: p.p0 }, { a: p.t1.address, d: p.t1.decimals, px: p.p1 }] as PoolView["tk"],
     }));
 }
@@ -242,7 +244,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
     const borrowedLlama = lp?.currentChainTvls?.borrowed ?? null;
     const kind = category(it.category);
     const base: ProtocolView = {
-      id: it.slug, name: it.name, letter: initials(it.name), category: prettyCategory(it.category), kind, historyCleaned: cleaned.removed,
+      id: it.slug, name: it.name, letter: LETTERS[it.slug] ?? initials(it.name), category: prettyCategory(it.category), kind, historyCleaned: cleaned.removed,
       chains: it.chains.filter((c) => c === "Igra" || c === "Kasplex"), site: it.url ? it.url.replace(/^https?:\/\//, "").replace(/\/.*$/, "") : null,
       tvl: llamaTvl, llamaTvl, d24: change(history, 1), d7: change(history, 7), d24Source: "defillama", intraday: [], activity: null, history,
       tokens: Object.entries(tf.comp).map(([sym, v]) => ({ sym, usd: v })).sort((a, b) => b.usd - a.usd),
@@ -298,9 +300,16 @@ export async function buildSnapshot(): Promise<Snapshot> {
         if (m.oracleDeviation != null && Math.abs(m.oracleDeviation) >= 0.02) signals.push({ key: `${it.slug}:oracle-drift:${m.symbol}`, t: "warn", p: it.slug, rule: "contract", strong: `Kaskad's ${m.symbol} oracle is ${pct(Math.abs(m.oracleDeviation))} ${m.oracleDeviation > 0 ? "above" : "below"} market`, rest: ` (oracle $${m.price.toPrecision(4)}, market $${m.marketPrice?.toPrecision(4)}).` });
       }
       const broken = view.markets.filter((m) => !m.oracleOk);
-      if (broken.length) {
+      const stale = broken.filter((m) => m.oracleError === "StalePrice" && m.oracleUpdatedAt);
+      const staleHours = stale.length ? (kaskad.timestamp - Math.max(...stale.map((m) => m.oracleUpdatedAt!))) / 3600 : 0;
+      const allBroken = broken.length === view.markets.length;
+      if (stale.length) {
+        const maxAge = stale[0].oracleMaxAge ?? 3600;
+        signals.push({ key: `${it.slug}:oracle-revert`, t: allBroken ? "crit" : "warn", p: it.slug, rule: "contract",
+          strong: `Kaskad's price oracle is stale: last update ${staleHours.toFixed(1)} hours ago`,
+          rest: `, and it rejects prices older than ${Math.round(maxAge / 60)} minutes (StalePrice). Until it updates, ${allBroken ? "every" : "the " + stale.map((m) => m.symbol).join(", ")} market${allBroken || stale.length > 1 ? "s" : ""} cannot price collateral: borrowing, withdrawing collateral against a loan and liquidations revert. Suppliers without loans can still withdraw. dawns values these markets at market prices.` });
+      } else if (broken.length) {
         signals.push({ key: `${it.slug}:oracle-revert`, t: "warn", p: it.slug, rule: "contract", strong: `Kaskad's price oracle reverted for ${broken.map((m) => m.symbol).join(", ")}`, rest: ` at block #${kaskad.block.toLocaleString("en-US")} (error ${broken[0].oracleError}). Borrowing and liquidations read this oracle; dawns valued these markets at market prices instead.` });
-        base.flags.push(["warn", `Oracle reverting (${broken.length}/${view.markets.length})`]);
       }
       if (!kaskad.aclAdminIsContract) signals.push({ key: `${it.slug}:admin-eoa`, t: "warn", p: it.slug, rule: "contract", strong: "Kaskad's ACL admin is a single key", rest: " (an EOA, not a multisig or timelock). It can change roles that control pausing, listings and risk settings." });
       const worst = view.markets.some((m) => m.utilization >= 0.95) ? "crit" : view.markets.some((m) => m.utilization >= 0.8 || m.frozen) ? "warn" : "good";
@@ -308,6 +317,41 @@ export async function buildSnapshot(): Promise<Snapshot> {
       base.statusText = worst === "crit" ? "Liquidity crunch" : worst === "warn" ? "Watch" : "Healthy";
       base.flags = view.markets.filter((m) => m.utilization >= 0.8 || m.frozen).map((m) => [m.utilization >= 0.95 ? "crit" : "warn", m.frozen ? `${m.symbol} market frozen` : `${m.symbol} utilization ${pct(m.utilization, 0)}`] as [Status, string]);
       if (!kaskad.aclAdminIsContract) base.flags.push(["warn", "Admin is a single key"]);
+      if (broken.length) base.flags.unshift([allBroken ? "crit" : "warn", stale.length ? `Oracle stale ${staleHours.toFixed(1)} h` : `Oracle reverting (${broken.length}/${view.markets.length})`]);
+      if (allBroken && stale.length) { base.status = "crit"; base.statusText = "Oracle stale"; }
+
+      /* --- every account's position (from dawns' account index) --- */
+      if (own?.kaskad && base.lending) {
+        const rows = own.kaskad.rows;
+        const borrowers = rows.filter((r) => r.debt > 0.01);
+        const B = [["Below 1.0 · liquidatable", 0, 1], ["1.0 – 1.1", 1, 1.1], ["1.1 – 1.25", 1.1, 1.25], ["1.25 – 1.5", 1.25, 1.5], ["1.5 – 2", 1.5, 2], ["Above 2", 2, Infinity]] as const;
+        const buckets = B.map(([label, lo, hi]) => { const inB = borrowers.filter((r) => (r.hf ?? Infinity) >= lo && (r.hf ?? Infinity) < hi); return { label, debtUsd: inB.reduce((x, r) => x + r.debt, 0), accounts: inB.length }; });
+        const liq = borrowers.filter((r) => (r.hf ?? Infinity) < 1);
+        const bad = borrowers.filter((r) => r.debt > r.coll);
+        const near = borrowers.filter((r) => (r.hf ?? Infinity) >= 1 && (r.hf ?? Infinity) < 1.05);
+        const pos = {
+          accounts: own.kaskad.accounts, suppliers: rows.filter((r) => r.coll > 0.01).length, borrowers: borrowers.length, unread: Math.max(0, own.kaskad.accounts - rows.length), updatedAt: own.kaskad.updatedAt,
+          debtUsd: borrowers.reduce((x, r) => x + r.debt, 0), collateralUsd: rows.reduce((x, r) => x + r.coll, 0), buckets,
+          liquidatableUsd: liq.reduce((x, r) => x + r.debt, 0), liquidatable: liq.length,
+          badDebtUsd: bad.reduce((x, r) => x + (r.debt - r.coll), 0), badDebtAccounts: bad.length,
+          top: [...borrowers].sort((a, b) => b.debt - a.debt).slice(0, 10).map((r) => ({ address: r.address, collateralUsd: r.coll, debtUsd: r.debt, hf: r.hf })),
+        };
+        base.lending.positions = pos;
+        prov[`${it.slug}-pos`] = { label: "Borrower health", value: `${pos.borrowers} borrowers`, trail: [
+          ["Accounts", `${pos.accounts.toLocaleString("en-US")} addresses that ever supplied or borrowed (Supply and Borrow events since the pool launched)`],
+          ["Read", "aToken.balanceOf and variableDebtToken.balanceOf for every account and market"],
+          ["Price", "Kaskad oracle when it answers, market price otherwise"],
+          ["Health factor", "Σ collateral × liquidation threshold ÷ Σ debt, as Aave computes it; supplied assets assumed to be collateral (the default)"],
+        ], note: "Pool.getUserAccountData would give the same number, but it reverts whenever the oracle is stale, so dawns computes it from balances." };
+        const blockedLiq = allBroken && stale.length > 0;
+        if (pos.badDebtUsd >= 100) signals.push({ key: `${it.slug}:baddebt`, t: "crit", p: it.slug, rule: "contract", strong: `Kaskad has ${usd(pos.badDebtUsd)} of bad debt`, rest: ` across ${pos.badDebtAccounts} account${pos.badDebtAccounts > 1 ? "s" : ""}: their debt is larger than their collateral at market prices. If not repaid, suppliers carry the loss.` });
+        if (pos.liquidatableUsd >= 500) signals.push({ key: `${it.slug}:liquidatable`, t: blockedLiq ? "crit" : "warn", p: it.slug, rule: "contract", strong: `${usd(pos.liquidatableUsd)} of Kaskad debt can be liquidated`, rest: ` across ${pos.liquidatable} account${pos.liquidatable > 1 ? "s" : ""} (health factor below 1 at market prices).${blockedLiq ? " Liquidations cannot run while the oracle is stale, so this debt keeps growing riskier." : ""}` });
+        const nearUsd = near.reduce((x, r) => x + r.debt, 0);
+        if (nearUsd >= 5_000) signals.push({ key: `${it.slug}:nearliq`, t: "warn", p: it.slug, rule: "contract", strong: `${usd(nearUsd)} of Kaskad debt is within 5% of liquidation`, rest: ` across ${near.length} account${near.length > 1 ? "s" : ""}.` });
+        if (pos.badDebtUsd >= 100) base.flags.unshift(["crit", `Bad debt ${usd(pos.badDebtUsd)}`]);
+        base.canVerify.push(["Every account's health factor", `${pos.accounts.toLocaleString("en-US")} accounts, balances read each run`, "On-chain"]);
+        base.cannotVerify = base.cannotVerify.filter(([k]) => !k.startsWith("Bad debt"));
+      }
     }
 
     /* --- DEXs read pool by pool (UniV2 pairs, UniV3 pools) --- */
@@ -327,7 +371,13 @@ export async function buildSnapshot(): Promise<Snapshot> {
       base.asOf = { chain: first.chain, block: first.block, timestamp: first.timestamp };
       const byChain = (c: ChainKey) => priced.filter((p) => p.chain === c).reduce((s, p) => s + p.usd, 0);
       base.dex = { pools, pairCount, byChain: { igra: byChain("igra"), kasplex: byChain("kasplex") }, vol24: vol?.vol24 ?? null, vol7: vol?.vol7 ?? null, fees24: fee?.fees24 ?? null,
-        feeRate: fee?.fees7 && vol?.vol7 ? fee.fees7 / vol.vol7 : null, lpShare: fee?.fees7 && fee.lp7 != null ? Math.min(1, fee.lp7 / fee.fees7) : null };
+        feeRate: fee?.fees7 && vol?.vol7 ? fee.fees7 / vol.vol7 : null, lpShare: fee?.fees7 && fee.lp7 != null ? Math.min(1, fee.lp7 / fee.fees7) : null,
+        feeSource: fee?.fees7 && vol?.vol7 ? "defillama" : null, feeSamples: 0 };
+      // measured on-chain: the median fee real swaps paid, and the LP share from the fee switch
+      const measured = own?.fees.get(it.slug);
+      if (measured && measured.n >= 5) { base.dex.feeRate = measured.median; base.dex.feeSource = "on-chain"; base.dex.feeSamples = measured.n; }
+      const shares = raw.filter((r) => r.kind === "v2" && r.lpShare != null).map((r) => r.lpShare as number);
+      if (shares.length) base.dex.lpShare = Math.min(...shares);
       const comp: Record<string, number> = {};
       for (const p of priced) {
         const add = (sym: string, v: number) => { const k = normSym(sym); comp[k] = (comp[k] ?? 0) + v; };
@@ -428,6 +478,10 @@ export async function buildSnapshot(): Promise<Snapshot> {
       base.activity = act;
       if (base.dex && coveredMs >= 24 * 3600_000) {
         base.dex.vol24 = act.vol24;
+        if (base.dex.feeSource === "on-chain" && base.dex.feeRate != null) {
+          base.dex.fees24 = act.vol24 * base.dex.feeRate;
+          prov[`${it.slug}-fee`] = { label: "24h fees", value: usdFull(base.dex.fees24), trail: [["Volume", `${usdFull(act.vol24)} of swaps read on-chain`], ["Fee rate", `${pct(base.dex.feeRate, 3)}: the median fee paid by ${base.dex.feeSamples} swaps in 7 days, from each pair's reserves just before the swap`], ["To liquidity providers", base.dex.lpShare != null ? `${pct(base.dex.lpShare, 0)} of fees (factory fee switch read on-chain)` : "unknown"]] };
+        }
         if (act.vol7 != null) base.dex.vol7 = act.vol7;
         prov[`${it.slug}-vol`] = { label: "24h volume", value: usdFull(act.vol24), trail: [["Source", "Swap events read by dawns from every pool of this DEX"], ["Swaps", `${act.swaps24.toLocaleString("en-US")} in the last 24 hours`], ["Price", "Each swap valued at the priced leg, at current token prices"], ["Indexed since", new Date(own!.indexedSince!).toISOString().slice(0, 16).replace("T", " ") + " UTC"]], note: "Fees still come from DefiLlama: fee rates differ between these DEXs and are not read on-chain yet." };
         base.cannotVerify = base.cannotVerify.filter(([k]) => k !== "Swap volume and fees");

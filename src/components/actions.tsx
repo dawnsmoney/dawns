@@ -1,4 +1,5 @@
 "use client";
+import { track } from "@/lib/track";
 
 import { useState } from "react";
 import { useUI, useWatchMap } from "./providers";
@@ -73,7 +74,7 @@ export function CopyReport({ text }: { text: string }) {
   return (
     <button className="btn sun" type="button" disabled={busy} onClick={async () => {
       setBusy(true);
-      try { await navigator.clipboard.writeText(text); toast("Post copied. Paste it into X."); } catch { fallback(); }
+      try { await navigator.clipboard.writeText(text); track("report_copied"); toast("Post copied. Paste it into X."); } catch { fallback(); }
       setBusy(false);
     }}>
       <Copy />Copy post

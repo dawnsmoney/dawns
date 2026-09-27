@@ -5,7 +5,9 @@ import { clients, pool, type ChainKey } from "./clients";
 const factoryAbi = parseAbi([
   "function allPairsLength() view returns (uint256)",
   "function allPairs(uint256) view returns (address)",
+  "function feeTo() view returns (address)",
 ]);
+const slot0Abi = parseAbi(["function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)"]);
 const pairAbi = parseAbi([
   "function token0() view returns (address)",
   "function token1() view returns (address)",
@@ -19,7 +21,8 @@ const erc20 = parseAbi([
 ]);
 
 export interface TokenMeta { address: Address; symbol: string; decimals: number }
-export interface RawPool { chain: ChainKey; kind: "v2" | "v3"; pair: Address; t0: TokenMeta; t1: TokenMeta; r0: number; r1: number; fee?: number }
+/** lpShare: part of the trading fee that stays with liquidity providers, read on-chain (V2 feeTo switch, V3 slot0.feeProtocol). */
+export interface RawPool { chain: ChainKey; kind: "v2" | "v3"; pair: Address; t0: TokenMeta; t1: TokenMeta; r0: number; r1: number; fee?: number; lpShare?: number | null }
 
 const metaCache = new Map<string, TokenMeta>();
 async function tokenMeta(chain: ChainKey, a: Address, blockNumber: bigint): Promise<TokenMeta> {
@@ -42,6 +45,9 @@ export async function readUniV2(chain: ChainKey, factory: Address) {
   const block = await c.getBlock();
   const at = { blockNumber: block.number };
   const n = Number(await c.readContract({ address: factory, abi: factoryAbi, functionName: "allPairsLength", ...at }));
+  // UniswapV2 protocol fee switch: when feeTo is set, 1/6 of fee growth is minted to it
+  const feeTo = await c.readContract({ address: factory, abi: factoryAbi, functionName: "feeTo", ...at }).catch(() => null);
+  const lpShare = feeTo == null ? null : /^0x0{40}$/i.test(feeTo) ? 1 : 5 / 6;
   const idx = Array.from({ length: n }, (_, i) => BigInt(i));
   const pairs = await pool(idx, 8, (i) => c.readContract({ address: factory, abi: factoryAbi, functionName: "allPairs", args: [i], ...at }));
   const pools = await pool(pairs.filter(Boolean) as Address[], 6, async (pair) => {
@@ -51,7 +57,7 @@ export async function readUniV2(chain: ChainKey, factory: Address) {
       c.readContract({ address: pair, abi: pairAbi, functionName: "getReserves", ...at }),
     ]);
     const [t0, t1] = await Promise.all([tokenMeta(chain, a0, block.number), tokenMeta(chain, a1, block.number)]);
-    const p: RawPool = { chain, kind: "v2", pair, t0, t1, r0: Number(res[0]) / 10 ** t0.decimals, r1: Number(res[1]) / 10 ** t1.decimals };
+    const p: RawPool = { chain, kind: "v2", pair, t0, t1, r0: Number(res[0]) / 10 ** t0.decimals, r1: Number(res[1]) / 10 ** t1.decimals, lpShare };
     return p;
   });
   return { chain, block: Number(block.number), timestamp: Number(block.timestamp), pairCount: n, pools: pools.filter((p): p is RawPool => p !== null) };
@@ -83,11 +89,16 @@ export async function readUniV3(chain: ChainKey, factory: Address) {
   const pools = await pool(logs, 6, async (l) => {
     const { token0, token1, fee, pool: addr } = l.args as { token0: Address; token1: Address; fee: number; pool: Address };
     const [t0, t1] = await Promise.all([tokenMeta(chain, token0, block.number), tokenMeta(chain, token1, block.number)]);
-    const [b0, b1] = await Promise.all([
+    const [b0, b1, s0] = await Promise.all([
       c.readContract({ address: token0, abi: erc20, functionName: "balanceOf", args: [addr], ...at }),
       c.readContract({ address: token1, abi: erc20, functionName: "balanceOf", args: [addr], ...at }),
+      c.readContract({ address: addr, abi: slot0Abi, functionName: "slot0", ...at }).catch(() => null),
     ]);
-    const p: RawPool = { chain, kind: "v3", pair: addr, t0, t1, r0: Number(b0) / 10 ** t0.decimals, r1: Number(b1) / 10 ** t1.decimals, fee: Number(fee) };
+    // feeProtocol packs two 4-bit denominators: the protocol takes 1/n of fees (0 = off)
+    const fp = s0 ? Number(s0[5]) : null;
+    const den = fp == null ? null : Math.max(fp % 16, fp >> 4);
+    const lpShare = fp == null ? null : den ? 1 - 1 / den : 1;
+    const p: RawPool = { chain, kind: "v3", pair: addr, t0, t1, r0: Number(b0) / 10 ** t0.decimals, r1: Number(b1) / 10 ** t1.decimals, fee: Number(fee), lpShare };
     return p;
   });
   return { chain, block: Number(block.number), timestamp: Number(block.timestamp), pairCount: logs.length, pools: pools.filter((p): p is RawPool => p !== null) };

@@ -79,13 +79,13 @@ Vercel, framework preset Next.js. Pushing to `main` deploys.
 | `NEXT_PUBLIC_TELEGRAM_BOT` | Vercel | Bot username without @, used for "Alert me on Telegram" links |
 | `TELEGRAM_CHANNEL_ID` | Vercel, optional | Channel for the 07:00 Athens morning report (bot must be admin) |
 | `NEXT_PUBLIC_SITE_URL` | Vercel, optional | Defaults to `https://www.dawns.money` |
+| `ADMIN_WALLETS` | Vercel | Comma-separated wallet addresses that can open `/admin` |
 
 Scheduling: `.github/workflows/tick.yml` calls the tick every 10 minutes. `vercel.json` adds a daily backup run.
 The tick registers the Telegram webhook by itself on production, so there is no setup step.
 
 ## Next
 
-1. Per-account lending positions (health factors, bad debt) from the Kaskad event index
-2. Fee rates per DEX read on-chain, so fees stop depending on DefiLlama
-3. Decode the guardian multisig behind the bridge Entry address
-4. Allocation: per-protocol Watch thresholds on the server (today they live in the browser)
+1. Decode the guardian multisig behind the bridge Entry address
+2. Weekly "Kaspa DeFi this week" post for the channel and X
+3. Liquidation price per borrower (the KAS price at which each loan becomes liquidatable)

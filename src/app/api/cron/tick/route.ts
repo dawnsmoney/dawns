@@ -3,7 +3,7 @@ import { buildSnapshot } from "@/lib/snapshot";
 import { hasDb, ensureSchema } from "@/lib/db";
 import { recordSnapshot, diffSignals, deliver, maybeDailyReport, planAlerts } from "@/lib/alerts";
 import { hasBot, ensureWebhook } from "@/lib/telegram";
-import { indexEvents, indexBridgeExits, checkPayouts } from "@/lib/indexer";
+import { indexEvents, indexBridgeExits, checkPayouts, indexKaskadAccounts, readKaskadPositions } from "@/lib/indexer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -29,6 +29,8 @@ export async function GET(req: Request) {
     await step("schema", ensureSchema);
     await step("history", () => recordSnapshot(s));
     await step("events", () => indexEvents(s));
+    await step("kaskad accounts", indexKaskadAccounts);
+    await step("kaskad positions", () => readKaskadPositions(s));
     await step("exits", () => indexBridgeExits(s));
     await step("payouts", () => checkPayouts());
     let events: Awaited<ReturnType<typeof diffSignals>> = [];

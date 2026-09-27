@@ -45,6 +45,8 @@ export interface KaskadMarket {
   oracleSource: Address | null;
   oracleOk: boolean;
   oracleError: string | null;
+  oracleUpdatedAt: number | null;   // unix seconds, when the oracle reports StalePrice
+  oracleMaxAge: number | null;      // seconds the oracle accepts
   supplied: number; // tokens
   borrowed: number;
   cash: number; // underlying held by the aToken contract
@@ -108,7 +110,12 @@ export async function readKaskad(fallbackPrice?: (symbol: string) => number | nu
         c.readContract({ address: dp, abi: dpAbi, functionName: "getReserveData", args: [a], ...at }),
         c.readContract({ address: dp, abi: dpAbi, functionName: "getReserveConfigurationData", args: [a], ...at }),
         // the oracle reverts on calls pinned to a block number, so read it at "latest"
-        c.readContract({ address: oracle, abi: oracleAbi, functionName: "getAssetPrice", args: [a] }).catch((e: Error) => ({ error: (e.message.match(/0x[0-9a-f]{8}\b/i)?.[0] ?? "revert") })),
+        c.readContract({ address: oracle, abi: oracleAbi, functionName: "getAssetPrice", args: [a] }).catch((e: Error) => {
+          // StalePrice(uint256 updatedAt, uint256 maxAge) = 0x2730eb48: the feed is older than the oracle accepts
+          const raw = (e.message.match(/0x[0-9a-f]{8,}/gi) ?? []).sort((x, y) => y.length - x.length)[0] ?? "";
+          const stale = /^0x2730eb48/i.test(raw) && raw.length >= 10 + 128 ? { updatedAt: Number(BigInt("0x" + raw.slice(10, 74))), maxAge: Number(BigInt("0x" + raw.slice(74, 138))) } : null;
+          return { error: stale ? "StalePrice" : raw.slice(0, 10) || "revert", stale };
+        }),
         c.readContract({ address: oracle, abi: oracleAbi, functionName: "getSourceOfAsset", args: [a], ...at }).catch(() => null),
         c.readContract({ address: dp, abi: dpAbi, functionName: "getPaused", args: [a], ...at }).catch(() => null),
         c.readContract({ address: dp, abi: dpAbi, functionName: "getReserveCaps", args: [a], ...at }),
@@ -117,11 +124,12 @@ export async function readKaskad(fallbackPrice?: (symbol: string) => number | nu
       const dec = Number(cfg[0]);
       const cashRaw = await c.readContract({ address: a, abi: erc20, functionName: "balanceOf", args: [addrs[0]], ...at });
       const oracleError = typeof px === "object" && px !== null ? px.error : null;
+      const oracleStale = typeof px === "object" && px !== null ? px.stale : null;
       let price = oracleError ? NaN : Number(px as bigint) / Number(unit);
       if (!isFinite(price)) price = fallbackPrice?.(t.symbol) ?? 0;
       const supplied = num(d[2], dec), borrowed = num(d[3] + d[4], dec), cash = num(cashRaw, dec);
       const m: KaskadMarket = {
-        symbol: t.symbol, asset: a, aToken: addrs[0], debtToken: addrs[2], decimals: dec, price, oracleSource: src, oracleOk: !oracleError, oracleError,
+        symbol: t.symbol, asset: a, aToken: addrs[0], debtToken: addrs[2], decimals: dec, price, oracleSource: src, oracleOk: !oracleError, oracleError, oracleUpdatedAt: oracleStale?.updatedAt ?? null, oracleMaxAge: oracleStale?.maxAge ?? null,
         supplied, borrowed, cash,
         suppliedUsd: supplied * price, borrowedUsd: borrowed * price, cashUsd: cash * price,
         utilization: supplied > 0 ? borrowed / supplied : 0,

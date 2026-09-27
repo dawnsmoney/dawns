@@ -1,4 +1,5 @@
 "use client";
+import { track } from "@/lib/track";
 
 import Link from "next/link";
 import { Fragment, useState } from "react";
@@ -57,7 +58,7 @@ export function OpportunityTable({ rows }: { rows: Opportunity[] }) {
         <tbody>
           {shown.map((o) => (
             <Fragment key={o.id}>
-              <tr onClick={() => setOpen(open === o.id ? null : o.id)} style={{ cursor: "pointer" }} aria-expanded={open === o.id}>
+              <tr onClick={() => { if (open !== o.id) track("opportunity_open", { id: o.id }); setOpen(open === o.id ? null : o.id); }} style={{ cursor: "pointer" }} aria-expanded={open === o.id}>
                 <td>
                   <span className="proto"><Pair o={o} /><span><b>{o.name}</b><small><Link href={`/protocols/${o.protocol}`} onClick={(e) => e.stopPropagation()}>{o.pname}</Link> · {o.chain === "igra" ? "Igra" : "Kasplex"}</small></span></span>
                 </td>

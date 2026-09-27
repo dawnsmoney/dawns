@@ -1,4 +1,5 @@
 "use client";
+import { track } from "@/lib/track";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -54,7 +55,7 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
   useEffect(() => {
     loadAccount().then(adopt).catch(() => null);
     // coming back from Telegram after linking: refresh the account
-    const onFocus = () => loadAccount().then((a) => setAccount(a)).catch(() => null);
+    const onFocus = () => loadAccount().then((a) => { setAccount(a); window.dispatchEvent(new Event("dawns:auth")); }).catch(() => null);
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, []);
@@ -62,8 +63,9 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
   const set = (patch: Partial<Policy>) => setPolicy((p) => ({ ...p, ...patch }));
   const connect = async (key: string) => {
     setBusy(key); setMsg(null);
-    try { adopt(await signInWith(key)); setMsg("Signed in. Your profile is saved to this wallet."); }
-    catch (e) { setMsg((e as Error).message); }
+    track("signin_start", { wallet: key.startsWith("6963:") ? "evm" : key });
+    try { adopt(await signInWith(key)); window.dispatchEvent(new Event("dawns:auth")); track("signin_ok", { wallet: key.startsWith("6963:") ? "evm" : key }); setMsg("Signed in. Your profile is saved to this wallet."); }
+    catch (e) { track("signin_fail", { wallet: key.startsWith("6963:") ? "evm" : key, error: (e as Error).message }); setMsg((e as Error).message); }
     finally { setBusy(null); }
   };
   const put = async (body: object, done: string, key: string) => {
@@ -73,6 +75,7 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       setAccount(j); setMsg(done);
+      track(key === "save" ? "profile_saved" : "plan" in body && (body as { plan: unknown }).plan === null ? "plan_unfollowed" : "plan_followed", { risk: policy.risk, exit: policy.exit });
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(null); }
   };
   const save = () => put({}, "Profile saved.", "save");
@@ -85,12 +88,13 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
       const r = await fetch("/api/telegram/link", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
+      track("telegram_link");
       window.open(j.url, "_blank", "noopener");
       setMsg("Telegram opened. Press Start there, then come back to this page.");
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(null); }
   };
   const following = account?.plan?.lines?.length ? account.plan : null;
-  const out = async () => { await signOut(); setAccount(null); setMsg("Signed out."); };
+  const out = async () => { await signOut(); setAccount(null); window.dispatchEvent(new Event("dawns:auth")); setMsg("Signed out."); };
 
   const placed = plan.lines.reduce((s, l) => s + l.usd, 0);
   return (

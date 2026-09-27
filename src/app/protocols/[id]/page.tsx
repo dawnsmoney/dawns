@@ -297,6 +297,53 @@ function Activity({ p, s }: { p: ProtocolView; s: Snapshot }) {
   );
 }
 
+function Borrowers({ p }: { p: ProtocolView }) {
+  const P = p.lending?.positions;
+  if (!P) return <p className="muted">dawns is still reading every account. This appears after the next runs.</p>;
+  const maxDebt = Math.max(1, ...P.buckets.map((b) => b.debtUsd));
+  const hfColor = (hf: number | null) => (hf == null ? "var(--ink-3)" : hf < 1 ? "var(--crit)" : hf < 1.1 ? "var(--warn)" : "var(--good)");
+  return (
+    <div style={{ display: "grid", gap: 22 }}>
+      <div className="grid gA">
+        <div className="card">
+          <div className="c-head"><h3>Debt by health factor</h3><span className="tag">{P.borrowers} borrowers</span></div>
+          <div style={{ display: "grid", gap: 14 }}>
+            {P.buckets.map((b, i) => (
+              <div key={b.label} style={{ display: "grid", gap: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14.5 }}><span>{b.label}</span><span><b>{usd(b.debtUsd)}</b> <span className="muted">· {b.accounts}</span></span></div>
+                <div className="bar-h"><i style={{ width: `${(b.debtUsd / maxDebt) * 100}%`, background: i === 0 ? "var(--crit)" : i === 1 ? "var(--warn)" : SERIES[2] }} /></div>
+              </div>
+            ))}
+          </div>
+          <p className="foot">Health factor below 1 means the loan can be liquidated. Computed from every account&apos;s balances at market prices.</p>
+        </div>
+        <div className="card">
+          <div className="c-head"><h3>Solvency of loans</h3></div>
+          <div className="vlist">
+            <ProvRow id={`${p.id}-pos`} className="vrow"><span style={{ color: "var(--ink-3)" }}><Info /></span><div>Accounts ever active<small>{P.suppliers} with a balance now · {P.borrowers} borrowing</small></div><b>{P.accounts.toLocaleString("en-US")}</b></ProvRow>
+            <div className="vrow"><span /><div>Debt outstanding</div><b>{usd(P.debtUsd)}</b></div>
+            <div className="vrow"><span style={{ color: P.liquidatableUsd > 0 ? "var(--warn)" : "var(--good)" }}>{P.liquidatableUsd > 0 ? <Alert /> : <Check />}</span><div>Can be liquidated now<small>{P.liquidatable} accounts below 1.0</small></div><b>{usd(P.liquidatableUsd)}</b></div>
+            <div className="vrow"><span style={{ color: P.badDebtUsd > 0 ? "var(--crit)" : "var(--good)" }}>{P.badDebtUsd > 0 ? <Alert /> : <Check />}</span><div><b style={{ fontSize: 15 }}>Bad debt</b><small>Debt larger than collateral · {P.badDebtAccounts} accounts</small></div><b className={P.badDebtUsd > 0 ? "down" : "up"}>{usd(P.badDebtUsd)}</b></div>
+          </div>
+          {P.unread > 0 && <p className="foot">{P.unread} accounts hold no balance now.</p>}
+        </div>
+      </div>
+      <div className="card flush"><div className="tbl-wrap"><table>
+        <thead><tr><th>Largest borrowers</th><th>Collateral</th><th>Debt</th><th>Health factor</th></tr></thead>
+        <tbody>
+          {P.top.map((b) => (
+            <tr key={b.address}>
+              <td className="mono" style={{ fontSize: 13 }}><a href={explorer("igra", b.address)} target="_blank" rel="noopener noreferrer">{short(b.address)}</a></td>
+              <td>{usd(b.collateralUsd)}</td><td>{usd(b.debtUsd)}</td>
+              <td><b style={{ color: hfColor(b.hf), fontFamily: "var(--display)" }}>{b.hf == null ? "—" : b.hf > 100 ? ">100" : b.hf.toFixed(2)}</b></td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div></div>
+    </div>
+  );
+}
+
 function Contracts({ p }: { p: ProtocolView }) {
   if (!p.contracts.length) return <p className="muted">dawns has not mapped this protocol&apos;s contracts yet.</p>;
   return (
@@ -360,7 +407,7 @@ export default async function ProtocolPage({ params }: PageProps<"/protocols/[id
   const tabs: [string, React.ReactNode][] = [
     ["Financials", <Financials key="f" p={p} />],
     ...(p.lending || p.dex ? ([[p.lending ? "Markets" : "Pools", <Markets key="m" p={p} />]] as [string, React.ReactNode][]) : []),
-    ...(p.lending ? ([["Liquidity", <Liquidity key="l" p={p} />]] as [string, React.ReactNode][]) : []),
+    ...(p.lending ? ([["Liquidity", <Liquidity key="l" p={p} />], ["Borrowers", <Borrowers key="b" p={p} />]] as [string, React.ReactNode][]) : []),
     ["Assets", <Assets key="a" p={p} />],
     ["Activity", <Activity key="ac" p={p} s={s} />],
     ["Contracts", <Contracts key="c" p={p} />],

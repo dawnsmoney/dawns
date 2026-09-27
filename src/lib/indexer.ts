@@ -17,6 +17,7 @@ const EV = {
   zSwap: parseAbiItem("event Swap(address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out, address indexed to, bool flag)"),
   v3Swap: parseAbiItem("event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)"),
   v2Burn: parseAbiItem("event Burn(address indexed sender, uint256 amount0, uint256 amount1, address indexed to)"),
+  sync: parseAbiItem("event Sync(uint112 reserve0, uint112 reserve1)"),
   v3Burn: parseAbiItem("event Burn(address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1)"),
 };
 const LEND = {
@@ -27,7 +28,7 @@ const LEND = {
   liquidation: parseAbiItem("event LiquidationCall(address indexed collateralAsset, address indexed debtAsset, address indexed user, uint256 debtToCover, uint256 liquidatedCollateralAmount, address liquidator, bool receiveAToken)"),
 };
 
-const INDEX_VERSION = "2";      // 2: ZealousSwap swap event
+const INDEX_VERSION = "3";      // 2: ZealousSwap swap event · 3: Sync for fee samples
 const CHUNK = 50_000;          // blocks per getLogs call (both RPCs answer 50k in < 0.5 s)
 const MAX_CHUNKS = 12;         // per chain per tick; a 7-day backfill finishes in one or two ticks
 const BACKFILL_SEC = 7 * 86_400;
@@ -97,11 +98,14 @@ async function indexChain(s: Snapshot, chain: ChainKey) {
     const range = { fromBlock: BigInt(from), toBlock: BigInt(to) };
 
     const [dexLogs, lendLogs] = await Promise.all([
-      pools.size ? c.getLogs({ events: [EV.v2Swap, EV.zSwap, EV.v3Swap, EV.v2Burn, EV.v3Burn], ...range }) : Promise.resolve([]),
+      pools.size ? c.getLogs({ events: [EV.v2Swap, EV.zSwap, EV.v3Swap, EV.v2Burn, EV.v3Burn, EV.sync], ...range }) : Promise.resolve([]),
       kaskad ? c.getLogs({ address: KASKAD.pool, events: Object.values(LEND), ...range }) : Promise.resolve([]),
     ]);
 
     const dex: Record<string, unknown>[] = [];
+    const fees: Record<string, unknown>[] = [];
+    const syncs = new Map<string, { r0: bigint; r1: bigint }>();
+    for (const l of dexLogs) if (l.eventName === "Sync" && l.transactionHash && l.logIndex != null) { const a = (l.args ?? {}) as { reserve0?: bigint; reserve1?: bigint }; if (a.reserve0 != null && a.reserve1 != null) syncs.set(`${l.transactionHash}:${l.logIndex}:${low(l.address)}`, { r0: a.reserve0, r1: a.reserve1 }); }
     for (const l of dexLogs) {
       const ref = pools.get(low(l.address));
       if (!ref || !l.transactionHash || l.logIndex == null || l.blockNumber == null) continue;
@@ -109,7 +113,23 @@ async function indexChain(s: Snapshot, chain: ChainKey) {
       const [d0, d1] = [pool.tk[0].d, pool.tk[1].d];
       const a = (l.args ?? {}) as Record<string, bigint>;
       let usd = 0, kind = "swap";
-      if (l.eventName === "Swap" && "amount0In" in a) usd = valueOne(pool, amt(a.amount0In + a.amount0Out, d0), amt(a.amount1In + a.amount1Out, d1));
+      if (l.eventName === "Swap" && "amount0In" in a) {
+        usd = valueOne(pool, amt(a.amount0In + a.amount0Out, d0), amt(a.amount1In + a.amount1Out, d1));
+        // UniV2 emits Sync (post-swap reserves) right before Swap: pre-swap reserves give the fee this swap paid
+        const sy = syncs.get(`${l.transactionHash}:${l.logIndex - 1}:${low(l.address)}`);
+        const zero = BigInt(0);
+        if (sy) {
+          let f: number | null = null;
+          if (a.amount0In > zero && a.amount1Out > zero && a.amount1In === zero && a.amount0Out === zero) {
+            const rin = Number(sy.r0 - a.amount0In), rout = Number(sy.r1 + a.amount1Out);
+            f = 1 - (Number(a.amount1Out) * rin) / (Number(a.amount0In) * (rout - Number(a.amount1Out)));
+          } else if (a.amount1In > zero && a.amount0Out > zero && a.amount0In === zero && a.amount1Out === zero) {
+            const rin = Number(sy.r1 - a.amount1In), rout = Number(sy.r0 + a.amount0Out);
+            f = 1 - (Number(a.amount0Out) * rin) / (Number(a.amount1In) * (rout - Number(a.amount0Out)));
+          }
+          if (f != null && Number.isFinite(f) && f >= 0 && f < 0.1 && usd >= 1) fees.push({ chain, tx: l.transactionHash, log_index: l.logIndex, t: when(l.blockNumber), protocol, pair: low(l.address), fee: f });
+        }
+      }
       else if (l.eventName === "Swap" && "amount0" in a) usd = valueOne(pool, amt(abs(a.amount0), d0), amt(abs(a.amount1), d1));
       else if (l.eventName === "Burn" && "amount0" in a) { kind = "remove"; usd = valueBoth(pool, amt(a.amount0, d0), amt(a.amount1, d1)); }
       else continue;
@@ -133,6 +153,7 @@ async function indexChain(s: Snapshot, chain: ChainKey) {
     }
     await insertJson("dex_events", [["chain", "text"], ["tx", "text"], ["log_index", "int"], ["block", "bigint"], ["t", "timestamptz"], ["protocol", "text"], ["pair", "text"], ["kind", "text"], ["usd", "float8"], ["label", "text"]], dex);
     await insertJson("lending_events", [["chain", "text"], ["tx", "text"], ["log_index", "int"], ["block", "bigint"], ["t", "timestamptz"], ["protocol", "text"], ["kind", "text"], ["market", "text"], ["account", "text"], ["amount", "float8"], ["usd", "float8"]], lend);
+    await insertJson("fee_samples", [["chain", "text"], ["tx", "text"], ["log_index", "int"], ["t", "timestamptz"], ["protocol", "text"], ["pair", "text"], ["fee", "float8"]], fees);
     await setMeta(key, String(to));
     await setMeta(`idx_at:${chain}`, String(tt * 1000));
     dexRows += dex.length; lendRows += lend.length; chunks++;
@@ -237,3 +258,80 @@ export async function checkPayouts(limit = 60) {
 }
 
 export type { Address };
+
+/* =====================================================================
+ * 3. Kaskad accounts and their positions (health factor, bad debt).
+ *    Accounts come from every Supply/Borrow since the pool launched;
+ *    positions from Pool.getUserAccountData, all accounts every run.
+ * ===================================================================== */
+const balAbi = [{ type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "a", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
+
+export async function indexKaskadAccounts() {
+  const c = clients.igra;
+  const latest = Number(await c.getBlockNumber());
+  let cur = await getMeta("acct:kaskad");
+  if (cur == null) {
+    // first run: find the block the Pool was deployed at (binary search on code), start there
+    let lo = 0, hi = latest;
+    while (hi - lo > 1000) { const mid = Math.floor((lo + hi) / 2); const code = await c.getCode({ address: KASKAD.pool, blockNumber: BigInt(mid) }).catch(() => undefined); if (code && code !== "0x") hi = mid; else lo = mid; }
+    cur = String(Math.max(0, lo - 1));
+    await setMeta("acct:kaskad", cur);
+  }
+  let from = Number(cur) + 1;
+  let chunks = 0, found = 0;
+  while (from <= latest && chunks < 60) {
+    const to = Math.min(from + CHUNK - 1, latest);
+    const logs = await c.getLogs({ address: KASKAD.pool, events: [LEND.supply, LEND.borrow], fromBlock: BigInt(from), toBlock: BigInt(to) });
+    const rows = new Map<string, number>();
+    for (const l of logs) {
+      const a = (l.args ?? {}) as { onBehalfOf?: string };
+      if (a.onBehalfOf && l.blockNumber != null && !rows.has(a.onBehalfOf.toLowerCase())) rows.set(a.onBehalfOf.toLowerCase(), Number(l.blockNumber));
+    }
+    await insertJson("kaskad_accounts", [["address", "text"], ["first_block", "bigint"]], [...rows].map(([address, first_block]) => ({ address, first_block })));
+    await setMeta("acct:kaskad", String(to));
+    found += rows.size; chunks++; from = to + 1;
+  }
+  return `${chunks} chunks, ${found} account sightings, ${Math.max(0, latest - from + 1)} blocks behind`;
+}
+
+/**
+ * Every account's Kaskad position from its aToken and variable-debt balances, valued at the prices
+ * the snapshot uses (oracle when it answers, market otherwise). Health factor as Aave computes it:
+ * Σ collateral × liquidation threshold ÷ Σ debt. Assumes supplied assets count as collateral (the default).
+ * Pool.getUserAccountData is not used because it reverts whenever Kaskad's oracle is stale.
+ */
+export async function readKaskadPositions(s: Snapshot) {
+  const k = s.protocols.find((p) => p.id === "kaskad")?.lending;
+  if (!k) return "no Kaskad read this run";
+  const q = sql();
+  const accts = ((await q.query("select address from kaskad_accounts")) as { address: string }[]).map((r) => r.address as Address);
+  if (!accts.length) return "no accounts yet";
+  const mk = k.markets.map((m) => ({ m, px: m.suppliedUsd && m.supplied ? m.suppliedUsd / m.supplied : m.price }));
+  const rows: Record<string, unknown>[] = [];
+  const now = new Date().toISOString();
+  const per = mk.length * 2;
+  const step = Math.max(1, Math.floor(400 / per));
+  for (let i = 0; i < accts.length; i += step) {
+    const batch = accts.slice(i, i + step);
+    const calls = batch.flatMap((a) => mk.flatMap(({ m }) => [
+      { address: m.aToken as Address, abi: balAbi, functionName: "balanceOf" as const, args: [a] as const },
+      { address: m.debtToken as Address, abi: balAbi, functionName: "balanceOf" as const, args: [a] as const },
+    ]));
+    const res = await clients.igra.multicall({ contracts: calls, allowFailure: true });
+    batch.forEach((a, bi) => {
+      let coll = 0, weighted = 0, debt = 0, ok = true;
+      mk.forEach(({ m, px }, mi) => {
+        const [sup, bor] = [res[bi * per + mi * 2], res[bi * per + mi * 2 + 1]];
+        if (sup.status !== "success" || bor.status !== "success") { ok = false; return; }
+        const c = (Number(sup.result) / 10 ** m.decimals) * px, d = (Number(bor.result) / 10 ** m.decimals) * px;
+        coll += c; weighted += c * m.liquidationThreshold; debt += d;
+      });
+      if (!ok) return;
+      rows.push({ address: a.toLowerCase(), collateral_usd: coll, debt_usd: debt, hf: debt > 0.01 ? weighted / debt : null, lt: coll > 0 ? weighted / coll : null, updated_at: now });
+    });
+  }
+  await insertJson("kaskad_positions",
+    [["address", "text"], ["collateral_usd", "float8"], ["debt_usd", "float8"], ["hf", "float8"], ["lt", "float8"], ["updated_at", "timestamptz"]], rows,
+    "on conflict (address) do update set collateral_usd = excluded.collateral_usd, debt_usd = excluded.debt_usd, hf = excluded.hf, lt = excluded.lt, updated_at = excluded.updated_at");
+  return `${rows.length} of ${accts.length} positions read`;
+}

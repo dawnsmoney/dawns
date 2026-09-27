@@ -27,7 +27,8 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
         if (m.utilization >= 0.95) notes.push(`The rate is high because suppliers cannot leave: only ${usd(m.cashUsd)} can be withdrawn now.`);
         else if (rng && rng.utilMax >= 0.95 && rng.hours >= 1) notes.push(`Utilization reached ${pct(rng.utilMax, 0)} in the last ${Math.round(rng.hours)} h, when withdrawals were blocked.`);
         if (m.frozen) notes.push("Frozen: no new deposits or borrows.");
-        if (!m.oracleOk) notes.push("Kaskad's price oracle reverts for this asset.");
+        if (m.oracleError === "StalePrice") notes.push("Kaskad's price oracle is stale: borrowers cannot withdraw collateral and liquidations fail until it updates. Suppliers without loans can still withdraw.");
+        else if (!m.oracleOk) notes.push("Kaskad's price oracle reverts for this asset.");
         else if (m.oracleDeviation != null && Math.abs(m.oracleDeviation) >= 0.02) notes.push(`Oracle price is ${pct(Math.abs(m.oracleDeviation))} off market.`);
         if (!p.lending.aclAdminIsContract) notes.push("The protocol admin is a single key.");
         notes.push("KSKD incentives are not included.");
@@ -50,7 +51,8 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
         const key = pool.pair.toLowerCase();
         const pr = own?.pairs.get(key) ?? null;
         const feeRate = pool.kind === "v3" ? (pool.fee != null ? pool.fee / 1e6 : null) : p.dex.feeRate;
-        const lpShare = p.dex.lpShare ?? 1;
+        const lpShare = pool.lpShare ?? p.dex.lpShare ?? 1;
+        const feeSrc = pool.kind === "v3" ? "fee tier on-chain" : p.dex.feeSource === "on-chain" ? `median fee of ${p.dex.feeSamples} swaps` : "fee rate from DefiLlama";
         let apy: number | null = null;
         let basis = "Measuring: dawns needs 24 hours of swaps";
         if (feeRate == null) basis = "Fee rate unknown";
@@ -58,7 +60,7 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
           const full = covered >= 6.9 * DAY;
           const daily = full ? (pr?.vol7 ?? 0) / 7 : (pr?.vol24 ?? 0);
           apy = (daily * feeRate * lpShare * 365) / pool.usd;
-          basis = `${pct(feeRate * lpShare, 2)} to LPs on ${full ? "7-day average" : "last 24h"} swap volume`;
+          basis = `${pct(feeRate * lpShare, 2)} to LPs (${feeSrc}) on ${full ? "7-day average" : "last 24h"} swap volume`;
         }
         // price range: current reserves plus every hourly reading of the last 7 days
         const cur = pool.reserves[0] > 0 ? pool.reserves[1] / pool.reserves[0] : null;
@@ -75,7 +77,7 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
         if (turnover != null && turnover >= 3) notes.push(`Volume is ${turnover.toFixed(0)}× the pool per day. High turnover can be one wallet trading back and forth; check before trusting the yield.`);
         if (pool.kind === "v3") notes.push("Concentrated liquidity: you earn only while the price is in your range. The yield shown is for the pool as a whole.");
         if (pool.tk.some((t) => t.px == null)) notes.push("One token has no reliable price; value counts the priced side only.");
-        if (p.dex.lpShare != null && p.dex.lpShare < 0.999) notes.push(`${pct(1 - p.dex.lpShare, 0)} of trading fees go to the protocol, not LPs.`);
+        if (lpShare < 0.999) notes.push(`${pct(1 - lpShare, 0)} of trading fees go to the protocol, not LPs (read on-chain).`);
         const [status, statusText]: [Status, string] = turnover != null && turnover >= 3 ? ["warn", "Check volume"] : ilAtMove != null && ilAtMove >= 0.05 ? ["warn", "Volatile"] : ["good", "Open"];
         out.push({
           id: `${p.id}:${key}`, kind: "lp", protocol: p.id, pname: p.name, chain: pool.chain,

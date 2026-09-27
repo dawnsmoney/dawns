@@ -1,4 +1,5 @@
 "use client";
+import { track } from "@/lib/track";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Provenance, RuleKey, Signal, Status } from "@/lib/types";
@@ -29,6 +30,32 @@ function write(next: WatchMap) {
 }
 const subscribe = (l: () => void) => { listeners.add(l); return () => listeners.delete(l); };
 export function useWatchMap(): WatchMap { return useSyncExternalStore(subscribe, read, () => EMPTY); }
+
+/* ---------- server copy: signed-in viewers keep their rules on dawns, so Telegram can use them ---------- */
+type ServerState = { signedIn: boolean; telegram: boolean };
+let server: ServerState = { signedIn: false, telegram: false };
+const OFF: ServerState = { signedIn: false, telegram: false };
+const serverListeners = new Set<() => void>();
+export function useServerWatch(): ServerState {
+  return useSyncExternalStore((l) => { serverListeners.add(l); return () => serverListeners.delete(l); }, () => server, () => OFF);
+}
+function putEntry(protocol: string, entry: WatchEntry | null) {
+  if (!server.signedIn) return;
+  fetch("/api/watch", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ protocol, entry }) }).catch(() => null);
+}
+/** Pull the server copy; server entries win, local-only entries are pushed up (first sign-in). */
+async function syncWatch() {
+  try {
+    const r = await fetch("/api/watch", { cache: "no-store" });
+    const j = (await r.json()) as { signedIn: boolean; telegram?: boolean; entries?: WatchMap };
+    server = { signedIn: !!j.signedIn, telegram: !!j.telegram };
+    serverListeners.forEach((l) => l());
+    if (!j.signedIn) return;
+    const local = read(), remote = j.entries ?? {};
+    for (const [id, e] of Object.entries(local)) if (!remote[id]) putEntry(id, e);
+    write({ ...local, ...remote });
+  } catch { /* offline or no database: local rules still work */ }
+}
 
 /* ---------- registry: what the current page knows about protocols ---------- */
 export type ProtoLite = { id: string; name: string; letter: string; status: Status; statusText: string; kind: Kind; tvl: number; floor: boolean };
@@ -81,6 +108,12 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     tRef.current = setTimeout(() => setToast(null), 2600);
   }, []);
   const close = useCallback(() => { setProv(null); setWatch(null); }, []);
+  useEffect(() => {
+    syncWatch();
+    const again = () => { syncWatch(); };
+    window.addEventListener("dawns:auth", again);
+    return () => window.removeEventListener("dawns:auth", again);
+  }, []);
 
   useEffect(() => {
     const open = prov || watch;
@@ -92,7 +125,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   }, [prov, watch, close]);
 
   return (
-    <UICtx.Provider value={{ openProv: setProv, openWatch: setWatch, toast, registry, register }}>
+    <UICtx.Provider value={{ openProv: (id: string) => { track("prov_open", { id }); setProv(id); }, openWatch: setWatch, toast, registry, register }}>
       {children}
       {prov && registry.prov[prov] && <ProvDrawer d={registry.prov[prov]} onClose={close} />}
       {watch && registry.protocols[watch] && <WatchModal p={registry.protocols[watch]} onClose={close} toast={toast} />}
@@ -145,19 +178,24 @@ function WatchModal({ p, onClose, toast }: { p: ProtoLite; onClose: () => void; 
   );
   const [ch, setCh] = useState<string[]>(w?.ch ?? ["inapp"]);
   const tg = tgLink(`watch_${p.id}`);
+  const srv = useServerWatch();
 
   const save = (e: React.FormEvent) => {
     e.preventDefault();
     const rs: WatchEntry["rules"] = { [main.key]: { on: true, v: mainV }, ...state };
     write({ ...read(), [p.id]: { rules: rs, ch } });
+    putEntry(p.id, { rules: rs, ch });
     onClose();
+    track("watch_saved", { protocol: p.id });
     toast(`Watching ${p.name}. ${Object.values(rs).filter((x) => x?.on).length} rules on.`);
   };
   const unwatch = () => {
     const next = { ...read() };
     delete next[p.id];
     write(next);
+    putEntry(p.id, null);
     onClose();
+    track("watch_removed", { protocol: p.id });
     toast(`Stopped watching ${p.name}.`);
   };
 
@@ -167,7 +205,7 @@ function WatchModal({ p, onClose, toast }: { p: ProtoLite; onClose: () => void; 
       <form className="modal" role="dialog" aria-modal="true" aria-label={`Watch ${p.name}`} onSubmit={save}>
         <button className="x" type="button" onClick={onClose} aria-label="Close"><Close /></button>
         <h2><ProtocolCoin p={p} size={40} />Watch {p.name} <Pill t={p.status}>{p.statusText}</Pill></h2>
-        <p className="desc">dawns checks {p.name} and tells you when something crosses a line you set. You decide what to do about it. Rules are saved in this browser. On Telegram, the dawns bot sends you every alert it raises for this protocol.</p>
+        <p className="desc">dawns checks {p.name} and tells you when something crosses a line you set. You decide what to do about it. Rules are saved in this browser, and to your profile when you are signed in. With Telegram connected to your profile, dawns alerts you on these exact thresholds.</p>
         <div>
           <div className="slide-lab">{main.key === "liq" && L ? "Alert me if available liquidity falls below" : main.label}</div>
           <div className="slide-val">{fmt(mainV)}</div>
@@ -205,8 +243,15 @@ function WatchModal({ p, onClose, toast }: { p: ProtoLite; onClose: () => void; 
               <input type="checkbox" checked={ch.includes("inapp")} onChange={(e) => setCh((c) => (e.target.checked ? [...c, "inapp"] : c.filter((x) => x !== "inapp")))} />
               In-app
             </label>
-            {tg ? (
-              <a className="btn ghost sm" href={tg} target="_blank" rel="noopener noreferrer" onClick={() => setCh((c) => (c.includes("telegram") ? c : [...c, "telegram"]))}>
+            {srv.signedIn && srv.telegram ? (
+              <label>
+                <input type="checkbox" checked={ch.includes("telegram")} onChange={(e) => setCh((c) => (e.target.checked ? [...c, "telegram"] : c.filter((x) => x !== "telegram")))} />
+                Telegram, with these thresholds
+              </label>
+            ) : srv.signedIn ? (
+              <a className="btn ghost sm" href="/allocate"><Bell />Connect Telegram to use these thresholds</a>
+            ) : tg ? (
+              <a className="btn ghost sm" href={tg} target="_blank" rel="noopener noreferrer" onClick={() => { track("telegram_click", { protocol: p.id }); setCh((c) => (c.includes("telegram") ? c : [...c, "telegram"])); }}>
                 <Bell />{ch.includes("telegram") ? "Telegram connected · open again" : "Get alerts on Telegram"}
               </a>
             ) : <label><input type="checkbox" disabled />Telegram (soon)</label>}

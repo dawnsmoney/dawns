@@ -12,6 +12,7 @@ export interface ContractRow { n: string; addr: string; chain: "igra" | "kasplex
 export interface MarketView {
   symbol: string; asset: string; aToken: string;
   price: number; marketPrice: number | null; oracleDeviation: number | null; oracleOk: boolean; oracleError: string | null;
+  oracleUpdatedAt: number | null; oracleMaxAge: number | null; debtToken: string;
   supplied: number; borrowed: number; cash: number;
   suppliedUsd: number; borrowedUsd: number; cashUsd: number;
   utilization: number; supplyApy: number; borrowApr: number;
@@ -22,7 +23,7 @@ export interface MarketView {
 export interface PoolView {
   chain: "igra" | "kasplex"; pair: string; symbols: [string, string]; usd: number; share: number;
   reserves: [number, number]; impact10k: number | null;
-  kind: "v2" | "v3"; fee: number | null;
+  kind: "v2" | "v3"; fee: number | null; lpShare: number | null;
   /** token address, decimals and USD price (null if unpriced) — used to value indexed events */
   tk: [PoolToken, PoolToken];
 }
@@ -77,12 +78,20 @@ export interface ProtocolView {
     suppliedUsd: number; borrowedUsd: number; cashUsd: number; utilization: number; coverage: number;
     aclAdmin: string; aclAdminIsContract: boolean; owner: string; ownerIsContract: boolean;
     poolImplementation: string | null; oracle: string; dataProvider: string;
+    /** every account's position, computed by dawns from token balances at market prices */
+    positions?: {
+      accounts: number; suppliers: number; borrowers: number; unread: number; updatedAt: number;
+      debtUsd: number; collateralUsd: number;
+      buckets: { label: string; debtUsd: number; accounts: number }[];   // by health factor
+      liquidatableUsd: number; liquidatable: number; badDebtUsd: number; badDebtAccounts: number;
+      top: { address: string; collateralUsd: number; debtUsd: number; hf: number | null }[];
+    };
   };
   dex?: {
     pools: PoolView[]; pairCount: number; byChain: { igra: number; kasplex: number };
     vol24: number | null; vol7: number | null; fees24: number | null;
     /** trading fee per unit of volume, and the share of it paid to LPs (DefiLlama fees ÷ volume, 7 days) */
-    feeRate: number | null; lpShare: number | null;
+    feeRate: number | null; lpShare: number | null; feeSource: "on-chain" | "defillama" | null; feeSamples: number;
   };
 }
 

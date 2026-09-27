@@ -72,6 +72,7 @@ export function allocate(opps: Opportunity[], p: Policy): Plan {
     if (o.status === "crit") { out(o, "Exit blocked: suppliers cannot withdraw now"); continue; }
     if (o.notes.some((n) => n.startsWith("Frozen"))) { out(o, "Frozen: not accepting deposits"); continue; }
     if (o.apy == null) { out(o, "Yield not measured yet"); continue; }
+    if (p.risk !== "high" && o.notes.some((n) => n.includes("oracle is stale"))) { out(o, "The price oracle is stale, so bad loans cannot be liquidated"); continue; }
     if (o.apy < 0.005) { out(o, `Pays ${pctS(o.apy, 2)}: not worth the risk`); continue; }
     if (o.kind === "lp" && p.avoid.includes("lp")) { out(o, "You chose to avoid providing liquidity"); continue; }
     if (o.kind === "supply" && p.avoid.includes("lending")) { out(o, "You chose to avoid lending"); continue; }
