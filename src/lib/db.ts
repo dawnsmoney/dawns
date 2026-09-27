@@ -43,6 +43,23 @@ const SCHEMA = [
   `create index if not exists alerts_sent_idx on alerts_sent (chat_id, signal_key, sent_at desc)`,
   `create index if not exists protocol_metrics_t on protocol_metrics (taken_at)`,
   `create table if not exists meta (k text primary key, v text not null)`,
+  // event index (dawns' own reads of contract logs)
+  `create table if not exists dex_events (
+    chain text not null, tx text not null, log_index int not null, block bigint not null, t timestamptz not null,
+    protocol text not null, pair text not null, kind text not null, usd double precision not null, label text,
+    primary key (chain, tx, log_index))`,
+  `create index if not exists dex_events_pt on dex_events (protocol, t desc)`,
+  `create table if not exists lending_events (
+    chain text not null, tx text not null, log_index int not null, block bigint not null, t timestamptz not null,
+    protocol text not null, kind text not null, market text not null, account text, amount double precision, usd double precision not null,
+    primary key (chain, tx, log_index))`,
+  `create index if not exists lending_events_pt on lending_events (protocol, t desc)`,
+  // Igra bridge exits and their Kaspa L1 payouts
+  `create table if not exists bridge_exits (
+    tx text primary key, request_id int, block bigint not null, requested_at timestamptz not null,
+    payout_address text not null, amount_sompi bigint not null,
+    paid_tx text, paid_at timestamptz, paid_sompi bigint, last_checked timestamptz, checks int not null default 0)`,
+  `create index if not exists bridge_exits_open on bridge_exits (paid_tx, last_checked)`,
 ];
 
 let ready: Promise<void> | null = null;

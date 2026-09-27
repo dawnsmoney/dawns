@@ -8,7 +8,7 @@ import { usd, pct } from "@/lib/format";
 import { AssetCoin, Change, Clouds, BANNER_CLOUDS, Pill, ProtocolCoin, UtilMeter, SERIES, assetColor } from "@/components/bits";
 import { Alert, Check, External, Info, Minus } from "@/components/icons";
 import { Kpi, ProvRow, WatchButton } from "@/components/actions";
-import { RangeChart, Bars } from "@/components/charts";
+import { RangeChart, Bars, AreaChart } from "@/components/charts";
 import { Feed, SubNav } from "@/components/sections";
 import { DataBridge } from "@/components/providers";
 import { Fresh } from "@/components/Fresh";
@@ -221,19 +221,76 @@ function Assets({ p }: { p: ProtocolView }) {
   );
 }
 
+const EV_TXT: Record<string, string> = { swap: "Swap", remove: "Liquidity removed", supply: "Supply", withdraw: "Withdrawal", borrow: "Borrow", repay: "Repay", liquidation: "Liquidation" };
+const txUrl = (chain: string, tx: string) => `${chain === "kasplex" ? "https://explorer.kasplex.org" : "https://explorer.igralabs.com"}/tx/${tx}`;
+const since = (t: number, now: number) => { const h = Math.max(0, (now - t) / 3600_000); return h < 1 ? `${Math.max(1, Math.round(h * 60))} min ago` : h < 48 ? `${Math.round(h)} h ago` : `${Math.round(h / 24)} days ago`; };
+
 function Activity({ p, s }: { p: ProtocolView; s: Snapshot }) {
   const sig = s.signals.filter((g) => g.p === p.id);
+  const a = p.activity;
+  const hoursIndexed = a ? (s.asOf - a.since) / 3600_000 : 0;
   return (
-    <div className="grid gA">
-      <div className="card">
-        <div className="c-head"><h3>Net flows · 30 days</h3><span className="tag">DefiLlama token balances</span></div>
-        {p.flows.length > 3
-          ? <Bars label="Net flows" values={p.flows.map((f) => f.v)} dates={p.flows.map((f) => f.t)} pos={SERIES[4]} neg={SERIES[3]} posLabel="Net inflow" negLabel="Net outflow" diverging height={230} />
-          : <p className="muted">Not enough history.</p>}
-      </div>
-      <div className="card">
-        <div className="c-head"><h3>Signals</h3></div>
-        <Feed list={sig} names={names(s)} />
+    <div style={{ display: "grid", gap: 22 }}>
+      {(p.intraday.length >= 3 || a) && (
+        <div className="grid gA">
+          <div className="card">
+            <div className="c-head"><h3>{p.lending ? "Withdrawable liquidity" : "Value locked"} · hourly</h3><span className="tag">dawns history</span></div>
+            {p.intraday.length >= 3
+              ? <AreaChart label={`${p.name} hourly`} hourly zero={false} dates={p.intraday.map((x) => x.t)} series={[{ name: p.lending ? "Withdrawable" : "TVL", color: SERIES[2], values: p.intraday.map((x) => x.v) }]} height={230} />
+              : <p className="muted">dawns started recording this protocol recently. The hourly chart appears after a few readings.</p>}
+            <p className="foot">Read by dawns every 10 minutes and stored in its own database{p.d24Source === "dawns" ? ". The 24h change on this page uses these readings." : "."}</p>
+          </div>
+          {a && p.dex && (
+            <div className="card">
+              <div className="c-head"><h3>Swap volume</h3><span className="tag">{hoursIndexed >= 24 ? "on-chain" : `indexing · ${Math.floor(hoursIndexed)}h of 24h`}</span></div>
+              <div className="vlist" style={{ marginBottom: 14 }}>
+                <div className="vrow"><span /><div>Last 24 hours<small>{a.swaps24.toLocaleString("en-US")} swaps</small></div><b>{usd(a.vol24)}</b></div>
+                <div className="vrow"><span /><div>Last 7 days</div><b>{a.vol7 != null ? usd(a.vol7) : "—"}</b></div>
+              </div>
+              {a.volDays.length >= 3 && <Bars label="Daily swap volume" values={a.volDays.map((d) => d.v)} dates={a.volDays.map((d) => d.t)} pos={SERIES[1]} neg={SERIES[3]} posLabel="Volume" negLabel="" height={170} />}
+              <p className="foot">Every Swap event on every pool, valued at the priced leg at current token prices.</p>
+            </div>
+          )}
+          {a && p.lending && (
+            <div className="card flush">
+              <div style={{ padding: "22px 24px 8px" }} className="c-head"><h3>Flows · last 24 hours</h3><span className="tag">{hoursIndexed >= 24 ? "on-chain" : `indexing · ${Math.floor(hoursIndexed)}h`}</span></div>
+              <div className="tbl-wrap"><table>
+                <thead><tr><th>Market</th><th>Supplied</th><th>Withdrawn</th><th>Borrowed</th><th>Repaid</th></tr></thead>
+                <tbody>
+                  {a.lendFlows.length ? a.lendFlows.sort((x, y) => y.supply + y.withdraw - x.supply - x.withdraw).map((f) => (
+                    <tr key={f.market}><td><span className="proto"><AssetCoin a={f.market} size={28} /><b>{f.market}</b></span></td><td>{usd(f.supply)}</td><td>{usd(f.withdraw)}</td><td>{usd(f.borrow)}</td><td>{usd(f.repay)}</td></tr>
+                  )) : <tr><td colSpan={5} className="muted">No supply, withdrawal, borrow or repay in the last 24 hours.</td></tr>}
+                </tbody>
+              </table></div>
+            </div>
+          )}
+        </div>
+      )}
+      {a && a.events.length > 0 && (
+        <div className="card flush"><div className="tbl-wrap"><table>
+          <thead><tr><th>Largest events · 7 days</th><th>Value</th><th>When</th><th>Transaction</th></tr></thead>
+          <tbody>
+            {a.events.slice(0, 10).map((e) => (
+              <tr key={e.tx + e.kind + e.usd}>
+                <td><b>{EV_TXT[e.kind] ?? e.kind}</b> <span className="muted">{e.label}</span></td>
+                <td>{usd(e.usd)}</td><td className="muted">{since(e.t, s.asOf)}</td>
+                <td className="mono" style={{ fontSize: 13 }}><a href={txUrl(e.chain, e.tx)} target="_blank" rel="noopener noreferrer">{e.tx.slice(0, 10)}…</a></td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div></div>
+      )}
+      <div className="grid gA">
+        <div className="card">
+          <div className="c-head"><h3>Net flows · 30 days</h3><span className="tag">DefiLlama token balances</span></div>
+          {p.flows.length > 3
+            ? <Bars label="Net flows" values={p.flows.map((f) => f.v)} dates={p.flows.map((f) => f.t)} pos={SERIES[4]} neg={SERIES[3]} posLabel="Net inflow" negLabel="Net outflow" diverging height={230} />
+            : <p className="muted">Not enough history.</p>}
+        </div>
+        <div className="card">
+          <div className="c-head"><h3>Signals</h3></div>
+          <Feed list={sig} names={names(s)} />
+        </div>
       </div>
     </div>
   );

@@ -3,9 +3,10 @@ import { buildSnapshot } from "@/lib/snapshot";
 import { hasDb, ensureSchema } from "@/lib/db";
 import { recordSnapshot, diffSignals, deliver, maybeDailyReport } from "@/lib/alerts";
 import { hasBot, ensureWebhook } from "@/lib/telegram";
+import { indexEvents, indexBridgeExits, checkPayouts } from "@/lib/indexer";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 /**
  * Every 10 minutes (GitHub Actions) and once a day (Vercel cron):
@@ -27,6 +28,9 @@ export async function GET(req: Request) {
   if (hasDb()) {
     await step("schema", ensureSchema);
     await step("history", () => recordSnapshot(s));
+    await step("events", () => indexEvents(s));
+    await step("exits", () => indexBridgeExits(s));
+    await step("payouts", () => checkPayouts());
     let events: Awaited<ReturnType<typeof diffSignals>> = [];
     await step("signals", async () => { events = await diffSignals(s); return events.map((e) => `${e.kind} ${e.key}`); });
     if (hasBot()) {

@@ -54,6 +54,8 @@ src/
   lib/chain/              on-chain readers (Kaskad, UniV2/V3 DEXs, balances, Igra bridge)
   lib/db.ts               Neon client and schema (created on first run)
   lib/alerts.ts           history writes, signal lifecycle, alert delivery, morning report
+  lib/indexer.ts          event index: DEX swaps/removals, Kaskad flows, bridge exits → L1 payouts
+  lib/history.ts          reads dawns' own history and index back into the snapshot
   lib/telegram.ts         Bot API client, webhook self-setup
   lib/llama.ts            DefiLlama client
   lib/rules.ts            watch rule definitions
@@ -80,7 +82,7 @@ The tick registers the Telegram webhook by itself on production, so there is no 
 
 ## Next
 
-1. Use dawns' own history (Neon) for intraday charts and 24h changes instead of DefiLlama's daily series
-2. Swap and Supply/Borrow event indexing (volume, large withdrawals, per-account risk)
-3. Match each bridge exit to its Kaspa L1 payout
+1. Per-account lending positions (health factors, bad debt) from the Kaskad event index
+2. Fee rates per DEX read on-chain, so fees stop depending on DefiLlama
+3. Decode the guardian multisig behind the bridge Entry address
 4. Email alerts

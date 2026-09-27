@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Banner } from "@/components/Banner";
-import { Pill } from "@/components/bits";
+import { Pill, SERIES } from "@/components/bits";
+import { AreaChart } from "@/components/charts";
 import { Kpi, ProvRow } from "@/components/actions";
 import { DataBridge } from "@/components/providers";
 import { Fresh } from "@/components/Fresh";
@@ -40,6 +41,9 @@ export default async function BridgePage() {
     );
 
   const ok = b.coverage >= 1;
+  const po = b.payouts;
+  const pending = po ? po.unpaidKas : b.inWindowKas;
+  const hrs = (ms: number) => { const h = ms / 3600_000; return h < 48 ? `${Math.max(1, Math.round(h))} h` : `${Math.round(h / 24)} days`; };
   const t = b.coverage >= 1 ? "good" : b.coverage >= 0.99 ? "warn" : "crit";
   return (
     <>
@@ -56,8 +60,17 @@ export default async function BridgePage() {
           <Kpi label="Backing" value={pct(b.coverage)} ctx={<span className={ok ? "up" : "down"}>{ok ? "KAS ≥ iKAS" : "KAS < iKAS"}</span>} prov="bridge-cov" />
           <Kpi label="KAS locked on L1" value={shortKas(b.lockedKas)} ctx={<span className="flat">{px ? usd(b.lockedKas * px) : "Entry address"}</span>} prov="bridge-cov" />
           <Kpi label="iKAS on Igra" value={shortKas(b.ikasSupply)} ctx={<span className="flat">in circulation</span>} prov="bridge-cov" />
-          <Kpi label="Exits in release window" value={shortKas(b.inWindowKas)} ctx={<span className="flat">{b.inWindowCount} in the last 72h</span>} />
-          <Kpi label="Exited all-time" value={shortKas(b.totalBurnedKas)} ctx={<span className="flat">{b.exitsTotal.toLocaleString("en-US")} exits</span>} />
+          {po ? (
+            <>
+              <Kpi label="Awaiting L1 payout" value={shortKas(po.unpaidKas)} ctx={<span className={po.late ? "down" : "flat"}>{po.late ? `${po.late} over 72h` : "none late"}</span>} />
+              <Kpi label="Typical payout time" value={po.medianHours != null ? `${Math.round(po.medianHours)} h` : "—"} ctx={<span className="flat">median, last 30 days</span>} />
+            </>
+          ) : (
+            <>
+              <Kpi label="Exits in release window" value={shortKas(b.inWindowKas)} ctx={<span className="flat">{b.inWindowCount} in the last 72h</span>} />
+              <Kpi label="Exited all-time" value={shortKas(b.totalBurnedKas)} ctx={<span className="flat">{b.exitsTotal.toLocaleString("en-US")} exits</span>} />
+            </>
+          )}
         </div>
 
         <section className="ps">
@@ -79,18 +92,25 @@ export default async function BridgePage() {
                 Until that happens, the KAS still counts as locked but the iKAS is already gone.
               </p>
               <p style={{ margin: "14px 0 0", color: "var(--ink-2)", fontSize: 15, lineHeight: 1.6 }}>
-                Exits requested in the last 72 hours total <b>{kas(b.inWindowKas)}</b>. The surplus is <b>{kas(Math.max(0, b.surplusKas))}</b>.
-                {b.surplusKas >= 0 && b.inWindowKas > 0 ? (b.surplusKas <= b.inWindowKas * 1.05 ? " The surplus is about what pending exits explain." : " The surplus is larger than pending exits alone explain. That is safe for holders.") : ""}
+                {po ? <>Exits burned on Igra but not yet paid on L1 total <b>{kas(pending)}</b>.</> : <>Exits requested in the last 72 hours total <b>{kas(pending)}</b>.</>} The surplus is <b>{kas(Math.max(0, b.surplusKas))}</b>.
+                {b.surplusKas >= 0 && pending > 0 ? (Math.abs(b.surplusKas - pending) <= pending * 0.1 ? " The surplus is about what unpaid exits explain." : b.surplusKas > pending ? " The surplus is larger than unpaid exits explain. That is safe for holders." : " Unpaid exits are larger than the surplus: once they are paid, backing would fall below 100% unless new deposits arrive.") : ""}
               </p>
-              <p className="foot" style={{ marginTop: 14 }}>dawns does not yet match each exit to its L1 payout, so it cannot say which exits have been paid.</p>
+              <p className="foot" style={{ marginTop: 14 }}>{po ? `dawns matches each exit to a Kaspa L1 payment from the Entry address to its payout address. ${po.paid.toLocaleString("en-US")} of ${po.indexed.toLocaleString("en-US")} exits are matched so far.` : "dawns is still matching exits to their L1 payouts."}</p>
             </div>
           </div>
         </section>
 
+        {b.history && b.history.length >= 3 && (
+          <div className="card" style={{ marginTop: 22 }}>
+            <div className="c-head"><h3>Backing · hourly</h3><span className="tag">dawns history</span></div>
+            <AreaChart label="iKAS backing" hourly fmt="pct" refLine={1} refLabel="100%" area="none" dates={b.history.map((x) => x.t)} series={[{ name: "Backing", color: SERIES[2], values: b.history.map((x) => x.v) }]} height={220} />
+          </div>
+        )}
+
         <section className="ps">
           <h2>Recent exits</h2>
           <div className="card flush"><div className="tbl-wrap"><table>
-            <thead><tr><th>Exit</th><th>Amount</th><th>Value</th><th>Requested</th><th>Igra block</th><th>Release window</th></tr></thead>
+            <thead><tr><th>Exit</th><th>Amount</th><th>Value</th><th>Requested</th><th>Igra tx</th><th>Kaspa L1 payout</th></tr></thead>
             <tbody>
               {b.recentExits.slice(0, 25).map((e) => (
                 <tr key={e.id}>
@@ -98,13 +118,20 @@ export default async function BridgePage() {
                   <td>{kas(e.kas)}</td>
                   <td className="muted">{px ? usd(e.kas * px) : "—"}</td>
                   <td>{age(e.ageSec)}</td>
-                  <td><a href={`https://explorer.igralabs.com/block/${e.block}`} target="_blank" rel="noopener noreferrer">{e.block.toLocaleString("en-US")}</a></td>
-                  <td>{e.ageSec <= 72 * 3600 ? <Pill t="info">Pending payout</Pill> : <Pill t="good">Past 72h</Pill>}</td>
+                  <td className="mono" style={{ fontSize: 13 }}>{e.tx ? <a href={`https://explorer.igralabs.com/tx/${e.tx}`} target="_blank" rel="noopener noreferrer">{e.tx.slice(0, 10)}…</a> : <a href={`https://explorer.igralabs.com/block/${e.block}`} target="_blank" rel="noopener noreferrer">#{e.block.toLocaleString("en-US")}</a>}</td>
+                  <td>
+                    {e.paidTx ? (
+                      <a href={`https://explorer.kaspa.org/txs/${e.paidTx}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+                        <Pill t={e.paidKas != null && Math.abs(e.paidKas - e.kas) > 1e-8 ? "warn" : "good"}>{`Paid in ${hrs((e.paidAt ?? 0) - (b.timestamp * 1000 - e.ageSec * 1000))}${e.paidKas != null && Math.abs(e.paidKas - e.kas) > 1e-8 ? ` · ${kas(e.paidKas)}` : ""}`}</Pill>
+                      </a>
+                    ) : po ? (e.ageSec > 72 * 3600 ? <Pill t="warn">{`Not found after ${hrs(e.ageSec * 1000)}`}</Pill> : <Pill t="info">{`Waiting ${hrs(e.ageSec * 1000)}`}</Pill>)
+                      : e.ageSec <= 72 * 3600 ? <Pill t="info">Pending payout</Pill> : <Pill t="good">Past 72h</Pill>}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table></div></div>
-          <p className="foot">Read with KasExitBridge.getExitRequest(id), newest first. Times are estimated from Igra&apos;s block rate ({b.blockTimeSec.toFixed(2)} s per block).</p>
+          <p className="foot">Read with KasExitBridge.getExitRequest(id), newest first. A payout counts when a Kaspa L1 transaction spends from the Entry address and sends the exit amount to the payout address the user gave. An amount in orange means the payment differed from the exit amount.</p>
         </section>
 
         <section className="ps">
@@ -147,7 +174,7 @@ export default async function BridgePage() {
             <div className="card">
               <div className="c-head"><h3>What dawns checks</h3></div>
               <div className="vlist">
-                {[["KAS held by the Entry address", "api.kaspa.org address balance"], ["iKAS in circulation", "Igra explorer coin supply"], ["Every exit request", "KasExitBridge.getExitRequest, nextExitRequestId"], ["Limits, throttle and owner", "getConfig, throttleStatus, owner, EIP-1967 slot"]].map(([a, c]) => (
+                {[["KAS held by the Entry address", "api.kaspa.org address balance"], ["iKAS in circulation", "Igra explorer coin supply"], ["Every exit request", "KasExitBridge.getExitRequest, nextExitRequestId"], ["L1 payout per exit", "Kaspa L1 payments from the Entry address to each payout address"], ["Limits, throttle and owner", "getConfig, throttleStatus, owner, EIP-1967 slot"]].map(([a, c]) => (
                   <div className="vrow" key={a}><span style={{ color: "var(--good)" }}><Check /></span><div>{a}<small>{c}</small></div><b /></div>
                 ))}
               </div>
@@ -155,7 +182,7 @@ export default async function BridgePage() {
             <div className="card">
               <div className="c-head"><h3>Not yet checked</h3></div>
               <div className="vlist">
-                {[["L1 payout per exit", "Matching each burn to its Kaspa payout needs an L1 indexer"], ["Guardian set and threshold", "The multisig script behind the Entry address is not decoded yet"]].map(([a, c]) => (
+                {[["Guardian set and threshold", "The multisig script behind the Entry address is not decoded yet"], ["Why a payout differs", "Some payouts are smaller than the exit amount; the reason is not published on-chain"]].map(([a, c]) => (
                   <div className="vrow" key={a}><span style={{ color: "var(--ink-3)" }}><Info /></span><div>{a}<small>{c}</small></div><b /></div>
                 ))}
               </div>

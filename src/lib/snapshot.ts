@@ -4,6 +4,7 @@ import type { Address } from "viem";
 import { readKaskad, KASKAD, type KaskadState } from "./chain/kaskad";
 import { readUniV2, readUniV3, readBalances, readBondingNative, buildPriceMap, valuePools, type PriceBook, type PricedPool, type RawPool } from "./chain/dex";
 import { readIgraBridge, IGRA_BRIDGE } from "./chain/bridge";
+import { readOwn } from "./history";
 import { explorerAddress, explorerBlock, type ChainKey } from "./chain/clients";
 import { kaspaProtocols, llamaProtocol, llamaPrices, llamaChange24h, dexSummary, feesSummary, type LlamaProtocol, type LlamaListItem } from "./llama";
 import { usd, usdFull, pct } from "./format";
@@ -147,7 +148,7 @@ function lendingView(k: KaskadState, book: PriceBook): { markets: MarketView[]; 
       suppliedUsd: m.suppliedUsd, borrowedUsd: m.borrowedUsd, cashUsd: m.cashUsd,
       utilization: m.utilization, supplyApy: m.supplyApy, borrowApr: m.borrowApr,
       ltv: m.ltv, liquidationThreshold: m.liquidationThreshold, frozen: m.frozen, paused: m.paused, borrowingEnabled: m.borrowingEnabled,
-      supplyCap: m.supplyCap, borrowCap: m.borrowCap, aToken: m.aToken,
+      supplyCap: m.supplyCap, borrowCap: m.borrowCap, aToken: m.aToken, decimals: m.decimals,
     };
   });
   return {
@@ -170,6 +171,8 @@ function poolViews(pools: PricedPool[], total: number): PoolView[] {
       chain: p.chain, pair: p.pair, symbols: [p.t0.symbol, p.t1.symbol] as [string, string], usd: p.usd, share: total ? p.usd / total : 0,
       reserves: [p.r0, p.r1] as [number, number],
       impact10k: p.kind === "v2" && p.usd > 0 ? 1e4 / (p.usd / 2 + 1e4) : null,
+      kind: p.kind, fee: p.fee ?? null,
+      tk: [{ a: p.t0.address, d: p.t0.decimals, px: p.p0 }, { a: p.t1.address, d: p.t1.decimals, px: p.p1 }] as PoolView["tk"],
     }));
 }
 
@@ -196,13 +199,14 @@ export async function buildSnapshot(): Promise<Snapshot> {
 
   // on-chain reads
   const dexJobs = Object.entries(DEX_ADAPTERS).flatMap(([slug, a]) => a.sources.map((src) => ({ slug, src })));
-  const [kaskad, kasdex, attest, lfg, dexReads, bridge] = await Promise.all([
+  const [kaskad, kasdex, attest, lfg, dexReads, bridge, own] = await Promise.all([
     safe("Kaskad on-chain", () => readKaskad((sym) => book.get(normSym(sym).toLowerCase()) ?? null)),
     safe("KasDex on-chain", () => readBalances("igra", KASDEX, KASDEX_TOKENS)),
     safe("Igra Attestation on-chain", () => readBalances("igra", IGRA_ATTESTATION, [IGRA_TOKEN])),
     Promise.all(LFG_FACTORIES.map((f) => safe(`KaspaCom LFG ${f.chain}`, () => readBondingNative(f.chain, f.factory)))),
     Promise.all(dexJobs.map((j) => safe(`${j.slug} ${j.src.chain} on-chain`, () => (j.src.kind === "v3" ? readUniV3(j.src.chain, j.src.factory) : readUniV2(j.src.chain, j.src.factory))))),
     safe("Igra bridge", () => readIgraBridge()),
+    safe("dawns history", readOwn),
   ]);
   const dexBySlug = new Map<string, { src: DexSource; read: NonNullable<(typeof dexReads)[number]> }[]>();
   dexJobs.forEach((j, i) => { const r = dexReads[i]; if (r) dexBySlug.set(j.slug, [...(dexBySlug.get(j.slug) ?? []), { src: j.src, read: r }]); });
@@ -239,7 +243,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
     const base: ProtocolView = {
       id: it.slug, name: it.name, letter: initials(it.name), category: prettyCategory(it.category), kind, historyCleaned: cleaned.removed,
       chains: it.chains.filter((c) => c === "Igra" || c === "Kasplex"), site: it.url ? it.url.replace(/^https?:\/\//, "").replace(/\/.*$/, "") : null,
-      tvl: llamaTvl, llamaTvl, d24: change(history, 1), d7: change(history, 7), history,
+      tvl: llamaTvl, llamaTvl, d24: change(history, 1), d7: change(history, 7), d24Source: "defillama", intraday: [], activity: null, history,
       tokens: Object.entries(tf.comp).map(([sym, v]) => ({ sym, usd: v })).sort((a, b) => b.usd - a.usd),
       flows: tf.flows, priceEffect24: tf.priceEffect, qtyEffect24: tf.qtyEffect,
       borrowed: borrowedLlama, source: "defillama", verifiedShare: null,
@@ -410,6 +414,35 @@ export async function buildSnapshot(): Promise<Snapshot> {
       base.cannotVerify = [["Everything on this page", "dawns does not read this protocol's contracts yet. Figures come from DefiLlama."]];
       prov[`${it.slug}-tvl`] = { label: "Total value locked", value: usdFull(llamaTvl), trail: [["Source", `DefiLlama /protocol/${it.slug}`], ["Chains", base.chains.join(", ")], ["Status", "Not yet read on-chain by dawns"]] };
     }
+    /* --- dawns' own history and event index --- */
+    const mine = own?.series.get(it.slug);
+    if (mine && mine.length >= 2) base.intraday = [...mine.slice(0, -1), { t: Date.now(), v: base.tvl }];
+    const then = own?.at24.get(it.slug);
+    if (then && then > 0 && base.source === "onchain") { base.d24 = base.tvl / then - 1; base.d24Source = "dawns"; }
+    const act = own?.activity.get(it.slug);
+    const coveredMs = own?.indexedSince ? Date.now() - own.indexedSince : 0;
+    if (act) {
+      base.activity = act;
+      if (base.dex && coveredMs >= 24 * 3600_000) {
+        base.dex.vol24 = act.vol24;
+        if (act.vol7 != null) base.dex.vol7 = act.vol7;
+        prov[`${it.slug}-vol`] = { label: "24h volume", value: usdFull(act.vol24), trail: [["Source", "Swap events read by dawns from every pool of this DEX"], ["Swaps", `${act.swaps24.toLocaleString("en-US")} in the last 24 hours`], ["Price", "Each swap valued at the priced leg, at current token prices"], ["Indexed since", new Date(own!.indexedSince!).toISOString().slice(0, 16).replace("T", " ") + " UTC"]], note: "Fees still come from DefiLlama: fee rates differ between these DEXs and are not read on-chain yet." };
+        base.cannotVerify = base.cannotVerify.filter(([k]) => k !== "Swap volume and fees");
+        base.cannotVerify.push(["Trading fees", "Taken from DefiLlama; volume is read on-chain"]);
+        base.canVerify.push(["Swap volume", "Swap events on every pool, valued at current prices", "On-chain"]);
+        const avg = act.vol7 != null ? act.vol7 / 7 : null;
+        if (avg && act.vol24 > 2 * avg && act.vol24 >= 5_000 && !base.floor)
+          signals.push({ key: `${it.slug}:vol`, t: "info", p: it.slug, rule: "vol", strong: `${it.name} volume is ${(act.vol24 / avg).toFixed(1)}× its 7-day average`, rest: ` (${usd(act.vol24)} in 24h across ${act.swaps24} swaps).` });
+      }
+      const day = Date.now() - 24 * 3600_000;
+      for (const e of act.events.filter((x) => x.t >= day)) {
+        const big = e.kind === "liquidation" || (e.kind === "withdraw" && e.usd >= 50_000) || (e.kind === "remove" && e.usd >= 25_000);
+        if (!big || base.floor) continue;
+        const what = e.kind === "liquidation" ? `A ${e.label} position was liquidated on ${it.name}` : e.kind === "withdraw" ? `${usd(e.usd)} of ${e.label} was withdrawn from ${it.name}` : `${usd(e.usd)} of ${e.label} liquidity left ${it.name}`;
+        signals.push({ key: `${it.slug}:${e.kind}:${e.tx}`, t: e.kind === "liquidation" ? "warn" : "info", p: it.slug, rule: e.kind === "liquidation" ? "contract" : "large", strong: what, rest: e.kind === "liquidation" ? ` (${usd(e.usd)} of debt repaid by a liquidator).` : "." });
+      }
+    }
+
     if (base.floor) { base.status = "info"; base.statusText = "Below monitoring floor"; base.flags = []; }
 
     // cross-check signal
@@ -418,7 +451,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
     }
     // move signals from history
     if (base.d24 != null && Math.abs(base.d24) >= 0.1 && !base.floor) {
-      signals.push({ key: `${it.slug}:tvl24:${base.d24 < 0 ? "down" : "up"}`, t: base.d24 < 0 ? "warn" : "good", p: it.slug, rule: "tvl", strong: `${it.name} TVL ${base.d24 < 0 ? "fell" : "rose"} ${pct(Math.abs(base.d24))} in 24h`, rest: ` (DefiLlama daily history).` });
+      signals.push({ key: `${it.slug}:tvl24:${base.d24 < 0 ? "down" : "up"}`, t: base.d24 < 0 ? "warn" : "good", p: it.slug, rule: "tvl", strong: `${it.name} TVL ${base.d24 < 0 ? "fell" : "rose"} ${pct(Math.abs(base.d24))} in 24h`, rest: base.d24Source === "dawns" ? ` (dawns' own reads, now vs 24 hours ago).` : ` (DefiLlama daily history).` });
     }
     return base;
   });
@@ -465,6 +498,17 @@ export async function buildSnapshot(): Promise<Snapshot> {
   if (kasPx && kas24 != null && Math.abs(kas24) >= 0.05) signals.push({ key: `kas:move:${kas24 > 0 ? "up" : "down"}`, t: "info", p: null, rule: null, strong: `KAS ${kas24 > 0 ? "rose" : "fell"} ${pct(Math.abs(kas24))} in 24h`, rest: ` to $${kasPx.toPrecision(3)}. Most Kaspa DeFi value is KAS, so TVL moves with it.` });
 
   /* ---------- Igra bridge backing ---------- */
+  if (bridge && own) {
+    if (own.backing.length >= 2) bridge.history = [...own.backing.slice(0, -1), { t: Date.now(), v: bridge.coverage }];
+    if (own.exitStats.indexed > 0) {
+      bridge.payouts = own.exitStats;
+      const byKey = new Map(own.exits.map((e) => [`${e.block}:${Math.round(e.kas * 1e8)}`, e]));
+      for (const e of bridge.recentExits) {
+        const row = byKey.get(`${e.block}:${Math.round(e.kas * 1e8)}`);
+        if (row) Object.assign(e, { tx: row.tx, payTo: row.payout, paidTx: row.paid_tx, paidAt: row.paid_at, paidKas: row.paid_kas });
+      }
+    }
+  }
   if (bridge) {
     const kas = (n: number) => `${Math.round(n).toLocaleString("en-US")} KAS`;
     prov["bridge-cov"] = {
@@ -482,6 +526,9 @@ export async function buildSnapshot(): Promise<Snapshot> {
       const t: Status = bridge.coverage < 0.99 ? "crit" : "warn";
       signals.push({ key: "igra-bridge:backing", t, p: "igra-bridge", rule: "backing", strong: `iKAS is ${pct(bridge.coverage)} backed`, rest: `. ${kas(bridge.lockedKas)} is locked on Kaspa L1 against ${kas(bridge.ikasSupply)} iKAS on Igra, a shortfall of ${kas(-bridge.surplusKas)}.` });
     }
+    const po = bridge.payouts;
+    if (po && po.late > 0)
+      signals.push({ key: "igra-bridge:late", t: "warn", p: "igra-bridge", rule: "backing", strong: `${po.late} bridge exit${po.late > 1 ? "s" : ""} (${kas(po.lateKas)}) waiting more than 72 hours for payout`, rest: `. The iKAS was burned on Igra but dawns finds no matching Kaspa L1 payment from the Entry address yet.` });
     const big = bridge.recentExits.filter((e) => e.ageSec <= 86_400 && kasPx && e.kas * kasPx >= 50_000);
     for (const e of big) signals.push({ key: `igra-bridge:exit:${e.id}`, t: "info", p: "igra-bridge", rule: "large", strong: `${kas(e.kas)} left Igra through the bridge`, rest: ` (exit #${e.id}${kasPx ? `, ${usd(e.kas * kasPx)}` : ""}). The guardians release it on Kaspa L1 within 48–72 hours.` });
   }
@@ -498,6 +545,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
       series: allDays.map((t, i) => ({ t, v: ecoSeries[i] })),
       stack: stack.map((s) => ({ name: s.name, id: s.id, values: s.values })), dates: allDays,
       composition: Object.entries(comp).map(([sym, v]) => ({ sym, usd: v })).sort((a, b) => b.usd - a.usd),
+      intraday: own?.eco.length && own.eco.length >= 2 ? [...own.eco.slice(0, -1), { t: Date.now(), v: tvl }] : [],
     },
     bridge: bridge ?? null, signals, prov, errors,
   };

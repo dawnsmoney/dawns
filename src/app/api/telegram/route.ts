@@ -58,7 +58,7 @@ function bridge(s: Snapshot) {
   const b = s.bridge;
   if (!b) return "The bridge could not be read on the last run. Try again in a few minutes.";
   const k = (n: number) => Math.round(n).toLocaleString("en-US");
-  return `${b.coverage >= 1 ? "🟢" : "🔴"} <b>iKAS is ${pct(b.coverage)} backed</b>\n\nLocked on Kaspa L1: ${k(b.lockedKas)} KAS${s.kasUsd ? ` (${usd(b.lockedKas * s.kasUsd)})` : ""}\niKAS on Igra: ${k(b.ikasSupply)}\nExits in the 72h release window: ${k(b.inWindowKas)} KAS (${b.inWindowCount})\n\n<a href="${SITE}/bridge">Full bridge page</a>`;
+  return `${b.coverage >= 1 ? "🟢" : "🔴"} <b>iKAS is ${pct(b.coverage)} backed</b>\n\nLocked on Kaspa L1: ${k(b.lockedKas)} KAS${s.kasUsd ? ` (${usd(b.lockedKas * s.kasUsd)})` : ""}\niKAS on Igra: ${k(b.ikasSupply)}\n${b.payouts ? `Awaiting L1 payout: ${k(b.payouts.unpaidKas)} KAS${b.payouts.late ? ` (${b.payouts.late} over 72h)` : ""}${b.payouts.medianHours != null ? `\nTypical payout time: ${Math.round(b.payouts.medianHours)} h` : ""}` : `Exits in the 72h release window: ${k(b.inWindowKas)} KAS (${b.inWindowCount})`}\n\n<a href="${SITE}/bridge">Full bridge page</a>`;
 }
 const HELP = `<b>dawns.money</b> watches Kaspa DeFi on-chain and tells you when something crosses a line.
 

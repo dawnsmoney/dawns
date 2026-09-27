@@ -55,9 +55,11 @@ type AreaProps = {
   height?: number;
   label: string;
   range?: "1M" | "3M";
+  hourly?: boolean;
 };
 
-export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "usdFull", refLine, refLabel, area = "first", height, label, range = "3M" }: AreaProps) {
+export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "usdFull", refLine, refLabel, area = "first", height, label, range = "3M", hourly }: AreaProps) {
+  const hh = (t: number) => `${String(new Date(t).getUTCHours()).padStart(2, "0")}:00`;
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const cut = range === "1M" ? -30 : 0;
@@ -114,7 +116,7 @@ export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "
               </g>
             ))}
             {xt.map((i, j) => (
-              <text key={j} x={x(i)} y={H - 6} textAnchor={j === 0 ? "start" : j === 3 ? "end" : "middle"}>{shortDate(dates[i])}</text>
+              <text key={j} x={x(i)} y={H - 6} textAnchor={j === 0 ? "start" : j === 3 ? "end" : "middle"}>{shortDate(dates[i])}{hourly && n < 60 ? ` ${hh(dates[i])}` : ""}</text>
             ))}
           </g>
           {refLine != null && (
@@ -163,7 +165,7 @@ export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "
       )}
       {hv != null && width > 0 && (
         <div className="tip" style={{ left: Math.max(80, Math.min(width - 80, (x(hv) * width) / W)), top: (y(topAt(hv)) * width) / W - 12 }}>
-          <div className="d">{shortDate(dates[hv])}, 2026</div>
+          <div className="d">{shortDate(dates[hv])}{hourly ? `, ${hh(dates[hv])} UTC` : ", 2026"}</div>
           {stacked && <div className="r"><span>Total</span><b>{formatValue(tops[tops.length - 1][hv], fmt)}</b></div>}
           {[...series].reverse().map((s) => (
             <div className="r" key={s.name}><span><i style={{ background: s.color }} />{s.name}</span><b>{formatValue(s.values[hv], fmt)}</b></div>

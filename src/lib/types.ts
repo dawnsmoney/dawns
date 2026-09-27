@@ -16,12 +16,26 @@ export interface MarketView {
   suppliedUsd: number; borrowedUsd: number; cashUsd: number;
   utilization: number; supplyApy: number; borrowApr: number;
   ltv: number; liquidationThreshold: number; frozen: boolean; paused: boolean | null; borrowingEnabled: boolean;
-  supplyCap: number; borrowCap: number;
+  supplyCap: number; borrowCap: number; decimals: number;
 }
 
 export interface PoolView {
   chain: "igra" | "kasplex"; pair: string; symbols: [string, string]; usd: number; share: number;
   reserves: [number, number]; impact10k: number | null;
+  kind: "v2" | "v3"; fee: number | null;
+  /** token address, decimals and USD price (null if unpriced) — used to value indexed events */
+  tk: [PoolToken, PoolToken];
+}
+export interface PoolToken { a: string; d: number; px: number | null }
+
+/** Events dawns indexed itself from contract logs. */
+export interface ActivityEvent { t: number; kind: "swap" | "remove" | "supply" | "withdraw" | "borrow" | "repay" | "liquidation"; usd: number; label: string; tx: string; chain: "igra" | "kasplex" }
+export interface Activity {
+  since: number;                 // ms: start of indexed coverage
+  swaps24: number; vol24: number; vol7: number | null;
+  volDays: Pt[];                 // daily swap volume (DEX)
+  lendFlows: { market: string; supply: number; withdraw: number; borrow: number; repay: number; liquidations: number }[]; // 24h, USD
+  events: ActivityEvent[];       // largest events of the last 7 days
 }
 
 export interface ProtocolView {
@@ -36,6 +50,9 @@ export interface ProtocolView {
   llamaTvl: number;
   d24: number | null;
   d7: number | null;
+  d24Source: "dawns" | "defillama";
+  intraday: Pt[];                 // dawns' own history, hourly, last 7 days
+  activity: Activity | null;      // dawns' own event index
   history: Pt[];
   historyCleaned: number;
   tokens: { sym: string; usd: number }[];
@@ -66,7 +83,7 @@ export interface ProtocolView {
   };
 }
 
-export interface BridgeExit { id: number; block: number; ageSec: number; kas: number; feeKas: number }
+export interface BridgeExit { id: number; block: number; ageSec: number; kas: number; feeKas: number; tx?: string | null; payTo?: string | null; paidTx?: string | null; paidAt?: number | null; paidKas?: number | null }
 export interface BridgeState {
   block: number; timestamp: number;
   lockedKas: number; entryTxCount: number | null;
@@ -82,6 +99,8 @@ export interface BridgeState {
   config: { minExitKas: number; maxExitKas: number; windowBlocks: number; maxExitsPerWindow: number; maxUnlockPerWindowKas: number; feePolicy: string; feeClaimer: string };
   throttle: { windowEndsAtBlock: number; remainingExits: number; remainingUnlockKas: number };
   owner: string; ownerIsContract: boolean; implementation: string | null;
+  history?: Pt[];                 // backing ratio, hourly (dawns' own history)
+  payouts?: { indexed: number; paid: number; unpaid: number; unpaidKas: number; late: number; lateKas: number; medianHours: number | null; checkedSince: number | null };
 }
 
 export interface Snapshot {
@@ -96,6 +115,7 @@ export interface Snapshot {
     lendingLiq: number; lendingUtil: number | null; lendingBorrowed: number | null;
     series: Pt[]; stack: { name: string; id: string; values: number[] }[]; dates: number[];
     composition: { sym: string; usd: number }[];
+    intraday: Pt[];
   };
   bridge: BridgeState | null;
   signals: Signal[];
