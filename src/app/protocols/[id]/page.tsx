@@ -228,7 +228,8 @@ const since = (t: number, now: number) => { const h = Math.max(0, (now - t) / 36
 function Activity({ p, s }: { p: ProtocolView; s: Snapshot }) {
   const sig = s.signals.filter((g) => g.p === p.id);
   const a = p.activity;
-  const hoursIndexed = a ? (s.asOf - a.since) / 3600_000 : 0;
+  const hoursIndexed = a && a.upTo > s.asOf - 45 * 60_000 ? (s.asOf - a.since) / 3600_000 : 0;
+  const behind = a && a.upTo <= s.asOf - 45 * 60_000;
   return (
     <div style={{ display: "grid", gap: 22 }}>
       {(p.intraday.length >= 3 || a) && (
@@ -242,7 +243,7 @@ function Activity({ p, s }: { p: ProtocolView; s: Snapshot }) {
           </div>
           {a && p.dex && (
             <div className="card">
-              <div className="c-head"><h3>Swap volume</h3><span className="tag">{hoursIndexed >= 24 ? "on-chain" : `indexing · ${Math.floor(hoursIndexed)}h of 24h`}</span></div>
+              <div className="c-head"><h3>Swap volume</h3><span className="tag">{behind ? "catching up" : hoursIndexed >= 24 ? "on-chain" : `indexing · ${Math.floor(hoursIndexed)}h of 24h`}</span></div>
               <div className="vlist" style={{ marginBottom: 14 }}>
                 <div className="vrow"><span /><div>Last 24 hours<small>{a.swaps24.toLocaleString("en-US")} swaps</small></div><b>{usd(a.vol24)}</b></div>
                 <div className="vrow"><span /><div>Last 7 days</div><b>{a.vol7 != null ? usd(a.vol7) : "—"}</b></div>
@@ -253,7 +254,7 @@ function Activity({ p, s }: { p: ProtocolView; s: Snapshot }) {
           )}
           {a && p.lending && (
             <div className="card flush">
-              <div style={{ padding: "22px 24px 8px" }} className="c-head"><h3>Flows · last 24 hours</h3><span className="tag">{hoursIndexed >= 24 ? "on-chain" : `indexing · ${Math.floor(hoursIndexed)}h`}</span></div>
+              <div style={{ padding: "22px 24px 8px" }} className="c-head"><h3>Flows · last 24 hours</h3><span className="tag">{behind ? "catching up" : hoursIndexed >= 24 ? "on-chain" : `indexing · ${Math.floor(hoursIndexed)}h`}</span></div>
               <div className="tbl-wrap"><table>
                 <thead><tr><th>Market</th><th>Supplied</th><th>Withdrawn</th><th>Borrowed</th><th>Repaid</th></tr></thead>
                 <tbody>

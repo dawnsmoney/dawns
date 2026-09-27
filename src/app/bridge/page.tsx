@@ -62,7 +62,7 @@ export default async function BridgePage() {
           <Kpi label="iKAS on Igra" value={shortKas(b.ikasSupply)} ctx={<span className="flat">in circulation</span>} prov="bridge-cov" />
           {po ? (
             <>
-              <Kpi label="Awaiting L1 payout" value={shortKas(po.unpaidKas)} ctx={<span className={po.late ? "down" : "flat"}>{po.late ? `${po.late} over 72h` : "none late"}</span>} />
+              <Kpi label="Awaiting L1 payout" value={shortKas(po.unpaidKas)} ctx={<span className={po.late ? "down" : "flat"}>{po.unchecked ? `checking ${po.unchecked} more exits` : po.late ? `${po.late} over 72h` : "none late"}</span>} />
               <Kpi label="Typical payout time" value={po.medianHours != null ? `${Math.round(po.medianHours)} h` : "—"} ctx={<span className="flat">median, last 30 days</span>} />
             </>
           ) : (

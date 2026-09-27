@@ -32,6 +32,7 @@ export interface PoolToken { a: string; d: number; px: number | null }
 export interface ActivityEvent { t: number; kind: "swap" | "remove" | "supply" | "withdraw" | "borrow" | "repay" | "liquidation"; usd: number; label: string; tx: string; chain: "igra" | "kasplex" }
 export interface Activity {
   since: number;                 // ms: start of indexed coverage
+  upTo: number;                  // ms: how far the index has read (both chains)
   swaps24: number; vol24: number; vol7: number | null;
   volDays: Pt[];                 // daily swap volume (DEX)
   lendFlows: { market: string; supply: number; withdraw: number; borrow: number; repay: number; liquidations: number }[]; // 24h, USD
@@ -100,7 +101,7 @@ export interface BridgeState {
   throttle: { windowEndsAtBlock: number; remainingExits: number; remainingUnlockKas: number };
   owner: string; ownerIsContract: boolean; implementation: string | null;
   history?: Pt[];                 // backing ratio, hourly (dawns' own history)
-  payouts?: { indexed: number; paid: number; unpaid: number; unpaidKas: number; late: number; lateKas: number; medianHours: number | null; checkedSince: number | null };
+  payouts?: { indexed: number; unchecked: number; paid: number; unpaid: number; unpaidKas: number; late: number; lateKas: number; medianHours: number | null; checkedSince: number | null };
 }
 
 export interface Snapshot {

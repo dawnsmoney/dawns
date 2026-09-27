@@ -26,7 +26,7 @@ const LEND = {
 };
 
 const CHUNK = 50_000;          // blocks per getLogs call (both RPCs answer 50k in < 0.5 s)
-const MAX_CHUNKS = 6;          // per chain per tick; a 7-day backfill finishes in two or three ticks
+const MAX_CHUNKS = 12;         // per chain per tick; a 7-day backfill finishes in one or two ticks
 const BACKFILL_SEC = 7 * 86_400;
 
 type PoolRef = { protocol: string; pool: PoolView };
@@ -128,6 +128,7 @@ async function indexChain(s: Snapshot, chain: ChainKey) {
     await insertJson("dex_events", [["chain", "text"], ["tx", "text"], ["log_index", "int"], ["block", "bigint"], ["t", "timestamptz"], ["protocol", "text"], ["pair", "text"], ["kind", "text"], ["usd", "float8"], ["label", "text"]], dex);
     await insertJson("lending_events", [["chain", "text"], ["tx", "text"], ["log_index", "int"], ["block", "bigint"], ["t", "timestamptz"], ["protocol", "text"], ["kind", "text"], ["market", "text"], ["account", "text"], ["amount", "float8"], ["usd", "float8"]], lend);
     await setMeta(key, String(to));
+    await setMeta(`idx_at:${chain}`, String(tt * 1000));
     dexRows += dex.length; lendRows += lend.length; chunks++;
     from = to + 1;
   }
@@ -180,7 +181,7 @@ type KasTx = {
  * An exit is paid when a Kaspa L1 transaction spends coins from the bridge Entry
  * address and sends exactly the unlock amount to the exit's payout address.
  */
-export async function checkPayouts(limit = 25) {
+export async function checkPayouts(limit = 60) {
   const q = sql();
   const due = (await q.query(
     `select tx, payout_address, amount_sompi::text as amount, extract(epoch from requested_at) * 1000 as at from bridge_exits

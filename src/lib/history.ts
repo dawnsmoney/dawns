@@ -10,8 +10,9 @@ export interface OwnData {
   backing: Pt[];                      // hourly iKAS backing ratio
   activity: Map<string, Activity>;
   indexedSince: number | null;        // ms: the later of the two chains' index start
+  indexedUpTo: number | null;         // ms: the earlier of the two chains' cursor timestamps
   exits: ExitRow[];
-  exitStats: { indexed: number; paid: number; unpaid: number; unpaidKas: number; late: number; lateKas: number; medianHours: number | null; checkedSince: number | null };
+  exitStats: { indexed: number; unchecked: number; paid: number; unpaid: number; unpaidKas: number; late: number; lateKas: number; medianHours: number | null; checkedSince: number | null };
 }
 export interface ExitRow { tx: string; request_id: number | null; block: number; at: number; payout: string; kas: number; paid_tx: string | null; paid_at: number | null; paid_kas: number | null }
 
@@ -54,9 +55,10 @@ export async function readOwn(): Promise<OwnData | null> {
         amount_sompi / 1e8 as kas, paid_tx, extract(epoch from paid_at) * 1000 as paid_at, paid_sompi / 1e8 as paid_kas
       from bridge_exits order by block desc, tx limit 60`)),
     safe<R[]>(q.query(`select count(*) as indexed,
+        count(*) filter (where checks = 0) as unchecked,
         count(paid_tx) as paid,
-        count(*) filter (where paid_tx is null) as unpaid,
-        coalesce(sum(amount_sompi) filter (where paid_tx is null and requested_at > now() - interval '30 days'), 0) / 1e8 as unpaid_kas,
+        count(*) filter (where paid_tx is null and checks > 0) as unpaid,
+        coalesce(sum(amount_sompi) filter (where paid_tx is null and checks > 0 and requested_at > now() - interval '30 days'), 0) / 1e8 as unpaid_kas,
         count(*) filter (where paid_tx is null and checks > 0 and requested_at < now() - interval '72 hours' and requested_at > now() - interval '30 days') as late,
         coalesce(sum(amount_sompi) filter (where paid_tx is null and checks > 0 and requested_at < now() - interval '72 hours' and requested_at > now() - interval '30 days'), 0) / 1e8 as late_kas,
         percentile_cont(0.5) within group (order by extract(epoch from paid_at - requested_at) / 3600) filter (where paid_tx is not null and requested_at > now() - interval '30 days') as median_h,
@@ -71,14 +73,17 @@ export async function readOwn(): Promise<OwnData | null> {
   const m = Object.fromEntries(meta.map((r) => [String(r.k), String(r.v)]));
   const starts = ["igra", "kasplex"].map((c) => (m[`idx_start:${c}`] ? Number(m[`idx_start:${c}`]) : null)).filter((x): x is number => x != null);
   const indexedSince = starts.length ? Math.max(...starts) : null;
+  const ats = ["igra", "kasplex"].map((c) => (m[`idx_at:${c}`] ? Number(m[`idx_at:${c}`]) : null));
+  const indexedUpTo = ats.every((x) => x != null) ? Math.min(...(ats as number[])) : null;
 
   const activity = new Map<string, Activity>();
   const get = (id: string) => {
     let a = activity.get(id);
-    if (!a) { a = { since: indexedSince ?? Date.now(), swaps24: 0, vol24: 0, vol7: null, volDays: [], lendFlows: [], events: [] }; activity.set(id, a); }
+    if (!a) { a = { since: indexedSince ?? Date.now(), upTo: indexedUpTo ?? 0, swaps24: 0, vol24: 0, vol7: null, volDays: [], lendFlows: [], events: [] }; activity.set(id, a); }
     return a;
   };
-  const covered = indexedSince != null ? Date.now() - indexedSince : 0;
+  const caughtUp = indexedUpTo != null && indexedUpTo > Date.now() - 45 * 60_000;
+  const covered = caughtUp && indexedSince != null ? Date.now() - indexedSince : 0;
   for (const r of dexAgg) { const a = get(String(r.protocol)); a.swaps24 = n(r.swaps24); a.vol24 = n(r.vol24); a.vol7 = covered >= 6.9 * 86_400_000 ? n(r.vol7) : null; }
   for (const r of dexDays) get(String(r.protocol)).volDays.push({ t: n(r.t), v: n(r.v) });
   for (const r of lendAgg) {
@@ -93,12 +98,12 @@ export async function readOwn(): Promise<OwnData | null> {
 
   const s = exitStats[0] ?? {};
   return {
-    series, at24, activity, indexedSince,
+    series, at24, activity, indexedSince, indexedUpTo,
     eco: eco.map((r) => ({ t: n(r.t), v: n(r.v) })),
     backing: backing.map((r) => ({ t: n(r.t), v: n(r.v) })),
     exits: exits.map((r) => ({ tx: String(r.tx), request_id: r.request_id == null ? null : n(r.request_id), block: n(r.block), at: n(r.at), payout: String(r.payout), kas: n(r.kas), paid_tx: (r.paid_tx as string) ?? null, paid_at: r.paid_at == null ? null : n(r.paid_at), paid_kas: r.paid_kas == null ? null : n(r.paid_kas) })),
     exitStats: {
-      indexed: n(s.indexed), paid: n(s.paid), unpaid: n(s.unpaid), unpaidKas: n(s.unpaid_kas), late: n(s.late), lateKas: n(s.late_kas),
+      indexed: n(s.indexed), unchecked: n(s.unchecked), paid: n(s.paid), unpaid: n(s.unpaid), unpaidKas: n(s.unpaid_kas), late: n(s.late), lateKas: n(s.late_kas),
       medianHours: s.median_h == null ? null : n(s.median_h), checkedSince: s.checked_since == null ? null : n(s.checked_since),
     },
   };

@@ -420,7 +420,8 @@ export async function buildSnapshot(): Promise<Snapshot> {
     const then = own?.at24.get(it.slug);
     if (then && then > 0 && base.source === "onchain") { base.d24 = base.tvl / then - 1; base.d24Source = "dawns"; }
     const act = own?.activity.get(it.slug);
-    const coveredMs = own?.indexedSince ? Date.now() - own.indexedSince : 0;
+    const caughtUp = !!own?.indexedUpTo && own.indexedUpTo > Date.now() - 45 * 60_000;
+    const coveredMs = caughtUp && own?.indexedSince ? Date.now() - own.indexedSince : 0;
     if (act) {
       base.activity = act;
       if (base.dex && coveredMs >= 24 * 3600_000) {
