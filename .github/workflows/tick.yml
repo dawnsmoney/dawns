@@ -1,0 +1,20 @@
+name: tick
+# Every 10 minutes: dawns builds a fresh snapshot, stores history in Neon,
+# diffs signals and sends Telegram alerts. The route does the work; this only knocks.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run tick
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl -fsSL --max-time 150 --retry 2 --retry-delay 20 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            https://www.dawns.money/api/cron/tick

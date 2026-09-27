@@ -1,3 +1,4 @@
+import { dawnReport } from "@/lib/report";
 import Link from "next/link";
 import { getSnapshot } from "@/lib/snapshot";
 import { toLite, toRow, names } from "@/lib/view";
@@ -10,7 +11,6 @@ import { RangeChart, Donut } from "@/components/charts";
 import { Feed, ProtocolList } from "@/components/sections";
 import { DataBridge } from "@/components/providers";
 import { Fresh } from "@/components/Fresh";
-import type { Snapshot } from "@/lib/types";
 
 export const revalidate = 120;
 
@@ -26,20 +26,6 @@ function BigSpark({ values }: { values: number[] }) {
       <circle cx={x(n - 1)} cy={y(values[n - 1])} r="5" fill="#7CF0D2" stroke="#2A1F5E" strokeWidth="2" />
     </svg>
   );
-}
-
-function dawnReport(s: Snapshot) {
-  const top = s.signals.slice(0, 3).map((g) => `· ${g.strong}`).join("\n");
-  const d = new Date(s.asOf);
-  const date = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-  const lend = s.protocols.find((p) => p.lending);
-  return `dawns check · Kaspa DeFi · ${date}
-
-TVL ${usd(s.eco.tvl)}${s.kasUsd ? ` · KAS $${s.kasUsd.toPrecision(3)}${s.kas24 != null ? ` (${s.kas24 >= 0 ? "+" : ""}${(s.kas24 * 100).toFixed(1)}% 24h)` : ""}` : ""}
-${lend?.lending ? `${lend.name}: ${usd(lend.lending.suppliedUsd)} supplied, ${usd(lend.lending.borrowedUsd)} borrowed, ${usd(lend.lending.cashUsd)} withdrawable\n` : ""}DEX liquidity ${usd(s.eco.dexLiq)}
-${top ? `\nWorth a look:\n${top}\n` : ""}
-Read on-chain, every number traceable.
-dawns.money`;
 }
 
 export default async function Home() {
@@ -138,6 +124,15 @@ export default async function Home() {
             })}
           </div>
         </section>
+      )}
+
+      {s.bridge && (
+        <div className="wrap" style={{ marginTop: -30, marginBottom: 10 }}>
+          <div className="preview">
+            <span><b>iKAS is {pct(s.bridge.coverage)} backed.</b> {Math.round(s.bridge.lockedKas).toLocaleString("en-US")} KAS locked on Kaspa L1 against {Math.round(s.bridge.ikasSupply).toLocaleString("en-US")} iKAS on Igra, read live.</span>
+            <Link className="btn iris" href="/bridge">Check the bridge</Link>
+          </div>
+        </div>
       )}
 
       <section className="s wrap">

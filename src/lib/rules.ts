@@ -24,4 +24,4 @@ export const RULES: Record<Kind, RuleDef[]> = {
   ],
 };
 
-export const RULE_TXT: Record<RuleKey, string> = { liq: "liquidity", util: "utilization", large: "large withdrawal", tvl: "TVL move", contract: "risk changes", vol: "volume spike" };
+export const RULE_TXT: Record<RuleKey, string> = { liq: "liquidity", util: "utilization", large: "large withdrawal", tvl: "TVL move", contract: "risk changes", vol: "volume spike", backing: "bridge backing" };

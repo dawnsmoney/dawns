@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import type { Address } from "viem";
 import { readKaskad, KASKAD, type KaskadState } from "./chain/kaskad";
 import { readUniV2, readUniV3, readBalances, readBondingNative, buildPriceMap, valuePools, type PriceBook, type PricedPool, type RawPool } from "./chain/dex";
+import { readIgraBridge, IGRA_BRIDGE } from "./chain/bridge";
 import { explorerAddress, explorerBlock, type ChainKey } from "./chain/clients";
 import { kaspaProtocols, llamaProtocol, llamaPrices, llamaChange24h, dexSummary, feesSummary, type LlamaProtocol, type LlamaListItem } from "./llama";
 import { usd, usdFull, pct } from "./format";
@@ -172,7 +173,8 @@ function poolViews(pools: PricedPool[], total: number): PoolView[] {
     }));
 }
 
-async function build(): Promise<Snapshot> {
+/** Build a fresh snapshot, bypassing the cache (cron tick). */
+export async function buildSnapshot(): Promise<Snapshot> {
   const errors: string[] = [];
   const t0 = Date.now();
   const safe = async <T,>(label: string, f: () => Promise<T>): Promise<T | null> => {
@@ -194,12 +196,13 @@ async function build(): Promise<Snapshot> {
 
   // on-chain reads
   const dexJobs = Object.entries(DEX_ADAPTERS).flatMap(([slug, a]) => a.sources.map((src) => ({ slug, src })));
-  const [kaskad, kasdex, attest, lfg, dexReads] = await Promise.all([
+  const [kaskad, kasdex, attest, lfg, dexReads, bridge] = await Promise.all([
     safe("Kaskad on-chain", () => readKaskad((sym) => book.get(normSym(sym).toLowerCase()) ?? null)),
     safe("KasDex on-chain", () => readBalances("igra", KASDEX, KASDEX_TOKENS)),
     safe("Igra Attestation on-chain", () => readBalances("igra", IGRA_ATTESTATION, [IGRA_TOKEN])),
     Promise.all(LFG_FACTORIES.map((f) => safe(`KaspaCom LFG ${f.chain}`, () => readBondingNative(f.chain, f.factory)))),
     Promise.all(dexJobs.map((j) => safe(`${j.slug} ${j.src.chain} on-chain`, () => (j.src.kind === "v3" ? readUniV3(j.src.chain, j.src.factory) : readUniV2(j.src.chain, j.src.factory))))),
+    safe("Igra bridge", () => readIgraBridge()),
   ]);
   const dexBySlug = new Map<string, { src: DexSource; read: NonNullable<(typeof dexReads)[number]> }[]>();
   dexJobs.forEach((j, i) => { const r = dexReads[i]; if (r) dexBySlug.set(j.slug, [...(dexBySlug.get(j.slug) ?? []), { src: j.src, read: r }]); });
@@ -278,23 +281,23 @@ async function build(): Promise<Snapshot> {
       ];
       base.cannotVerify = [
         ["KSKD incentive obligations", "Rewards emissions are not yet decoded by dawns"],
-        ["iKAS bridge backing", "The Kaspa L1 side of the Igra bridge is not yet indexed"],
+        ["iKAS bridge backing at the account level", "Bridge-wide backing is on the Bridge page; per-deposit matching is not indexed"],
         ["Bad debt at the account level", "Needs per-account positions from an indexer"],
       ];
 
       // signals
       for (const m of view.markets) {
-        if (m.utilization >= 0.95) signals.push({ t: "crit", p: it.slug, rule: "util", strong: `Kaskad ${m.symbol} utilization is ${pct(m.utilization)}`, rest: `. ${usd(m.borrowedUsd)} is borrowed against ${usd(m.suppliedUsd)} supplied, so ${usd(m.cashUsd)} can be withdrawn right now. Borrow rate ${pct(m.borrowApr)}.` });
-        else if (m.utilization >= 0.8) signals.push({ t: "warn", p: it.slug, rule: "util", strong: `Kaskad ${m.symbol} utilization is ${pct(m.utilization)}`, rest: `. Only ${usd(m.cashUsd)} of ${usd(m.suppliedUsd)} is withdrawable now.` });
-        if (m.frozen) signals.push({ t: "warn", p: it.slug, rule: "contract", strong: `Kaskad ${m.symbol} market is frozen`, rest: `. No new supply or borrowing; existing positions can repay and withdraw. It holds ${usd(m.suppliedUsd)} of supply.` });
-        if (m.oracleDeviation != null && Math.abs(m.oracleDeviation) >= 0.02) signals.push({ t: "warn", p: it.slug, rule: "contract", strong: `Kaskad's ${m.symbol} oracle is ${pct(Math.abs(m.oracleDeviation))} ${m.oracleDeviation > 0 ? "above" : "below"} market`, rest: ` (oracle $${m.price.toPrecision(4)}, market $${m.marketPrice?.toPrecision(4)}).` });
+        if (m.utilization >= 0.95) signals.push({ key: `${it.slug}:util:${m.symbol}`, t: "crit", p: it.slug, rule: "util", strong: `Kaskad ${m.symbol} utilization is ${pct(m.utilization)}`, rest: `. ${usd(m.borrowedUsd)} is borrowed against ${usd(m.suppliedUsd)} supplied, so ${usd(m.cashUsd)} can be withdrawn right now. Borrow rate ${pct(m.borrowApr)}.` });
+        else if (m.utilization >= 0.8) signals.push({ key: `${it.slug}:util:${m.symbol}`, t: "warn", p: it.slug, rule: "util", strong: `Kaskad ${m.symbol} utilization is ${pct(m.utilization)}`, rest: `. Only ${usd(m.cashUsd)} of ${usd(m.suppliedUsd)} is withdrawable now.` });
+        if (m.frozen) signals.push({ key: `${it.slug}:frozen:${m.symbol}`, t: "warn", p: it.slug, rule: "contract", strong: `Kaskad ${m.symbol} market is frozen`, rest: `. No new supply or borrowing; existing positions can repay and withdraw. It holds ${usd(m.suppliedUsd)} of supply.` });
+        if (m.oracleDeviation != null && Math.abs(m.oracleDeviation) >= 0.02) signals.push({ key: `${it.slug}:oracle-drift:${m.symbol}`, t: "warn", p: it.slug, rule: "contract", strong: `Kaskad's ${m.symbol} oracle is ${pct(Math.abs(m.oracleDeviation))} ${m.oracleDeviation > 0 ? "above" : "below"} market`, rest: ` (oracle $${m.price.toPrecision(4)}, market $${m.marketPrice?.toPrecision(4)}).` });
       }
       const broken = view.markets.filter((m) => !m.oracleOk);
       if (broken.length) {
-        signals.push({ t: "warn", p: it.slug, rule: "contract", strong: `Kaskad's price oracle reverted for ${broken.map((m) => m.symbol).join(", ")}`, rest: ` at block #${kaskad.block.toLocaleString("en-US")} (error ${broken[0].oracleError}). Borrowing and liquidations read this oracle; dawns valued these markets at market prices instead.` });
+        signals.push({ key: `${it.slug}:oracle-revert`, t: "warn", p: it.slug, rule: "contract", strong: `Kaskad's price oracle reverted for ${broken.map((m) => m.symbol).join(", ")}`, rest: ` at block #${kaskad.block.toLocaleString("en-US")} (error ${broken[0].oracleError}). Borrowing and liquidations read this oracle; dawns valued these markets at market prices instead.` });
         base.flags.push(["warn", `Oracle reverting (${broken.length}/${view.markets.length})`]);
       }
-      if (!kaskad.aclAdminIsContract) signals.push({ t: "warn", p: it.slug, rule: "contract", strong: "Kaskad's ACL admin is a single key", rest: " (an EOA, not a multisig or timelock). It can change roles that control pausing, listings and risk settings." });
+      if (!kaskad.aclAdminIsContract) signals.push({ key: `${it.slug}:admin-eoa`, t: "warn", p: it.slug, rule: "contract", strong: "Kaskad's ACL admin is a single key", rest: " (an EOA, not a multisig or timelock). It can change roles that control pausing, listings and risk settings." });
       const worst = view.markets.some((m) => m.utilization >= 0.95) ? "crit" : view.markets.some((m) => m.utilization >= 0.8 || m.frozen) ? "warn" : "good";
       base.status = worst as Status;
       base.statusText = worst === "crit" ? "Liquidity crunch" : worst === "warn" ? "Watch" : "Healthy";
@@ -415,7 +418,7 @@ async function build(): Promise<Snapshot> {
     }
     // move signals from history
     if (base.d24 != null && Math.abs(base.d24) >= 0.1 && !base.floor) {
-      signals.push({ t: base.d24 < 0 ? "warn" : "good", p: it.slug, rule: "tvl", strong: `${it.name} TVL ${base.d24 < 0 ? "fell" : "rose"} ${pct(Math.abs(base.d24))} in 24h`, rest: ` (DefiLlama daily history).` });
+      signals.push({ key: `${it.slug}:tvl24:${base.d24 < 0 ? "down" : "up"}`, t: base.d24 < 0 ? "warn" : "good", p: it.slug, rule: "tvl", strong: `${it.name} TVL ${base.d24 < 0 ? "fell" : "rose"} ${pct(Math.abs(base.d24))} in 24h`, rest: ` (DefiLlama daily history).` });
     }
     return base;
   });
@@ -459,7 +462,29 @@ async function build(): Promise<Snapshot> {
   prov["eco-dex"] = { label: "DEX liquidity", value: usdFull(dexLiq), trail: protocols.filter((p) => p.kind === "dex").map((p) => [p.name, `${usd(p.tvl)} · ${p.source === "onchain" ? "on-chain" : "DefiLlama"}`] as [string, string]) };
   prov["eco-stable"] = { label: "Stablecoin liquidity", value: usdFull(stable), trail: [["Scope", "USDC, USDT and other USD tokens across tracked protocols"], ["Calculation", Object.entries(comp).filter(([s]) => /^USD/.test(s)).map(([s, v]) => `${s} ${usd(v)}`).join(" + ")]] };
 
-  if (kasPx && kas24 != null && Math.abs(kas24) >= 0.05) signals.push({ t: "info", p: null, rule: null, strong: `KAS ${kas24 > 0 ? "rose" : "fell"} ${pct(Math.abs(kas24))} in 24h`, rest: ` to $${kasPx.toPrecision(3)}. Most Kaspa DeFi value is KAS, so TVL moves with it.` });
+  if (kasPx && kas24 != null && Math.abs(kas24) >= 0.05) signals.push({ key: `kas:move:${kas24 > 0 ? "up" : "down"}`, t: "info", p: null, rule: null, strong: `KAS ${kas24 > 0 ? "rose" : "fell"} ${pct(Math.abs(kas24))} in 24h`, rest: ` to $${kasPx.toPrecision(3)}. Most Kaspa DeFi value is KAS, so TVL moves with it.` });
+
+  /* ---------- Igra bridge backing ---------- */
+  if (bridge) {
+    const kas = (n: number) => `${Math.round(n).toLocaleString("en-US")} KAS`;
+    prov["bridge-cov"] = {
+      label: "iKAS backing", value: pct(bridge.coverage),
+      trail: [
+        ["Locked on Kaspa L1", `${kas(bridge.lockedKas)} held by the bridge Entry address ${IGRA_BRIDGE.entry.slice(0, 18)}…${IGRA_BRIDGE.entry.slice(-6)} (api.kaspa.org)`],
+        ["Minted on Igra", `${kas(bridge.ikasSupply)} iKAS in circulation (Igra explorer coin supply)`],
+        ["Calculation", "KAS locked ÷ iKAS in circulation"],
+        ["Block", `Igra #${bridge.block.toLocaleString("en-US")}`],
+      ],
+      note: "Exits burn iKAS on Igra first; the guardian committee then releases KAS on L1 within 48–72 hours. KAS for exits still in that window sits on top of the iKAS supply, so backing reads slightly above 100% while releases are pending.",
+      links: [`https://explorer.kaspa.org/addresses/${IGRA_BRIDGE.entry}`, explorerAddress("igra", IGRA_BRIDGE.exitBridge)],
+    };
+    if (bridge.coverage < 1) {
+      const t: Status = bridge.coverage < 0.99 ? "crit" : "warn";
+      signals.push({ key: "igra-bridge:backing", t, p: "igra-bridge", rule: "backing", strong: `iKAS is ${pct(bridge.coverage)} backed`, rest: `. ${kas(bridge.lockedKas)} is locked on Kaspa L1 against ${kas(bridge.ikasSupply)} iKAS on Igra, a shortfall of ${kas(-bridge.surplusKas)}.` });
+    }
+    const big = bridge.recentExits.filter((e) => e.ageSec <= 86_400 && kasPx && e.kas * kasPx >= 50_000);
+    for (const e of big) signals.push({ key: `igra-bridge:exit:${e.id}`, t: "info", p: "igra-bridge", rule: "large", strong: `${kas(e.kas)} left Igra through the bridge`, rest: ` (exit #${e.id}${kasPx ? `, ${usd(e.kas * kasPx)}` : ""}). The guardians release it on Kaspa L1 within 48–72 hours.` });
+  }
 
   const order: Record<Status, number> = { crit: 0, warn: 1, info: 2, good: 3 };
   signals.sort((a, b) => order[a.t] - order[b.t]);
@@ -474,11 +499,11 @@ async function build(): Promise<Snapshot> {
       stack: stack.map((s) => ({ name: s.name, id: s.id, values: s.values })), dates: allDays,
       composition: Object.entries(comp).map(([sym, v]) => ({ sym, usd: v })).sort((a, b) => b.usd - a.usd),
     },
-    signals, prov, errors,
+    bridge: bridge ?? null, signals, prov, errors,
   };
 }
 
-export const getSnapshot = unstable_cache(build, ["dawns-snapshot-v1"], { revalidate: 120 });
+export const getSnapshot = unstable_cache(buildSnapshot, ["dawns-snapshot-v2"], { revalidate: 120, tags: ["snapshot"] });
 
 export type { Snapshot, ProtocolView, Signal, RuleKey };
 export const findProtocol = (s: Snapshot, id: string) => s.protocols.find((p) => p.id === id) ?? null;

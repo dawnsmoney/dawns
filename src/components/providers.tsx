@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Provenance, RuleKey, Signal, Status } from "@/lib/types";
 import { RULES, type Kind } from "@/lib/rules";
+import { tgLink } from "@/lib/tglink";
 import { usd } from "@/lib/format";
 import { Bell, Close, External } from "./icons";
 import { Pill, ProtocolCoin } from "./bits";
@@ -143,6 +144,7 @@ function WatchModal({ p, onClose, toast }: { p: ProtoLite; onClose: () => void; 
     Object.fromEntries(rest.map((r) => [r.key, { on: w?.rules[r.key]?.on ?? r.key !== "tvl", v: w?.rules[r.key]?.v ?? r.def }])) as Record<RuleKey, RuleState>,
   );
   const [ch, setCh] = useState<string[]>(w?.ch ?? ["inapp"]);
+  const tg = tgLink(`watch_${p.id}`);
 
   const save = (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,7 +167,7 @@ function WatchModal({ p, onClose, toast }: { p: ProtoLite; onClose: () => void; 
       <form className="modal" role="dialog" aria-modal="true" aria-label={`Watch ${p.name}`} onSubmit={save}>
         <button className="x" type="button" onClick={onClose} aria-label="Close"><Close /></button>
         <h2><ProtocolCoin p={p} size={40} />Watch {p.name} <Pill t={p.status}>{p.statusText}</Pill></h2>
-        <p className="desc">dawns checks {p.name} and tells you when something crosses a line you set. You decide what to do about it. Rules are saved in this browser; alert delivery arrives with the next release.</p>
+        <p className="desc">dawns checks {p.name} and tells you when something crosses a line you set. You decide what to do about it. Rules are saved in this browser. On Telegram, the dawns bot sends you every alert it raises for this protocol.</p>
         <div>
           <div className="slide-lab">{main.key === "liq" && L ? "Alert me if available liquidity falls below" : main.label}</div>
           <div className="slide-val">{fmt(mainV)}</div>
@@ -199,12 +201,16 @@ function WatchModal({ p, onClose, toast }: { p: ProtoLite; onClose: () => void; 
         <div>
           <div className="eyebrow" style={{ marginBottom: 10, color: "var(--ink-3)" }}>Send alerts to</div>
           <div className="channels">
-            {[["inapp", "In-app"], ["telegram", "Telegram (soon)"], ["email", "Email (soon)"]].map(([k, label]) => (
-              <label key={k}>
-                <input type="checkbox" checked={ch.includes(k)} onChange={(e) => setCh((c) => (e.target.checked ? [...c, k] : c.filter((x) => x !== k)))} />
-                {label}
-              </label>
-            ))}
+            <label>
+              <input type="checkbox" checked={ch.includes("inapp")} onChange={(e) => setCh((c) => (e.target.checked ? [...c, "inapp"] : c.filter((x) => x !== "inapp")))} />
+              In-app
+            </label>
+            {tg ? (
+              <a className="btn ghost sm" href={tg} target="_blank" rel="noopener noreferrer" onClick={() => setCh((c) => (c.includes("telegram") ? c : [...c, "telegram"]))}>
+                <Bell />{ch.includes("telegram") ? "Telegram connected · open again" : "Get alerts on Telegram"}
+              </a>
+            ) : <label><input type="checkbox" disabled />Telegram (soon)</label>}
+            <label><input type="checkbox" disabled />Email (soon)</label>
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}>

@@ -1,10 +1,10 @@
 /* Serializable shapes shared by the snapshot builder (server) and the UI (server + client). */
 
 export type Status = "good" | "warn" | "crit" | "info";
-export type RuleKey = "liq" | "util" | "large" | "tvl" | "contract" | "vol";
+export type RuleKey = "liq" | "util" | "large" | "tvl" | "contract" | "vol" | "backing";
 export type Pt = { t: number; v: number }; // t in ms
 
-export interface Signal { t: Status; p: string | null; rule: RuleKey | null; strong: string; rest: string }
+export interface Signal { key: string; t: Status; p: string | null; rule: RuleKey | null; strong: string; rest: string }
 export interface Provenance { label: string; value: string; trail: [string, string][]; note?: string; links?: string[] }
 
 export interface ContractRow { n: string; addr: string; chain: "igra" | "kasplex"; up: string; admin: string; pause: string; t: Status }
@@ -66,6 +66,24 @@ export interface ProtocolView {
   };
 }
 
+export interface BridgeExit { id: number; block: number; ageSec: number; kas: number; feeKas: number }
+export interface BridgeState {
+  block: number; timestamp: number;
+  lockedKas: number; entryTxCount: number | null;
+  ikasSupply: number;
+  coverage: number;                 // lockedKas / ikasSupply
+  surplusKas: number;               // lockedKas - ikasSupply
+  totalBurnedKas: number; totalFeesKas: number;
+  exitsTotal: number;
+  recentExits: BridgeExit[];        // newest first
+  inWindowKas: number;              // exits requested in the last 72h (release window)
+  inWindowCount: number;
+  blockTimeSec: number;
+  config: { minExitKas: number; maxExitKas: number; windowBlocks: number; maxExitsPerWindow: number; maxUnlockPerWindowKas: number; feePolicy: string; feeClaimer: string };
+  throttle: { windowEndsAtBlock: number; remainingExits: number; remainingUnlockKas: number };
+  owner: string; ownerIsContract: boolean; implementation: string | null;
+}
+
 export interface Snapshot {
   asOf: number;
   buildMs: number;
@@ -79,6 +97,7 @@ export interface Snapshot {
     series: Pt[]; stack: { name: string; id: string; values: number[] }[]; dates: number[];
     composition: { sym: string; usd: number }[];
   };
+  bridge: BridgeState | null;
   signals: Signal[];
   prov: Record<string, Provenance>;
   errors: string[];

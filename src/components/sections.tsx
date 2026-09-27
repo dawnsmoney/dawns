@@ -18,13 +18,13 @@ export function Feed({ list, names }: { list: Signal[]; names: Record<string, st
       {list.map((e, i) => {
         const Icon = e.t === "good" ? TrendUp : e.t === "crit" ? Alert : e.t === "warn" ? TrendDown : Info;
         return (
-          <div key={i} className={`ev ${e.t === "crit" ? "warn crit" : e.t}`}>
+          <div key={e.key ?? i} className={`ev ${e.t === "crit" ? "warn crit" : e.t}`}>
             <span className="ic"><Icon /></span>
             <div>
               <p><b>{e.strong}</b>{e.rest}</p>
               <div className="meta">
                 <span>Now</span>
-                {e.p ? <Link href={`/protocols/${e.p}`}>{names[e.p] ?? e.p} →</Link> : <span>Kaspa DeFi</span>}
+                {e.p === "igra-bridge" ? <Link href="/bridge">Igra bridge →</Link> : e.p ? <Link href={`/protocols/${e.p}`}>{names[e.p] ?? e.p} →</Link> : <span>Kaspa DeFi</span>}
               </div>
             </div>
           </div>

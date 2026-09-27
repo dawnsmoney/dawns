@@ -10,6 +10,7 @@ import { useWatchMap } from "./providers";
 const NAV = [
   { href: "/", label: "Kaspa DeFi", dot: true },
   { href: "/protocols", label: "Protocols" },
+  { href: "/bridge", label: "Bridge" },
   { href: "/opportunities", label: "Opportunities", soon: "Next" },
   { href: "/vaults", label: "Vaults", soon: "Later" },
 ];
@@ -58,6 +59,7 @@ export function Footer() {
         <Link href="/" aria-label="dawns.money home"><Logo id="ftr" height={26} /></Link>
         <nav>
           <Link href="/protocols">Protocols</Link>
+          <Link href="/bridge">Igra bridge</Link>
           <Link href="/watchlist">Watchlist</Link>
           <Link href="/brand">Brand</Link>
           <span className="mono" style={{ fontSize: 12.5 }}>Sources: Igra RPC · Kaspa L1 indexer · DefiLlama</span>
