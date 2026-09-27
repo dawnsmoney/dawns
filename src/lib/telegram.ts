@@ -1,4 +1,5 @@
 import "server-only";
+import { getMeta, setMeta } from "./db";
 
 /** Minimal Telegram Bot API client. Messages use HTML parse mode. */
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? null;
@@ -30,6 +31,7 @@ export const COMMANDS = [
   { command: "protocols", description: "Protocols you can watch" },
   { command: "bridge", description: "Is iKAS fully backed?" },
   { command: "daily", description: "Morning report on or off" },
+  { command: "plan", description: "Your followed plan and what changed" },
 ];
 
 /** Point the bot at this deployment once. Called from the cron tick, so it heals itself. */
@@ -42,7 +44,12 @@ export async function ensureWebhook() {
   const loc = probe && probe.status >= 300 && probe.status < 400 ? probe.headers.get("location") : null;
   if (loc) url = new URL(loc, url).toString();
   const info = await tg<{ url: string }>("getWebhookInfo", {});
-  if (info.url === url) return "ok";
+  if (info.url === url) {
+    // keep the command menu in step with the code
+    const v = String(COMMANDS.length);
+    if ((await getMeta("tg_commands")) !== v) { await tg("setMyCommands", { commands: COMMANDS }); await setMeta("tg_commands", v); return "commands updated"; }
+    return "ok";
+  }
   await tg("setWebhook", { url, secret_token: secret, allowed_updates: ["message", "callback_query", "my_chat_member"], drop_pending_updates: false });
   await tg("setMyCommands", { commands: COMMANDS });
   await tg("setMyDescription", { description: "Live health of Kaspa DeFi from dawns.money. Watch a protocol and get an alert when liquidity, utilization, oracles or bridge backing cross a line." }).catch(() => null);

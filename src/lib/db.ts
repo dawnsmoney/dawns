@@ -72,6 +72,13 @@ const SCHEMA = [
     nonce text primary key, address text not null, message text not null, expires_at timestamptz not null, used boolean not null default false)`,
   `create table if not exists profiles (
     user_id text primary key references users(id) on delete cascade, policy jsonb not null, updated_at timestamptz not null default now())`,
+  `alter table profiles add column if not exists plan jsonb`,
+  `alter table telegram_chats add column if not exists user_id text`,
+  `create table if not exists telegram_links (token text primary key, user_id text not null, expires_at timestamptz not null)`,
+  // alerts computed for one user's followed plan
+  `create table if not exists user_signals (
+    user_id text not null, key text not null, severity text not null, strong text not null, rest text,
+    first_seen timestamptz not null, last_seen timestamptz not null, resolved_at timestamptz, primary key (user_id, key))`,
 ];
 
 let ready: Promise<void> | null = null;

@@ -9,7 +9,7 @@ type Eip1193 = { request(args: { method: string; params?: unknown[] }): Promise<
 type Eip6963Detail = { info: { uuid: string; name: string; icon: string; rdns: string }; provider: Eip1193 };
 declare global { interface Window { kasware?: Kasware; kastle?: Kastle; ethereum?: Eip1193 } }
 
-export type Account = { id: string; wallets: { address: string; kind: "kaspa" | "evm" }[]; policy: unknown; updatedAt: string | null } | null;
+export type Account = { id: string; wallets: { address: string; kind: "kaspa" | "evm" }[]; policy: unknown; plan: { at: string; lines: { id: string; name: string; usd: number }[] } | null; telegram: boolean; updatedAt: string | null } | null;
 export type WalletOption = { key: string; label: string; icon?: string; kind: "kaspa" | "evm"; installed: boolean; install?: string };
 
 /** EIP-6963: every injected EVM wallet announces itself (MetaMask, KasWare EVM, Kastle EVM, Rabby…). */

@@ -4,6 +4,8 @@ import { send, tg, esc, SITE } from "@/lib/telegram";
 import { dawnReport } from "@/lib/report";
 import { usd, pct } from "@/lib/format";
 import type { Snapshot } from "@/lib/types";
+import { parsePolicy, type FollowedPlan } from "@/lib/allocator";
+import { planChecks } from "@/lib/plan-alerts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -68,7 +70,8 @@ const HELP = `<b>dawns.money</b> watches Kaspa DeFi on-chain and tells you when 
 /unwatch kaskad · stop one (or <code>all</code>)
 /list · what this chat watches
 /bridge · is iKAS fully backed?
-/daily on · morning report at 07:00 Athens time`;
+/daily on · morning report at 07:00 Athens time
+/plan · your followed plan (link it on dawns.money/allocate)`;
 
 async function handleCommand(c: Chat, text: string) {
   const [raw, ...rest] = text.trim().split(/\s+/);
@@ -79,6 +82,12 @@ async function handleCommand(c: Chat, text: string) {
   switch (cmd) {
     case "/start": {
       await upsertChat(c);
+      if (arg.startsWith("link_")) {
+        const r = (await sql().query("delete from telegram_links where token = $1 and expires_at > now() returning user_id", [arg.slice(5)])) as { user_id: string }[];
+        if (!r[0]) return send(c.id, "That link expired. Open dawns.money/allocate and press Connect Telegram again.");
+        await sql().query("update telegram_chats set user_id = $2 where chat_id = $1", [c.id, r[0].user_id]);
+        return send(c.id, `🔗 <b>Linked to your dawns profile.</b>\nWhen you follow a plan on dawns.money/allocate, I'll tell you here when a position stops fitting your rules: its exit gets tight, its yield drops, or its price swings too far.\n\n/plan · your followed plan right now\n/unlink · disconnect this chat`);
+      }
       const t = arg ? resolve(s, arg) : null;
       if (t) {
         await watch(c, t.id);
@@ -87,6 +96,22 @@ async function handleCommand(c: Chat, text: string) {
       return send(c.id, `☀️ ${HELP}`);
     }
     case "/help": return send(c.id, HELP);
+    case "/plan": {
+      const r = (await sql().query("select p.plan, p.policy from telegram_chats c join profiles p on p.user_id = c.user_id where c.chat_id = $1", [c.id])) as { plan: FollowedPlan | null; policy: unknown }[];
+      if (!r[0]) return send(c.id, "This chat is not linked to a profile. Open dawns.money/allocate, sign in, and press Connect Telegram.");
+      if (!r[0].plan?.lines?.length) return send(c.id, "You are not following a plan yet. Build one on dawns.money/allocate and press Follow this plan.");
+      const checks = planChecks(s, r[0].plan, parsePolicy(r[0].policy));
+      const lines = r[0].plan.lines.map((l) => {
+        const o = s.opportunities.find((x) => x.id === l.id);
+        const bad = checks.filter((x) => x.lineId === l.id);
+        return `${bad.length ? (bad.some((x) => x.t === "crit") ? "🔴" : "🟠") : "🟢"} <b>${esc(l.name)}</b> · $${l.usd.toLocaleString("en-US")}\n   ${o?.apy != null ? `yield ${pct(o.apy)} (was ${pct(l.apy)})` : "not listed now"}${bad.length ? `\n   ${bad.map((x) => esc(x.strong)).join("\n   ")}` : ""}`;
+      });
+      return send(c.id, `<b>Your plan</b> · followed since ${new Date(r[0].plan.at).toISOString().slice(0, 10)}\n\n${lines.join("\n\n")}\n\n<a href="${SITE}/allocate">Open on dawns</a>`);
+    }
+    case "/unlink": {
+      await sql().query("update telegram_chats set user_id = null where chat_id = $1", [c.id]);
+      return send(c.id, "This chat is no longer linked to your dawns profile.");
+    }
     case "/status": return send(c.id, status(s));
     case "/bridge": return send(c.id, bridge(s));
     case "/protocols":

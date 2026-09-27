@@ -51,7 +51,13 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
     const p = a?.policy ? parsePolicy(a.policy) : null;
     if (p) { setPolicy(p); setAmountText(String(p.amount)); }
   };
-  useEffect(() => { loadAccount().then(adopt).catch(() => null); }, []);
+  useEffect(() => {
+    loadAccount().then(adopt).catch(() => null);
+    // coming back from Telegram after linking: refresh the account
+    const onFocus = () => loadAccount().then((a) => setAccount(a)).catch(() => null);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   const set = (patch: Partial<Policy>) => setPolicy((p) => ({ ...p, ...patch }));
   const connect = async (key: string) => {
@@ -60,15 +66,30 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
     catch (e) { setMsg((e as Error).message); }
     finally { setBusy(null); }
   };
-  const save = async () => {
-    setBusy("save"); setMsg(null);
+  const put = async (body: object, done: string, key: string) => {
+    setBusy(key); setMsg(null);
     try {
-      const r = await fetch("/api/profile", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ policy }) });
+      const r = await fetch("/api/profile", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ policy, ...body }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
-      setAccount(j); setMsg("Profile saved.");
+      setAccount(j); setMsg(done);
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(null); }
   };
+  const save = () => put({}, "Profile saved.", "save");
+  const follow = () => put({ plan: { lines: plan.lines.map((l) => ({ id: l.id, protocol: l.protocol, name: l.name, kind: l.kind, usd: l.usd, apy: l.apy })) } },
+    account?.telegram ? "Following this plan. Alerts go to your Telegram." : "Following this plan. Connect Telegram to get alerts.", "follow");
+  const unfollow = () => put({ plan: null }, "Stopped following the plan.", "follow");
+  const connectTelegram = async () => {
+    setBusy("tg"); setMsg(null);
+    try {
+      const r = await fetch("/api/telegram/link", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      window.open(j.url, "_blank", "noopener");
+      setMsg("Telegram opened. Press Start there, then come back to this page.");
+    } catch (e) { setMsg((e as Error).message); } finally { setBusy(null); }
+  };
+  const following = account?.plan?.lines?.length ? account.plan : null;
   const out = async () => { await signOut(); setAccount(null); setMsg("Signed out."); };
 
   const placed = plan.lines.reduce((s, l) => s + l.usd, 0);
@@ -151,6 +172,22 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
             <div className="vrow"><span /><div>Expected native yield<small>on the whole amount, per year</small></div><b className="up">{pct(plan.blended, 2)}</b></div>
             <div className="vrow"><span /><div>Positions</div><b>{plan.lines.length}</b></div>
           </div>
+          {account && (
+            <div style={{ display: "grid", gap: 10, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+              {following ? (
+                <span className="muted" style={{ fontSize: 14 }}>Following {following.lines.length} positions since {new Date(following.at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}. dawns checks them every 10 minutes against your rules.</span>
+              ) : (
+                <span className="muted" style={{ fontSize: 14 }}>Follow this plan and dawns tells you when a position stops fitting your rules.</span>
+              )}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {plan.lines.length > 0 && <button type="button" className="btn iris sm" disabled={!!busy} onClick={follow}>{busy === "follow" ? "Saving…" : following ? "Follow this version" : "Follow this plan"}</button>}
+                {following && <button type="button" className="btn ghost sm" disabled={!!busy} onClick={unfollow}>Stop following</button>}
+                {account.telegram
+                  ? <span className="tag" style={{ alignSelf: "center" }}>Telegram connected</span>
+                  : <button type="button" className="btn glass sm" disabled={!!busy} onClick={connectTelegram}>{busy === "tg" ? "Opening…" : "Connect Telegram"}</button>}
+              </div>
+            </div>
+          )}
           <p className="foot" style={{ margin: 0 }}>dawns never moves funds. This is not financial advice: rates and liquidity change every block.</p>
         </div>
       </div>

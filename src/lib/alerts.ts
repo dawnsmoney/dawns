@@ -3,6 +3,8 @@ import { sql, insertJson, getMeta, setMeta } from "./db";
 import { send, esc, SITE } from "./telegram";
 import { dawnReport } from "./report";
 import type { Signal, Snapshot, Status } from "./types";
+import { parsePolicy, type FollowedPlan } from "./allocator";
+import { planChecks } from "./plan-alerts";
 
 /* ---------- 1. history ---------- */
 export async function recordSnapshot(s: Snapshot) {
@@ -100,7 +102,10 @@ export async function deliver(events: AlertEvent[], s: Snapshot) {
   if (!events.length) return { sent: 0, failed: 0 };
   const q = sql();
   const names = Object.fromEntries(s.protocols.map((p) => [p.id, p.name]));
-  const subs = (await q.query("select chat_id, protocol from telegram_subs")) as { chat_id: string; protocol: string }[];
+  // explicit subscriptions, plus every protocol in a linked user's followed plan
+  const subs = (await q.query(`select chat_id, protocol from telegram_subs
+    union select c.chat_id, l->>'protocol' from telegram_chats c join profiles p on p.user_id = c.user_id
+      cross join lateral jsonb_array_elements(coalesce(p.plan->'lines', '[]'::jsonb)) l`)) as { chat_id: string; protocol: string }[];
   let sent = 0, failed = 0;
   for (const e of events) {
     const chats = [...new Set(subs.filter((x) => x.protocol === "all" || x.protocol === e.protocol).map((x) => x.chat_id))];
@@ -139,4 +144,53 @@ export async function maybeDailyReport(s: Snapshot) {
   let n = 0;
   for (const t of targets) { try { await send(t, text); n++; } catch { /* keep going */ } }
   return `sent ${n}`;
+}
+
+/* ---------- 5. alerts on each user's followed plan ---------- */
+export async function planAlerts(s: Snapshot) {
+  const q = sql();
+  const rows = (await q.query(`select c.chat_id, p.user_id, p.plan, p.policy from telegram_chats c join profiles p on p.user_id = c.user_id
+    where p.plan is not null`)) as { chat_id: string; user_id: string; plan: FollowedPlan; policy: unknown }[];
+  const byUser = new Map<string, { plan: FollowedPlan; policy: unknown; chats: string[] }>();
+  for (const r of rows) {
+    const u = byUser.get(r.user_id) ?? { plan: r.plan, policy: r.policy, chats: [] };
+    u.chats.push(r.chat_id); byUser.set(r.user_id, u);
+  }
+  const now = new Date(s.asOf);
+  let sent = 0;
+  for (const [userId, u] of byUser) {
+    const checks = planChecks(s, u.plan, parsePolicy(u.policy));
+    const prev = (await q.query("select key, severity, strong, last_seen, resolved_at from user_signals where user_id = $1", [userId])) as { key: string; severity: Status; strong: string; last_seen: string; resolved_at: string | null }[];
+    const byKey = new Map(prev.map((r) => [r.key, r]));
+    const events: AlertEvent[] = [];
+    for (const c of checks) {
+      const r = byKey.get(c.key);
+      const quiet = r?.resolved_at && now.getTime() - new Date(r.resolved_at).getTime() < REOPEN_QUIET_H * 3600_000;
+      if (!r || (r.resolved_at && !quiet)) events.push({ kind: "new", key: `u:${userId}:${c.key}`, protocol: null, t: c.t, strong: c.strong, rest: c.rest });
+      else if (!r.resolved_at && RANK[c.t] > RANK[r.severity]) events.push({ kind: "worse", key: `u:${userId}:${c.key}`, protocol: null, t: c.t, strong: c.strong, rest: c.rest });
+    }
+    await insertJson("user_signals",
+      [["user_id", "text"], ["key", "text"], ["severity", "text"], ["strong", "text"], ["rest", "text"], ["first_seen", "timestamptz"], ["last_seen", "timestamptz"]],
+      checks.map((c) => ({ user_id: userId, key: c.key, severity: c.t, strong: c.strong, rest: c.rest, first_seen: now.toISOString(), last_seen: now.toISOString() })),
+      "on conflict (user_id, key) do update set severity = excluded.severity, strong = excluded.strong, rest = excluded.rest, last_seen = excluded.last_seen, resolved_at = null");
+    const seen = new Set(checks.map((c) => c.key));
+    const cutoff = now.getTime() - RESOLVE_AFTER_MIN * 60_000;
+    for (const r of prev) {
+      if (r.resolved_at || seen.has(r.key) || new Date(r.last_seen).getTime() > cutoff) continue;
+      await q.query("update user_signals set resolved_at = $3 where user_id = $1 and key = $2", [userId, r.key, now.toISOString()]);
+      if (r.severity === "crit" || r.severity === "warn") events.push({ kind: "resolved", key: `u:${userId}:${r.key}`, protocol: null, t: "good", strong: r.strong, rest: "" });
+    }
+    for (const e of events) for (const chat of u.chats) {
+      const dup = (await q.query("select 1 from alerts_sent where chat_id = $1 and signal_key = $2 and kind = $3 and sent_at > now() - interval '6 hours' limit 1", [chat, e.key, e.kind])) as unknown[];
+      if (dup.length) continue;
+      const head = e.kind === "resolved" ? "🟢 <b>Cleared</b> · your plan" : `${ICON[e.t]} <b>${e.kind === "worse" ? "Escalated" : "Your plan"}</b>`;
+      const body = e.kind === "resolved" ? `No longer true: ${esc(e.strong)}.` : `<b>${esc(e.strong)}</b>${esc(e.rest)}`;
+      try {
+        await send(chat, `${head}\n${body}\n<a href="${SITE}/allocate">Review your plan</a>`);
+        await q.query("insert into alerts_sent (chat_id, signal_key, kind) values ($1, $2, $3)", [chat, e.key, e.kind]);
+        sent++;
+      } catch { /* chat gone; the protocol alert path cleans it up */ }
+    }
+  }
+  return `${byUser.size} plans checked, ${sent} alerts sent`;
 }

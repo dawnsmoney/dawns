@@ -1,7 +1,7 @@
 import { revalidateTag } from "next/cache";
 import { buildSnapshot } from "@/lib/snapshot";
 import { hasDb, ensureSchema } from "@/lib/db";
-import { recordSnapshot, diffSignals, deliver, maybeDailyReport } from "@/lib/alerts";
+import { recordSnapshot, diffSignals, deliver, maybeDailyReport, planAlerts } from "@/lib/alerts";
 import { hasBot, ensureWebhook } from "@/lib/telegram";
 import { indexEvents, indexBridgeExits, checkPayouts } from "@/lib/indexer";
 
@@ -36,6 +36,7 @@ export async function GET(req: Request) {
     if (hasBot()) {
       await step("webhook", ensureWebhook);
       await step("alerts", () => deliver(events, s));
+      await step("plans", () => planAlerts(s));
       await step("daily", () => maybeDailyReport(s));
     } else out.telegram = "TELEGRAM_BOT_TOKEN not set";
   } else out.db = "DATABASE_URL not set";

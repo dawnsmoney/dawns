@@ -23,6 +23,18 @@ export function parsePolicy(x: unknown): Policy | null {
   return { risk, exit, amount: Math.round(amount), avoid: [...new Set(avoid)] };
 }
 
+/** A plan the user chose to follow: what dawns watches for them. */
+export interface FollowedLine { id: string; protocol: string; name: string; kind: "supply" | "lp"; usd: number; apy: number }
+export interface FollowedPlan { at: string; lines: FollowedLine[] }
+export function parseFollowed(x: unknown): FollowedPlan | null {
+  if (!x || typeof x !== "object") return null;
+  const lines = (x as { lines?: unknown }).lines;
+  if (!Array.isArray(lines) || lines.length > 20) return null;
+  const ok = lines.every((l) => l && typeof l.id === "string" && l.id.length < 200 && typeof l.protocol === "string" && typeof l.name === "string" && (l.kind === "supply" || l.kind === "lp") && Number.isFinite(l.usd) && Number.isFinite(l.apy));
+  if (!ok) return null;
+  return { at: new Date().toISOString(), lines: lines.map((l) => ({ id: l.id, protocol: l.protocol, name: String(l.name).slice(0, 80), kind: l.kind, usd: Math.round(l.usd), apy: Number(l.apy) })) };
+}
+
 export interface PlanLine { id: string; name: string; pname: string; protocol: string; kind: Opportunity["kind"]; assets: string[]; apy: number; usd: number; share: number; why: string; exit: string }
 export interface Plan {
   lines: PlanLine[];
@@ -47,7 +59,7 @@ const CAPS: Record<Risk, { perLine: number; perProtocol: number; poolShare: numb
   high: { perLine: 0.5, perProtocol: 0.7, poolShare: 0.15, maxLines: 6 },
 };
 /** How many times the position the market's withdrawable cash must cover. */
-const EXIT_COVER: Record<ExitNeed, number> = { instant: 3, days: 1.5, weeks: 1 };
+export const EXIT_COVER: Record<ExitNeed, number> = { instant: 3, days: 1.5, weeks: 1 };
 
 export function allocate(opps: Opportunity[], p: Policy): Plan {
   const caps = CAPS[p.risk];

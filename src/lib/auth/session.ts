@@ -94,13 +94,15 @@ export async function signOut() {
 
 export async function accountOf(userId: string) {
   const q = sql();
-  const [w, pr] = await Promise.all([
+  const [w, pr, tg] = await Promise.all([
     q.query("select address, kind from wallets where user_id = $1 order by created_at", [userId]),
-    q.query("select policy, updated_at from profiles where user_id = $1", [userId]),
-  ]);
+    q.query("select policy, plan, updated_at from profiles where user_id = $1", [userId]),
+    q.query("select count(*)::int as n from telegram_chats where user_id = $1", [userId]),
+  ]).then(([a, b, c]) => [a, b, c] as const);
   const wallets = w as { address: string; kind: WalletKind }[];
-  const prof = pr as { policy: unknown; updated_at: string }[];
-  return { id: userId, wallets, policy: prof[0]?.policy ?? null, updatedAt: prof[0]?.updated_at ?? null };
+  const prof = pr as { policy: unknown; plan: unknown; updated_at: string }[];
+  const telegram = ((tg as { n: number }[])[0]?.n ?? 0) > 0;
+  return { id: userId, wallets, policy: prof[0]?.policy ?? null, plan: prof[0]?.plan ?? null, telegram, updatedAt: prof[0]?.updated_at ?? null };
 }
 
 /** Same-origin check for state-changing requests (cookies are SameSite=Lax; this closes the rest). */
