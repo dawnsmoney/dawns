@@ -63,7 +63,7 @@ export function OpportunityTable({ rows }: { rows: Opportunity[] }) {
                 </td>
                 <td>
                   <b style={{ font: "600 18px var(--display)" }}>{o.apy != null ? pct(o.apy, o.apy < 0.1 ? 2 : 1) : "—"}</b>
-                  <small className="muted" style={{ display: "block", maxWidth: 220 }}>{o.apyBasis}</small>
+                  <small className="muted" style={{ display: "block", maxWidth: 220, whiteSpace: "normal", marginLeft: "auto" }}>{o.apyBasis}</small>
                 </td>
                 <td>{usd(o.size)}{o.vol24 != null && <small className="muted" style={{ display: "block" }}>{usd(o.vol24)} traded 24h</small>}</td>
                 <td><Exit o={o} /></td>
@@ -73,7 +73,7 @@ export function OpportunityTable({ rows }: { rows: Opportunity[] }) {
               </tr>
               {open === o.id && (
                 <tr>
-                  <td colSpan={7} style={{ background: "rgba(255,255,255,.03)" }}>
+                  <td colSpan={7} className="wrap" style={{ background: "rgba(255,255,255,.03)" }}>
                     <ul style={{ margin: "4px 0", paddingLeft: 18, display: "grid", gap: 6, color: "var(--ink-2)", fontSize: 14.5 }}>
                       {o.notes.map((n) => <li key={n}>{n}</li>)}
                     </ul>

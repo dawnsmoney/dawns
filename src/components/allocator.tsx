@@ -164,15 +164,15 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
               <td><span className="proto"><AssetCoin a={l.assets[0]} size={32} /><span><b>{l.name}</b><small><Link href={`/protocols/${l.protocol}`}>{l.pname}</Link></small></span></span></td>
               <td><b style={{ fontFamily: "var(--display)" }}>{usd(l.usd)}</b><small className="muted" style={{ display: "block" }}>{pct(l.share, 0)}</small></td>
               <td>{pct(l.apy, 1)}</td>
-              <td className="muted" style={{ fontSize: 14, maxWidth: 340 }}>{l.why}</td>
-              <td className="muted" style={{ fontSize: 14, maxWidth: 240 }}>{l.exit}</td>
+              <td className="muted wrap" style={{ fontSize: 14, minWidth: 280, maxWidth: 380 }}>{l.why}</td>
+              <td className="muted wrap" style={{ fontSize: 14, minWidth: 200, maxWidth: 260 }}>{l.exit}</td>
             </tr>
           ))}
           {plan.cash && (
             <tr>
               <td><b>Keep in your wallet</b></td>
               <td><b style={{ fontFamily: "var(--display)" }}>{usd(plan.cash.usd)}</b><small className="muted" style={{ display: "block" }}>{pct(plan.cash.share, 0)}</small></td>
-              <td>—</td><td className="muted" style={{ fontSize: 14 }} colSpan={2}>{plan.cash.why}</td>
+              <td>—</td><td className="muted wrap" style={{ fontSize: 14 }} colSpan={2}>{plan.cash.why}</td>
             </tr>
           )}
         </tbody>
