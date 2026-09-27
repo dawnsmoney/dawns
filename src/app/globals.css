@@ -387,3 +387,5 @@ footer.foot-site nav{display:flex;gap:18px;flex-wrap:wrap}
 footer.foot-site a{text-decoration:none}
 footer.foot-site a:hover{color:#fff}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.ev.crit .ic{background:rgba(255,122,122,.16);color:var(--crit)}
+.drawer .btn svg{width:15px;height:15px}

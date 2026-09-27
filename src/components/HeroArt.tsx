@@ -1,5 +1,4 @@
 import { COIN, ProtocolCoin } from "./bits";
-import { P, ECO } from "@/lib/data";
 import { usd } from "@/lib/format";
 import { Check } from "./icons";
 
@@ -41,7 +40,7 @@ const SunGlyph = () => (
   </>
 );
 
-export function HeroArt() {
+export function HeroArt({ tvl, spot }: { tvl: number; spot: { id: string; letter: string; name: string; line: string } | null }) {
   const arch = "M170,470 V180 A110,110 0 0 1 390,180 V470 Z";
   return (
     <div className="art">
@@ -77,18 +76,20 @@ export function HeroArt() {
           <path d="M160,60 L330,60 L160,330 Z" fill="url(#hsheen)" />
         </g>
         <path d={arch} fill="none" stroke="#fff" strokeOpacity=".85" strokeWidth="3" />
-        <g className="bob3"><Coin3D cx={470} cy={150} r={20} k="kaspacom" rot={10} blur={2}><Letter ch="◆" /></Coin3D></g>
+        <g className="bob3"><Coin3D cx={470} cy={150} r={20} k="kaspacom-dex" rot={10} blur={2}><Letter ch="◆" /></Coin3D></g>
         <g className="bob2"><Coin3D cx={96} cy={196} r={34} k="USDC" rot={-12} blur={1}><Letter ch="$" size={42} /></Coin3D></g>
-        <g className="bob"><Coin3D cx={112} cy={410} r={54} k="iKAS" rot={-16}><Letter ch="K" /></Coin3D></g>
+        <g className="bob"><Coin3D cx={112} cy={410} r={54} k="KAS" rot={-16}><Letter ch="K" /></Coin3D></g>
         <g className="bob2"><Coin3D cx={452} cy={392} r={66} k="kaskad" rot={12}><SunGlyph /></Coin3D></g>
       </svg>
-      <div className="float bob2" style={{ right: "2%", top: "10%" }}>
-        <ProtocolCoin p={P.kaskad} size={30} />
-        <span>Kaskad<small>100% asset coverage</small></span>
-      </div>
+      {spot && (
+        <div className="float bob2" style={{ right: "2%", top: "10%" }}>
+          <ProtocolCoin p={spot} size={30} />
+          <span>{spot.name}<small>{spot.line}</small></span>
+        </div>
+      )}
       <div className="float bob3" style={{ left: 0, top: "48%" }}>
         <span className="pill good" style={{ padding: "6px 8px" }}><Check /></span>
-        <span>{usd(ECO.tvl)} in Kaspa DeFi<small>every number traceable</small></span>
+        <span>{usd(tvl)} in Kaspa DeFi<small>read on-chain, every block</small></span>
       </div>
     </div>
   );

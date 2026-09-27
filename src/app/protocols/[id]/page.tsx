@@ -1,223 +1,254 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { PROTOCOLS, P, EVENTS, DATES, C, ASSET_COLOR, blockAgo, dexComp, type AssetSym, type Protocol } from "@/lib/data";
+import Link from "next/link";
+import { getSnapshot, findProtocol } from "@/lib/snapshot";
+import { toLite, names } from "@/lib/view";
+import type { ProtocolView, Snapshot } from "@/lib/types";
 import { usd, pct } from "@/lib/format";
-import { AssetCoin, Change, Clouds, BANNER_CLOUDS, Pill, ProtocolCoin, UtilMeter } from "@/components/bits";
+import { AssetCoin, Change, Clouds, BANNER_CLOUDS, Pill, ProtocolCoin, UtilMeter, SERIES, assetColor } from "@/components/bits";
 import { Alert, Check, External, Info, Minus } from "@/components/icons";
 import { Kpi, ProvRow, WatchButton } from "@/components/actions";
 import { RangeChart, Bars } from "@/components/charts";
 import { Feed, SubNav } from "@/components/sections";
+import { DataBridge } from "@/components/providers";
 import { Fresh } from "@/components/Fresh";
-import Link from "next/link";
 
-export function generateStaticParams() {
-  return PROTOCOLS.map((p) => ({ id: p.id }));
+export const revalidate = 120;
+export const dynamicParams = true;
+
+export async function generateStaticParams() {
+  try {
+    const s = await getSnapshot();
+    return s.protocols.map((p) => ({ id: p.id }));
+  } catch {
+    return [];
+  }
 }
-export const dynamicParams = false;
 
 export async function generateMetadata({ params }: PageProps<"/protocols/[id]">): Promise<Metadata> {
   const { id } = await params;
-  const p = P[id];
-  return p ? { title: `${p.name} health`, description: `On-chain health for ${p.name}: liquidity, ${p.cat === "Lending" ? "utilization, coverage" : "pools, volume"}, contracts and verification.` } : {};
+  const p = findProtocol(await getSnapshot(), id);
+  return p ? { title: `${p.name} health`, description: `Live health for ${p.name} in Kaspa DeFi: liquidity, ${p.kind === "lending" ? "utilization, coverage, oracle checks" : "pools and depth"}, contracts and verification.` } : {};
 }
 
-function Kpis({ p }: { p: Protocol }) {
+const explorer = (chain: string, a: string) => `${chain === "kasplex" ? "https://explorer.kasplex.org" : "https://explorer.igralabs.com"}/address/${a}`;
+const short = (a: string) => (a.startsWith("0x") && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+
+function Kpis({ p }: { p: ProtocolView }) {
   const id = p.id;
-  if (p.cat === "Lending")
+  if (p.lending) {
+    const L = p.lending;
     return (
       <>
-        <Kpi label="Total supplied" value={usd(p.supplied!)} ctx={<><Change v={-0.082} /> 24h</>} prov={`${id}-sup`} />
-        <Kpi label="Borrowed" value={usd(p.borrowed!)} ctx={<><Change v={0.012} /> 24h</>} prov={`${id}-bor`} />
-        <Kpi label="Available liquidity" value={usd(p.tvl)} ctx={<><Change v={p.d24} /> 24h</>} prov={`${id}-liq`} />
-        <Kpi label="Utilization" value={pct(p.util!)} ctx={<><Change v={p.utilD7!} unit="pp" /> 7d</>} prov={`${id}-util`} />
-        <Kpi label="Asset coverage" value="100.0%" ctx={<span className="up">Loans backed 310%</span>} prov={`${id}-cov`} />
+        <Kpi label="Total supplied" value={usd(L.suppliedUsd)} ctx={<>{L.markets.length} markets</>} prov={`${id}-sup`} />
+        <Kpi label="Borrowed" value={usd(L.borrowedUsd)} ctx={<>{pct(L.utilization)} of supply</>} prov={`${id}-bor`} />
+        <Kpi label="Withdrawable now" value={usd(L.cashUsd)} ctx={<Change v={p.d24} />} prov={`${id}-liq`} />
+        <Kpi label="Utilization" value={pct(L.utilization)} ctx={<span className={L.utilization > 0.8 ? "down" : "flat"}>{L.utilization > 0.8 ? "high" : "healthy range"}</span>} prov={`${id}-util`} />
+        <Kpi label="Asset coverage" value={pct(L.coverage)} ctx={<span className={L.coverage >= 1 ? "up" : "down"}>{L.coverage >= 1 ? "claims covered" : "claims not covered"}</span>} prov={`${id}-cov`} />
       </>
     );
-  const pools = p.pools!;
+  }
+  if (p.dex) {
+    const d = p.dex;
+    return (
+      <>
+        <Kpi label="Total liquidity" value={usd(p.tvl)} ctx={<><Change v={p.d24} /> 24h</>} prov={`${id}-tvl`} />
+        <Kpi label="24h volume" value={d.vol24 != null ? usd(d.vol24) : "—"} ctx={<span className="flat">DefiLlama</span>} prov={`${id}-vol`} />
+        <Kpi label="24h fees" value={d.fees24 != null ? usd(d.fees24) : "—"} ctx={<span className="flat">{d.fees24 != null && p.tvl ? `${pct((d.fees24 * 365) / p.tvl)} fee APR` : "—"}</span>} prov={`${id}-fee`} />
+        <Kpi label="Pools" value={String(d.pairCount)} ctx={<span className="flat">{d.pools.filter((x) => x.usd >= 1000).length} over $1K</span>} />
+        <Kpi label="Largest pool" value={d.pools[0] ? pct(d.pools[0].share) : "—"} ctx={<span className="flat">{d.pools[0]?.symbols.join(" / ")}</span>} />
+      </>
+    );
+  }
   return (
     <>
-      <Kpi label="Total liquidity" value={usd(p.tvl)} ctx={<><Change v={p.d24} /> 24h</>} prov={`${id}-tvl`} />
-      <Kpi label="24h volume" value={p.vol24 ? usd(p.vol24) : "$0"} ctx={p.vol24 ? <><Change v={0.18} /> vs 7d avg</> : <span className="flat">—</span>} prov={`${id}-vol`} />
-      <Kpi label="24h fees" value={`$${p.fees24}`} ctx={<span className="flat">0.30% of volume</span>} prov={`${id}-fee`} />
-      <Kpi label="Pools" value={String(p.poolsN)} ctx={<span className="flat">{p.poolsN! - pools.length + 1} under $5K</span>} />
-      <Kpi label="Largest pool" value={pct(pools[0].liq / p.tvl)} ctx={<span className="flat">{pools[0].p}</span>} />
+      <Kpi label="Total value locked" value={usd(p.tvl)} ctx={<span className="flat">DefiLlama</span>} prov={`${id}-tvl`} />
+      <Kpi label="24h" value={p.d24 != null ? `${(p.d24 * 100).toFixed(1)}%` : "—"} ctx={<Change v={p.d24} />} />
+      <Kpi label="7d" value={p.d7 != null ? `${(p.d7 * 100).toFixed(1)}%` : "—"} ctx={<Change v={p.d7} />} />
+      <Kpi label="Networks" value={String(p.chains.length)} ctx={<span className="flat">{p.chains.join(", ")}</span>} />
+      <Kpi label="Category" value={p.category} ctx={<span className="flat">{p.source === "onchain" ? "read on-chain" : "not yet read on-chain"}</span>} />
     </>
   );
 }
 
-function Financials({ p }: { p: Protocol }) {
-  if (p.cat === "Lending")
+function History({ p }: { p: ProtocolView }) {
+  if (p.history.length < 3) return <p className="muted">No history yet.</p>;
+  return (
+    <>
+      <RangeChart title={p.lending ? "Withdrawable liquidity (TVL)" : "Value locked"} label={`${p.name} TVL`} zero dates={p.history.map((h) => h.t)} series={[{ name: "TVL", color: SERIES[1], values: p.history.map((h) => h.v) }]} />
+      <p className="foot">Daily history from DefiLlama{p.source === "onchain" ? `. Today's figure on this page is read on-chain (${usd(p.tvl)}); DefiLlama currently shows ${usd(p.llamaTvl)}.` : "."}</p>
+    </>
+  );
+}
+
+function Financials({ p }: { p: ProtocolView }) {
+  if (p.lending) {
+    const L = p.lending;
     return (
       <div className="grid gA">
+        <div className="card"><History p={p} /></div>
         <div className="card">
-          <RangeChart title="Supplied vs borrowed" label="Supplied vs borrowed" legend zero area="all" dates={DATES}
-            series={[{ name: "Supplied", color: C.s5, values: p.supS! }, { name: "Borrowed", color: C.s1, values: p.borS! }]} />
-        </div>
-        <div className="card">
-          <div className="c-head"><h3>Balance sheet</h3><span className="tag">block {blockAgo(0)}</span></div>
+          <div className="c-head"><h3>Balance sheet</h3>{p.asOf && <span className="tag">block #{p.asOf.block.toLocaleString("en-US")}</span>}</div>
           <div className="vlist">
-            <ProvRow id={`${p.id}-liq`} className="vrow"><span style={{ color: "var(--ink-3)" }}><Info /></span><div>Reserves in pool<small>Tokens held by the contract</small></div><b>{usd(p.tvl)}</b></ProvRow>
-            <ProvRow id={`${p.id}-bor`} className="vrow"><span style={{ color: "var(--ink-3)" }}><Info /></span><div>Outstanding loans<small>Owed by 212 borrowers</small></div><b>{usd(p.borrowed!)}</b></ProvRow>
-            <div className="vrow"><span /><div><b style={{ fontSize: 15 }}>Total assets</b></div><b>{usd(p.supplied!)}</b></div>
-            <ProvRow id={`${p.id}-sup`} className="vrow"><span style={{ color: "var(--ink-3)" }}><Info /></span><div>Supplier claims<small>What the protocol owes depositors</small></div><b>{usd(p.supplied!)}</b></ProvRow>
-            <ProvRow id={`${p.id}-cov`} className="vrow"><span style={{ color: "var(--good)" }}><Check /></span><div><b style={{ fontSize: 15 }}>Asset coverage</b><small>Loans backed by $1.09M collateral (310%)</small></div><b className="up">100.0%</b></ProvRow>
+            <ProvRow id={`${p.id}-liq`} className="vrow"><span style={{ color: "var(--ink-3)" }}><Info /></span><div>Cash in the markets<small>Tokens held by the aToken contracts</small></div><b>{usd(L.cashUsd)}</b></ProvRow>
+            <ProvRow id={`${p.id}-bor`} className="vrow"><span style={{ color: "var(--ink-3)" }}><Info /></span><div>Outstanding loans<small>Owed by borrowers</small></div><b>{usd(L.borrowedUsd)}</b></ProvRow>
+            <div className="vrow"><span /><div><b style={{ fontSize: 15 }}>Total assets</b></div><b>{usd(L.cashUsd + L.borrowedUsd)}</b></div>
+            <ProvRow id={`${p.id}-sup`} className="vrow"><span style={{ color: "var(--ink-3)" }}><Info /></span><div>Supplier claims<small>What the protocol owes depositors</small></div><b>{usd(L.suppliedUsd)}</b></ProvRow>
+            <ProvRow id={`${p.id}-cov`} className="vrow"><span style={{ color: L.coverage >= 1 ? "var(--good)" : "var(--crit)" }}>{L.coverage >= 1 ? <Check /> : <Alert />}</span><div><b style={{ fontSize: 15 }}>Asset coverage</b><small>Assets ÷ supplier claims</small></div><b className={L.coverage >= 1 ? "up" : "down"}>{pct(L.coverage)}</b></ProvRow>
           </div>
         </div>
       </div>
     );
-  return (
-    <div className="grid g2">
-      <div className="card"><RangeChart title="Liquidity" label={`${p.name} liquidity`} zero dates={DATES} series={[{ name: "Liquidity", color: C.s2, values: p.series }]} /></div>
-      <div className="card">
-        <div className="c-head"><h3>Daily volume · 30d</h3><span className="tag">{usd(p.volS!.reduce((a, b) => a + b, 0))} total</span></div>
-        <Bars label="Daily volume" values={p.volS!} dates={DATES.slice(-30)} pos={C.s5} neg={C.s4} posLabel="Volume" negLabel="" height={220} />
+  }
+  if (p.dex) {
+    const d = p.dex;
+    return (
+      <div className="grid gA">
+        <div className="card"><History p={p} /></div>
+        <div className="card">
+          <div className="c-head"><h3>By network</h3></div>
+          <div style={{ display: "grid", gap: 18 }}>
+            {(["igra", "kasplex"] as const).map((c, i) => (
+              <div key={c} style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><b style={{ fontFamily: "var(--display)" }}>{c === "igra" ? "Igra" : "Kasplex"}</b><span>{usd(d.byChain[c])}</span></div>
+                <div className="bar-h"><i style={{ width: `${p.tvl ? (d.byChain[c] / p.tvl) * 100 : 0}%`, background: SERIES[i + 1] }} /></div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+  return <div className="card"><History p={p} /></div>;
 }
 
-function Markets({ p }: { p: Protocol }) {
-  if (p.cat === "Lending")
+function Markets({ p }: { p: ProtocolView }) {
+  if (p.lending)
     return (
       <>
         <div className="card flush"><div className="tbl-wrap"><table>
-          <thead><tr><th>Market</th><th>Supplied</th><th>Borrowed</th><th>Utilization</th><th>Supply APY</th><th>Incentive</th><th>Borrow APY</th><th>Max LTV</th></tr></thead>
+          <thead><tr><th>Market</th><th>Supplied</th><th>Borrowed</th><th>Utilization</th><th>Supply APY</th><th>Borrow APR</th><th>Max LTV</th><th>State</th></tr></thead>
           <tbody>
-            {p.markets!.map((m) => (
-              <tr key={m.a}>
-                <td><span className="proto"><AssetCoin a={m.a} size={34} /><b>{m.a}</b></span></td>
-                <td>{usd(m.sup)}</td><td>{usd(m.bor)}</td><td><UtilMeter v={m.bor / m.sup} /></td>
-                <td><b style={{ fontFamily: "var(--display)" }}>{pct(m.sApy)}</b></td><td><span className="tag">+{pct(m.inc)} KSKD</span></td>
-                <td>{pct(m.bApy)}</td><td>{pct(m.ltv, 0)}</td>
+            {p.lending.markets.map((m) => (
+              <tr key={m.symbol}>
+                <td><span className="proto"><AssetCoin a={m.symbol} size={34} /><span><b>{m.symbol}</b><small>{m.supplied.toLocaleString("en-US", { maximumFractionDigits: m.supplied < 10 ? 4 : 0 })} tokens</small></span></span></td>
+                <td>{usd(m.suppliedUsd)}</td><td>{usd(m.borrowedUsd)}</td><td><UtilMeter v={m.utilization} /></td>
+                <td><b style={{ fontFamily: "var(--display)" }}>{pct(m.supplyApy, 2)}</b></td><td>{pct(m.borrowApr, 2)}</td><td>{pct(m.ltv, 0)}</td>
+                <td>{m.frozen ? <Pill t="warn">Frozen</Pill> : m.paused ? <Pill t="crit">Paused</Pill> : m.utilization >= 0.95 ? <Pill t="crit">No liquidity</Pill> : <Pill t="good">Active</Pill>}</td>
               </tr>
             ))}
           </tbody>
         </table></div></div>
-        <p className="foot">Supply APY is paid by borrowers. KSKD incentives are token emissions, so dawns shows them separately and never adds them together.</p>
+        <p className="foot">Rates are read from the pool at the block above. Supply APY is paid by borrowers; KSKD incentives are separate and not included.</p>
       </>
     );
-  return (
-    <>
-      <div className="card flush"><div className="tbl-wrap"><table>
-        <thead><tr><th>Pool</th><th>Liquidity</th><th>24h</th><th>24h volume</th><th>Fee APR</th><th>$10K sale impact</th></tr></thead>
-        <tbody>
-          {p.pools!.map((q) => (
-            <tr key={q.p}>
-              <td><span className="proto"><span style={{ display: "flex" }}>{q.a.map((a, j) => (<span key={a} style={j ? { marginLeft: -10 } : undefined}><AssetCoin a={a} size={30} /></span>))}</span><b>{q.p}</b></span></td>
-              <td>{usd(q.liq)}</td><td><Change v={q.c24} /></td><td>{q.v ? usd(q.v) : "—"}</td>
-              <td>{q.v ? pct((q.v * 0.003 * 365) / q.liq) : "—"}</td>
-              <td>{q.liq > 2e4 ? pct(1e4 / (q.liq / 2 + 1e4)) : <span className="muted">too shallow</span>}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table></div></div>
-      <p className="foot">Fee APR is trading fees only, annualised from 24h volume. Farm rewards are left out.</p>
-    </>
-  );
-}
-
-function Liquidity({ p }: { p: Protocol }) {
-  if (p.cat === "Lending")
+  if (p.dex)
     return (
-      <div className="grid gA">
-        <div className="card"><RangeChart title="Utilization by market" label="Utilization by market" legend zero area="none" fmt="pct" refLine={0.8} refLabel="80% rate kink" dates={DATES} series={p.utilS!} /></div>
-        <div className="card">
-          <div className="c-head"><h3>Withdrawable right now</h3></div>
-          <div style={{ display: "grid", gap: 22 }}>
-            {p.markets!.map((m) => {
-              const a = (m.sup - m.bor) / m.sup;
-              return (
-                <div key={m.a} style={{ display: "grid", gap: 8 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                    <span className="proto" style={{ gap: 10 }}><AssetCoin a={m.a} size={26} /><b style={{ fontSize: 15 }}>{m.a}</b></span>
-                    <span className="muted" style={{ fontSize: 13.5 }}>{usd(m.sup - m.bor)} of {usd(m.sup)}</span>
-                  </div>
-                  <div className="bar-h"><i style={{ width: `${a * 100}%`, background: ASSET_COLOR[m.a] }} /></div>
-                  <span style={{ font: "500 13.5px var(--display)" }} className={a < 0.3 ? "down" : "muted"}>{pct(a)} of suppliers could exit today</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+      <>
+        <div className="card flush"><div className="tbl-wrap"><table>
+          <thead><tr><th>Pool</th><th>Network</th><th>Liquidity</th><th>Share</th><th>Reserves</th><th>$10K trade impact</th></tr></thead>
+          <tbody>
+            {p.dex.pools.slice(0, 15).map((q) => (
+              <tr key={q.chain + q.pair}>
+                <td><a className="proto" href={explorer(q.chain, q.pair)} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}><span style={{ display: "flex" }}>{q.symbols.map((a, j) => (<span key={j} style={j ? { marginLeft: -10 } : undefined}><AssetCoin a={a} size={30} /></span>))}</span><b>{q.symbols.join(" / ")}</b></a></td>
+                <td>{q.chain === "igra" ? "Igra" : "Kasplex"}</td>
+                <td>{usd(q.usd)}</td><td>{pct(q.share)}</td>
+                <td className="muted" style={{ fontSize: 13 }}>{q.reserves.map((r, j) => `${r.toLocaleString("en-US", { maximumFractionDigits: r < 10 ? 3 : 0 })} ${q.symbols[j]}`).join(" + ")}</td>
+                <td className={q.impact10k != null && q.impact10k > 0.05 ? "down" : ""}>{q.usd > 2e4 && q.impact10k != null ? pct(q.impact10k) : <span className="muted">too shallow</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div></div>
+        <p className="foot">Top {Math.min(15, p.dex.pools.length)} of {p.dex.pairCount} pools, valued at twice their priced side. Impact is the constant-product price move for a $10K trade.</p>
+      </>
     );
-  return (
-    <div className="card flush">
-      <div className="c-head" style={{ padding: "22px 22px 0" }}><h3>Price impact by trade size</h3><span className="tag">constant-product estimate</span></div>
-      <div className="tbl-wrap"><table>
-        <thead><tr><th>Pool</th><th>$1K</th><th>$5K</th><th>$10K</th><th>$25K</th></tr></thead>
-        <tbody>
-          {p.pools!.filter((q) => q.liq > 5000).map((q) => (
-            <tr key={q.p}><td><b>{q.p}</b></td>
-              {[1e3, 5e3, 1e4, 2.5e4].map((s) => { const im = s / (q.liq / 2 + s); return <td key={s} className={im > 0.05 ? "down" : ""}>{pct(im)}</td>; })}
-            </tr>
-          ))}
-        </tbody>
-      </table></div>
-    </div>
-  );
+  return null;
 }
 
-function Assets({ p }: { p: Protocol }) {
-  const L = p.cat === "Lending";
-  const comp: [AssetSym, number][] = L ? p.markets!.map((m) => [m.a, m.sup]) : dexComp(p);
-  const tot = comp.reduce((s, c) => s + c[1], 0);
-  const ikas = comp.find((c) => c[0] === "iKAS")?.[1] ?? 0;
+function Liquidity({ p }: { p: ProtocolView }) {
+  if (!p.lending) return null;
   return (
     <div className="grid g2">
       <div className="card">
-        <div className="c-head"><h3>{L ? "Supplied assets" : "Assets in pools"}</h3><span className="tag">{usd(tot)}</span></div>
-        <div className="stack">{comp.map(([a, v]) => (<i key={a} style={{ width: `${(v / tot) * 100}%`, background: ASSET_COLOR[a] }} />))}</div>
-        <div className="comp">{comp.map(([a, v]) => (<div key={a}><AssetCoin a={a} size={28} /><span>{a}</span><b>{usd(v)}</b><small>{pct(v / tot)}</small></div>))}</div>
-      </div>
-      <div className="card">
-        <div className="c-head"><h3>Concentration</h3></div>
-        <div className="vlist">
-          {L ? (
-            <>
-              <div className="vrow"><span /><div>Largest supplier<small>Single address</small></div><b>{pct(p.concentration!.top1, 0)}</b></div>
-              <div className="vrow"><span /><div>Top 10 suppliers</div><b>{pct(p.concentration!.top10, 0)}</b></div>
-              <div className="vrow"><span /><div>Supplier addresses</div><b>{p.concentration!.holders.toLocaleString("en-US")}</b></div>
-            </>
-          ) : (
-            <>
-              <div className="vrow"><span /><div>Largest pool<small>{p.pools![0].p}</small></div><b>{pct(p.pools![0].liq / p.tvl, 0)}</b></div>
-              <div className="vrow"><span /><div>Top 3 LPs in largest pool</div><b>{p.id === "zealous" ? "47%" : "—"}</b></div>
-            </>
-          )}
-          <div className="vrow"><span style={{ color: "var(--warn)" }}><Alert /></span><div>Exposure to bridged KAS<small>{L ? "iKAS depends on the Igra bridge" : "Every pool pairs against iKAS"}</small></div><b>{pct(ikas / tot, 0)}</b></div>
+        <div className="c-head"><h3>Withdrawable right now</h3></div>
+        <div style={{ display: "grid", gap: 22 }}>
+          {p.lending.markets.map((m) => {
+            const a = m.supplied ? Math.max(0, m.cash / m.supplied) : 0;
+            return (
+              <div key={m.symbol} style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                  <span className="proto" style={{ gap: 10 }}><AssetCoin a={m.symbol} size={26} /><b style={{ fontSize: 15 }}>{m.symbol}</b></span>
+                  <span className="muted" style={{ fontSize: 13.5 }}>{usd(m.cashUsd)} of {usd(m.suppliedUsd)}</span>
+                </div>
+                <div className="bar-h"><i style={{ width: `${Math.min(100, a * 100)}%`, background: assetColor(m.symbol) }} /></div>
+                <span style={{ font: "500 13.5px var(--display)" }} className={a < 0.2 ? "down" : "muted"}>{pct(a)} of {m.symbol} suppliers could exit now</span>
+              </div>
+            );
+          })}
         </div>
+      </div>
+      <div className="card flush">
+        <div className="c-head" style={{ padding: "22px 22px 0" }}><h3>Oracle vs market</h3><span className="tag">liquidation prices</span></div>
+        <div className="tbl-wrap"><table>
+          <thead><tr><th>Asset</th><th>Oracle</th><th>Market</th><th>Gap</th></tr></thead>
+          <tbody>
+            {p.lending.markets.map((m) => (
+              <tr key={m.symbol}>
+                <td><b>{m.symbol}</b></td>
+                <td>${m.price.toPrecision(5)}</td>
+                <td>{m.marketPrice != null ? `$${m.marketPrice.toPrecision(5)}` : "—"}</td>
+                <td className={m.oracleDeviation != null && Math.abs(m.oracleDeviation) >= 0.02 ? "down" : "muted"}>{m.oracleDeviation != null ? `${m.oracleDeviation >= 0 ? "+" : ""}${(m.oracleDeviation * 100).toFixed(2)}%` : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
       </div>
     </div>
   );
 }
 
-function Activity({ p }: { p: Protocol }) {
-  const L = p.cat === "Lending";
-  const evs = EVENTS.filter((e) => e.p === p.id);
+function Assets({ p }: { p: ProtocolView }) {
+  const comp = p.tokens.filter((t) => t.usd > 0);
+  const tot = comp.reduce((s, c) => s + c.usd, 0);
+  if (!comp.length) return <p className="muted">No composition data.</p>;
+  const colors = comp.map((c, i) => (assetColor(c.sym) !== "#6E6788" ? assetColor(c.sym) : SERIES[(i + 2) % 5]));
+  return (
+    <div className="card">
+      <div className="c-head"><h3>{p.lending ? "Supplied assets" : "Assets held"}</h3><span className="tag">{usd(tot)}</span></div>
+      <div className="stack">{comp.map((c, i) => (<i key={c.sym} style={{ width: `${(c.usd / tot) * 100}%`, background: colors[i] }} />))}</div>
+      <div className="comp">{comp.slice(0, 8).map((c) => (<div key={c.sym}><AssetCoin a={c.sym} size={28} /><span>{c.sym}</span><b>{usd(c.usd)}</b><small>{pct(c.usd / tot)}</small></div>))}</div>
+    </div>
+  );
+}
+
+function Activity({ p, s }: { p: ProtocolView; s: Snapshot }) {
+  const sig = s.signals.filter((g) => g.p === p.id);
   return (
     <div className="grid gA">
       <div className="card">
-        <div className="c-head"><h3>{L ? "Net deposits and withdrawals" : "Liquidity added and removed"} · 30d</h3></div>
-        <div className="legend" style={{ marginBottom: 12 }}><span><i style={{ background: C.s5 }} />{L ? "Net deposits" : "Added"}</span><span><i style={{ background: C.s4 }} />{L ? "Net withdrawals" : "Removed"}</span></div>
-        <Bars label="Net flows" values={p.flows} dates={DATES.slice(-30)} pos={C.s5} neg={C.s4} posLabel={L ? "Net deposits" : "Liquidity added"} negLabel={L ? "Net withdrawals" : "Liquidity removed"} diverging height={230} />
+        <div className="c-head"><h3>Net flows · 30 days</h3><span className="tag">DefiLlama token balances</span></div>
+        {p.flows.length > 3
+          ? <Bars label="Net flows" values={p.flows.map((f) => f.v)} dates={p.flows.map((f) => f.t)} pos={SERIES[4]} neg={SERIES[3]} posLabel="Net inflow" negLabel="Net outflow" diverging height={230} />
+          : <p className="muted">Not enough history.</p>}
       </div>
       <div className="card">
-        <div className="c-head"><h3>Recent events</h3></div>
-        {evs.length ? <Feed list={evs} /> : <p className="muted" style={{ margin: 0 }}>No notable events in the last 7 days.</p>}
+        <div className="c-head"><h3>Signals</h3></div>
+        <Feed list={sig} names={names(s)} />
       </div>
     </div>
   );
 }
 
-function Contracts({ p }: { p: Protocol }) {
+function Contracts({ p }: { p: ProtocolView }) {
+  if (!p.contracts.length) return <p className="muted">dawns has not mapped this protocol&apos;s contracts yet.</p>;
   return (
     <div className="card flush"><div className="tbl-wrap"><table>
-      <thead><tr><th>Contract</th><th>Address</th><th>Upgradeability</th><th>Admin</th><th>Can pause</th><th /></tr></thead>
+      <thead><tr><th>Contract</th><th>Address</th><th>Upgradeability</th><th>Control</th><th>Can pause</th><th /></tr></thead>
       <tbody>
         {p.contracts.map((c) => (
-          <tr key={c.n}>
-            <td><b style={{ fontFamily: "var(--display)" }}>{c.n}</b></td><td className="mono" style={{ fontSize: 13 }}>{c.addr}</td>
+          <tr key={c.n + c.chain}>
+            <td><b style={{ fontFamily: "var(--display)" }}>{c.n}</b></td>
+            <td className="mono" style={{ fontSize: 13 }}><a href={explorer(c.chain, c.addr)} target="_blank" rel="noopener noreferrer">{short(c.addr)}</a></td>
             <td>{c.up}</td><td>{c.admin}</td><td>{c.pause}</td>
             <td><Pill t={c.t}>{c.t === "good" ? "OK" : c.t === "warn" ? "Review" : "Noted"}</Pill></td>
           </tr>
@@ -227,27 +258,37 @@ function Contracts({ p }: { p: Protocol }) {
   );
 }
 
-function Verification({ p }: { p: Protocol }) {
-  const L = p.cat === "Lending";
+function Verification({ p }: { p: ProtocolView }) {
+  const share = p.verifiedShare ?? 0;
   return (
     <div className="grid gA">
       <div className="card">
-        <div className="c-head"><h3>What dawns can verify</h3></div>
+        {p.canVerify.length > 0 && (
+          <>
+            <div className="c-head"><h3>What dawns reads directly</h3></div>
+            <div className="vlist">
+              {p.canVerify.map(([a, b, c]) => (<div className="vrow" key={a}><span style={{ color: "var(--good)" }}><Check /></span><div>{a}<small>{b}</small></div><span className="src">{c}</span></div>))}
+            </div>
+          </>
+        )}
+        <div className="c-head" style={{ margin: p.canVerify.length ? "26px 0 6px" : "0 0 6px" }}><h3>What dawns cannot verify yet</h3></div>
         <div className="vlist">
-          {p.canVerify.map(([a, b, c]) => (<div className="vrow" key={a}><span style={{ color: "var(--good)" }}><Check /></span><div>{a}<small>{b}</small></div><span className="src">{c}</span></div>))}
-        </div>
-        <div className="c-head" style={{ margin: "26px 0 6px" }}><h3>What dawns cannot verify</h3></div>
-        <div className="vlist">
-          {p.cannotVerify.map(([a, b]) => (<div className="vrow" key={a}><span style={{ color: "var(--ink-3)" }}><Minus /></span><div>{a}<small>{b}</small></div><span className="src">Off-chain</span></div>))}
+          {p.cannotVerify.map(([a, b]) => (<div className="vrow" key={a}><span style={{ color: "var(--ink-3)" }}><Minus /></span><div>{a}<small>{b}</small></div><span className="src">Pending</span></div>))}
         </div>
       </div>
       <div className="card">
-        <div className="c-head"><h3>Verification coverage</h3></div>
+        <div className="c-head"><h3>Source of headline figures</h3></div>
         <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="ring" style={{ ["--p" as string]: Math.round(p.verif * 100) }}><span>{pct(p.verif, 0)}</span></div>
-          <p style={{ margin: 0, fontSize: 15, color: "var(--ink-2)", flex: 1, minWidth: 180 }}>{pct(p.verif, 0)} of identified {L ? "liabilities and assets" : "reserves and obligations"} are read straight from contracts at a known block.</p>
+          <div className="ring" style={{ ["--p" as string]: Math.round(share * 100) }}><span>{pct(share, 0)}</span></div>
+          <p style={{ margin: 0, fontSize: 15, color: "var(--ink-2)", flex: 1, minWidth: 180 }}>
+            {p.source === "onchain" ? "Read from contracts at a known block. Click any headline number for the contract, block and calculation." : "Taken from DefiLlama. dawns will read this protocol directly once its contracts are mapped."}
+          </p>
         </div>
-        <div className="note" style={{ marginTop: 20 }}>Click any headline number on this page to see its contract, block, read and calculation.</div>
+        {p.audits.length > 0 && (
+          <div style={{ marginTop: 20, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {p.audits.slice(0, 3).map((a, i) => (<a key={a} className="btn ghost sm" href={a} target="_blank" rel="noopener noreferrer"><External />Audit {i + 1}</a>))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -255,12 +296,21 @@ function Verification({ p }: { p: Protocol }) {
 
 export default async function ProtocolPage({ params }: PageProps<"/protocols/[id]">) {
   const { id } = await params;
-  const p = P[id];
+  const s = await getSnapshot();
+  const p = findProtocol(s, id);
   if (!p) notFound();
-  const tabs = ["Financials", p.cat === "Lending" ? "Markets" : "Pools", "Liquidity", "Assets", "Activity", "Contracts", "Verification"];
-  const sections = [Financials, Markets, Liquidity, Assets, Activity, Contracts, Verification];
+  const tabs: [string, React.ReactNode][] = [
+    ["Financials", <Financials key="f" p={p} />],
+    ...(p.lending || p.dex ? ([[p.lending ? "Markets" : "Pools", <Markets key="m" p={p} />]] as [string, React.ReactNode][]) : []),
+    ...(p.lending ? ([["Liquidity", <Liquidity key="l" p={p} />]] as [string, React.ReactNode][]) : []),
+    ["Assets", <Assets key="a" p={p} />],
+    ["Activity", <Activity key="ac" p={p} s={s} />],
+    ["Contracts", <Contracts key="c" p={p} />],
+    ["Verification", <Verification key="v" p={p} />],
+  ];
   return (
     <>
+      <DataBridge prov={s.prov} protocols={s.protocols.map(toLite)} signals={s.signals} />
       <section className="sky">
         <Clouds set={BANNER_CLOUDS} />
         <div className="wrap banner">
@@ -271,8 +321,12 @@ export default async function ProtocolPage({ params }: PageProps<"/protocols/[id
               <div>
                 <h1>{p.name}</h1>
                 <div className="tags">
-                  <span className="tag">{p.cat}</span><span className="tag">{p.chain}</span><Pill t={p.status}>{p.statusText}</Pill>
-                  <span style={{ fontSize: 13.5, color: "rgba(255,255,255,.75)" }}>Updated <Fresh /> ago</span>
+                  <span className="tag">{p.category}</span>
+                  {p.chains.map((c) => (<span className="tag" key={c}>{c}</span>))}
+                  <Pill t={p.status}>{p.statusText}</Pill>
+                  <span style={{ fontSize: 13.5, color: "rgba(255,255,255,.8)" }}>
+                    {p.source === "onchain" && p.asOf ? <>Read at block #{p.asOf.block.toLocaleString("en-US")} · <Fresh since={p.asOf.timestamp * 1000} /></> : <>DefiLlama · <Fresh since={s.asOf} /></>}
+                  </span>
                 </div>
               </div>
             </div>
@@ -282,20 +336,19 @@ export default async function ProtocolPage({ params }: PageProps<"/protocols/[id
             </div>
           </div>
           {p.flags.length > 0 && <div className="tags" style={{ marginTop: 18 }}>{p.flags.map(([t, x]) => (<Pill key={x} t={t}>{x}</Pill>))}</div>}
-          {p.floor && <p className="lede" style={{ fontSize: 15 }}>{p.name} holds {usd(p.tvl)}, below the $10K floor for full monitoring. dawns tracks its balances but sends no alerts for it.</p>}
+          {p.floor && <p className="lede" style={{ fontSize: 15 }}>{p.name} holds {usd(p.tvl)}, below the $10K floor for alerts. dawns still tracks it.</p>}
         </div>
       </section>
       <div className="wrap">
         <div className="grid g5 lift"><Kpis p={p} /></div>
-        <SubNav tabs={tabs} />
-        {sections.map((S, i) => (
-          <section className="ps" id={`s-${i}`} key={tabs[i]}>
-            <h2>{tabs[i]}</h2>
-            <S p={p} />
+        <SubNav tabs={tabs.map((t) => t[0])} />
+        {tabs.map(([title, node], i) => (
+          <section className="ps" id={`s-${i}`} key={title}>
+            <h2>{title}</h2>
+            {node}
           </section>
         ))}
       </div>
     </>
   );
 }
-

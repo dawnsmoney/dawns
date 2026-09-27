@@ -1,36 +1,24 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { PROV, P, RULES, type RuleKey } from "@/lib/data";
+import type { Provenance, RuleKey, Signal, Status } from "@/lib/types";
+import { RULES, type Kind } from "@/lib/rules";
 import { usd } from "@/lib/format";
-import { Bell, Close } from "./icons";
+import { Bell, Close, External } from "./icons";
 import { Pill, ProtocolCoin } from "./bits";
-import { Fresh } from "./Fresh";
 
 /* ---------- watch store (localStorage, per viewer) ---------- */
 export type RuleState = { on: boolean; v: number | null };
-export type WatchEntry = { rules: Partial<Record<RuleKey, RuleState>>; ch: string[]; example?: boolean };
+export type WatchEntry = { rules: Partial<Record<RuleKey, RuleState>>; ch: string[] };
 export type WatchMap = Record<string, WatchEntry>;
 
-const KEY = "dawns.watch";
-const SEEN = "dawns.seen";
+const KEY = "dawns.watch.v2";
 let cache: WatchMap | null = null;
 const listeners = new Set<() => void>();
 const EMPTY: WatchMap = {};
-
 function read(): WatchMap {
   if (cache) return cache;
-  try {
-    const raw = localStorage.getItem(KEY);
-    cache = raw ? (JSON.parse(raw) as WatchMap) : {};
-    if (!Object.keys(cache).length && !localStorage.getItem(SEEN)) {
-      cache = { kaskad: { rules: { liq: { on: true, v: 500 }, util: { on: true, v: 70 }, large: { on: true, v: 50 }, tvl: { on: false, v: 15 }, contract: { on: true, v: null } }, ch: ["telegram"], example: true } };
-      localStorage.setItem(SEEN, "1");
-      localStorage.setItem(KEY, JSON.stringify(cache));
-    }
-  } catch {
-    cache = {};
-  }
+  try { cache = JSON.parse(localStorage.getItem(KEY) || "{}") as WatchMap; } catch { cache = {}; }
   return cache;
 }
 function write(next: WatchMap) {
@@ -39,13 +27,19 @@ function write(next: WatchMap) {
   listeners.forEach((l) => l());
 }
 const subscribe = (l: () => void) => { listeners.add(l); return () => listeners.delete(l); };
+export function useWatchMap(): WatchMap { return useSyncExternalStore(subscribe, read, () => EMPTY); }
 
-export function useWatchMap(): WatchMap {
-  return useSyncExternalStore(subscribe, read, () => EMPTY);
-}
+/* ---------- registry: what the current page knows about protocols ---------- */
+export type ProtoLite = { id: string; name: string; letter: string; status: Status; statusText: string; kind: Kind; tvl: number; floor: boolean };
+type Registry = { prov: Record<string, Provenance>; protocols: Record<string, ProtoLite>; signals: Signal[] };
 
-/* ---------- context ---------- */
-type Ctx = { openProv: (id: string) => void; openWatch: (id: string) => void; toast: (t: string) => void };
+type Ctx = {
+  openProv: (id: string) => void;
+  openWatch: (id: string) => void;
+  toast: (t: string) => void;
+  registry: Registry;
+  register: (r: Partial<Registry>) => void;
+};
 const UICtx = createContext<Ctx | null>(null);
 export function useUI() {
   const c = useContext(UICtx);
@@ -53,12 +47,33 @@ export function useUI() {
   return c;
 }
 
+/** Hand server-built data to client widgets (drawer, watch modal, watchlist). */
+export function DataBridge({ prov, protocols, signals }: { prov?: Record<string, Provenance>; protocols?: ProtoLite[]; signals?: Signal[] }) {
+  const { register } = useUI();
+  useEffect(() => {
+    register({
+      prov,
+      protocols: protocols ? Object.fromEntries(protocols.map((p) => [p.id, p])) : undefined,
+      signals,
+    });
+  }, [prov, protocols, signals, register]);
+  return null;
+}
+
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [prov, setProv] = useState<string | null>(null);
   const [watch, setWatch] = useState<string | null>(null);
   const [toastMsg, setToast] = useState<string | null>(null);
+  const [registry, setRegistry] = useState<Registry>({ prov: {}, protocols: {}, signals: [] });
   const tRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const register = useCallback((r: Partial<Registry>) => {
+    setRegistry((cur) => ({
+      prov: r.prov ? { ...cur.prov, ...r.prov } : cur.prov,
+      protocols: r.protocols ? { ...cur.protocols, ...r.protocols } : cur.protocols,
+      signals: r.signals ?? cur.signals,
+    }));
+  }, []);
   const toast = useCallback((t: string) => {
     setToast(t);
     if (tRef.current) clearTimeout(tRef.current);
@@ -76,20 +91,18 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   }, [prov, watch, close]);
 
   return (
-    <UICtx.Provider value={{ openProv: setProv, openWatch: setWatch, toast }}>
+    <UICtx.Provider value={{ openProv: setProv, openWatch: setWatch, toast, registry, register }}>
       {children}
-      {prov && <ProvDrawer id={prov} onClose={close} />}
-      {watch && <WatchModal id={watch} onClose={close} toast={toast} />}
+      {prov && registry.prov[prov] && <ProvDrawer d={registry.prov[prov]} onClose={close} />}
+      {watch && registry.protocols[watch] && <WatchModal p={registry.protocols[watch]} onClose={close} toast={toast} />}
       {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
     </UICtx.Provider>
   );
 }
 
-function ProvDrawer({ id, onClose }: { id: string; onClose: () => void }) {
-  const d = PROV[id];
+function ProvDrawer({ d, onClose }: { d: Provenance; onClose: () => void }) {
   const x = useRef<HTMLButtonElement>(null);
   useEffect(() => { x.current?.focus(); }, []);
-  if (!d) return null;
   return (
     <>
       <div className="scrim" onClick={onClose} />
@@ -101,26 +114,29 @@ function ProvDrawer({ id, onClose }: { id: string; onClose: () => void }) {
           <div className="big">{d.value}</div>
         </div>
         <dl className="trail">
-          {d.trail.map(([k, v]) => (<div key={k}><dt>{k}</dt><dd>{v}</dd></div>))}
-          <div><dt>Checked</dt><dd><Fresh /> ago</dd></div>
+          {d.trail.map(([k, v], i) => (<div key={i}><dt>{k}</dt><dd>{v}</dd></div>))}
         </dl>
         {d.note && <div className="note">{d.note}</div>}
-        <p className="foot" style={{ margin: 0 }}>In the live version each step links to the contract and block on the explorer.</p>
+        {d.links && d.links.length > 0 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {d.links.map((l) => (<a key={l} className="btn ghost sm" href={l} target="_blank" rel="noopener noreferrer"><External />{l.includes("/block/") ? "Block on explorer" : "Contract on explorer"}</a>))}
+          </div>
+        )}
       </aside>
     </>
   );
 }
 
-function WatchModal({ id, onClose, toast }: { id: string; onClose: () => void; toast: (t: string) => void }) {
-  const p = P[id];
+function WatchModal({ p, onClose, toast }: { p: ProtoLite; onClose: () => void; toast: (t: string) => void }) {
   const map = useWatchMap();
-  const w = map[id];
-  const rules = RULES[p.cat];
+  const w = map[p.id];
+  const rules = RULES[p.kind];
   const main = rules[0];
   const rest = rules.slice(1);
-  const L = p.cat === "Lending";
-  const [mn, mx, st] = L ? [100, 850, 10] : [5, 50, 1];
-  const fmt = (v: number) => (L ? `$${v}K` : `${v}%`);
+  const L = p.kind === "lending";
+  const sliderMode = main.unit === "$K" ? "usd" : "pct";
+  const [mn, mx, st] = sliderMode === "usd" ? [50, Math.max(100, Math.ceil((p.tvl * 1.5) / 1000 / 50) * 50), 10] : [5, 50, 1];
+  const fmt = (v: number) => (sliderMode === "usd" ? `$${v}K` : `${v}%`);
 
   const [mainV, setMainV] = useState<number>(w?.rules[main.key]?.v ?? main.def ?? mn);
   const [state, setState] = useState(() =>
@@ -131,13 +147,13 @@ function WatchModal({ id, onClose, toast }: { id: string; onClose: () => void; t
   const save = (e: React.FormEvent) => {
     e.preventDefault();
     const rs: WatchEntry["rules"] = { [main.key]: { on: true, v: mainV }, ...state };
-    write({ ...read(), [id]: { rules: rs, ch } });
+    write({ ...read(), [p.id]: { rules: rs, ch } });
     onClose();
     toast(`Watching ${p.name}. ${Object.values(rs).filter((x) => x?.on).length} rules on.`);
   };
   const unwatch = () => {
     const next = { ...read() };
-    delete next[id];
+    delete next[p.id];
     write(next);
     onClose();
     toast(`Stopped watching ${p.name}.`);
@@ -149,16 +165,16 @@ function WatchModal({ id, onClose, toast }: { id: string; onClose: () => void; t
       <form className="modal" role="dialog" aria-modal="true" aria-label={`Watch ${p.name}`} onSubmit={save}>
         <button className="x" type="button" onClick={onClose} aria-label="Close"><Close /></button>
         <h2><ProtocolCoin p={p} size={40} />Watch {p.name} <Pill t={p.status}>{p.statusText}</Pill></h2>
-        <p className="desc">dawns checks {p.name} at every block and tells you when something crosses a line you set. You decide what to do about it.</p>
+        <p className="desc">dawns checks {p.name} and tells you when something crosses a line you set. You decide what to do about it. Rules are saved in this browser; alert delivery arrives with the next release.</p>
         <div>
-          <div className="slide-lab">{L ? "Alert me if available liquidity falls below" : "Alert me if a pool loses more than this in 24h"}</div>
+          <div className="slide-lab">{main.key === "liq" && L ? "Alert me if available liquidity falls below" : main.label}</div>
           <div className="slide-val">{fmt(mainV)}</div>
           <input
-            type="range" id={`v-${main.key}`} min={mn} max={mx} step={st} value={mainV} aria-label="Threshold"
-            style={{ ["--f" as string]: `${((mainV - mn) / (mx - mn)) * 100}%` }}
+            type="range" id={`v-${main.key}`} min={mn} max={mx} step={st} value={Math.min(mx, Math.max(mn, mainV))} aria-label="Threshold"
+            style={{ ["--f" as string]: `${((Math.min(mx, Math.max(mn, mainV)) - mn) / (mx - mn)) * 100}%` }}
             onChange={(e) => setMainV(+e.target.value)}
           />
-          <div className="ticks"><span>{fmt(mn)}</span><span>{L ? `today ${usd(p.tvl)}` : ""}</span><span>{fmt(mx)}</span></div>
+          <div className="ticks"><span>{fmt(mn)}</span><span>{sliderMode === "usd" ? `today ${usd(p.tvl)}` : ""}</span><span>{fmt(mx)}</span></div>
         </div>
         <div className="rules">
           {rest.map((r) => (
@@ -183,7 +199,7 @@ function WatchModal({ id, onClose, toast }: { id: string; onClose: () => void; t
         <div>
           <div className="eyebrow" style={{ marginBottom: 10, color: "var(--ink-3)" }}>Send alerts to</div>
           <div className="channels">
-            {[["inapp", "In-app"], ["telegram", "Telegram"], ["email", "Email"]].map(([k, label]) => (
+            {[["inapp", "In-app"], ["telegram", "Telegram (soon)"], ["email", "Email (soon)"]].map(([k, label]) => (
               <label key={k}>
                 <input type="checkbox" checked={ch.includes(k)} onChange={(e) => setCh((c) => (e.target.checked ? [...c, k] : c.filter((x) => x !== k)))} />
                 {label}

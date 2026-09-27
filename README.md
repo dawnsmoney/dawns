@@ -4,9 +4,19 @@ Financial intelligence for Kaspa DeFi. Live, on-chain health for every protocol,
 
 Later phases add opportunities, allocation and non-custodial vaults on top of the same data layer.
 
-## Status
+## Data
 
-Prototype. Protocol TVLs match DefiLlama on 27 Sep 2026. Everything else in `src/lib/data.ts` (time series, markets, pools, addresses, events) is sample data. That file is the seam the indexer replaces: pages only read from its exports.
+dawns reads Kaspa DeFi directly where it can and says so where it can't.
+
+| Source | What it gives | Where |
+|---|---|---|
+| Igra RPC (`rpc.igralabs.com:8545`, chain 38833) | Kaskad markets, rates, caps, frozen flags, oracle prices, cash held, admin/proxy checks; Zealous pairs; KasDex balances | `src/lib/chain/` |
+| Kasplex RPC (`evmrpc.kasplex.org`, chain 202555) | Zealous pairs on Kasplex | `src/lib/chain/dex.ts` |
+| DefiLlama API | Protocol list, daily TVL history, token balances (for flows and price-vs-flow split), DEX volume and fees, market prices | `src/lib/llama.ts` |
+
+`src/lib/snapshot.ts` builds one snapshot (cached 2 minutes, pages revalidate every 2 minutes) and every page renders from it. Each headline number carries a provenance trail: contract, block, call and calculation.
+
+Override RPCs with `IGRA_RPC_URL` and `KASPLEX_RPC_URL` if needed. No other configuration.
 
 ## Stack
 
@@ -14,6 +24,7 @@ Prototype. Protocol TVLs match DefiLlama on 27 Sep 2026. Everything else in `src
 - Plain CSS in `src/app/globals.css`, no UI framework
 - Fonts self-hosted from `src/fonts` (Outfit, DM Sans, IBM Plex Mono, all SIL OFL 1.1)
 - Charts are hand-built SVG components in `src/components/charts.tsx`
+- viem for on-chain reads
 
 ## Run it
 
@@ -47,7 +58,8 @@ Vercel, framework preset Next.js, no environment variables needed yet.
 
 ## Next
 
-1. Indexer for the Kaskad pool and Zealous pairs (Igra RPC), then Kasplex and Kaspa L1 sources
-2. Snapshot store (Postgres) and a provenance record per metric
-3. Alert rules engine with Telegram and email delivery
-4. Daily dawn report generated from real events
+1. Snapshot store (Postgres) so dawns keeps its own history instead of DefiLlama's
+2. Swap and Supply/Borrow event indexing (volume, large withdrawals, per-account risk)
+3. Map contracts for KrokoSwap, KaspaCom and Igra Attestation
+4. Alert delivery (Telegram, email) for watch rules
+5. Igra bridge page: KAS locked on L1 vs iKAS in circulation

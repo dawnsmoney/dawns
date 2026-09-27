@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useUI, useWatchMap } from "./providers";
 import { Bell, Copy, Info } from "./icons";
-import { P } from "@/lib/data";
 
 /** Any element that opens the "how dawns calculated this" drawer. */
 export function ProvButton({ id, className, children }: { id: string; className?: string; children: React.ReactNode }) {
@@ -25,9 +24,18 @@ export function ProvRow({ id, className, children }: { id: string; className?: s
 }
 
 export function Kpi({ label, value, ctx, prov }: { label: string; value: string; ctx: React.ReactNode; prov?: string }) {
-  const { openProv } = useUI();
+  const { openProv, registry } = useUI();
+  const live = prov && registry.prov[prov];
+  if (!live)
+    return (
+      <div className="kpi" style={{ cursor: "default" }}>
+        <span className="lab">{label}</span>
+        <span className="val">{value}</span>
+        <span className="ctx">{ctx}</span>
+      </div>
+    );
   return (
-    <button className="kpi" type="button" onClick={prov ? () => openProv(prov) : undefined} style={prov ? undefined : { cursor: "default" }}>
+    <button className="kpi" type="button" onClick={() => openProv(prov)}>
       <span className="lab">{label}{prov && <Info />}</span>
       <span className="val">{value}</span>
       <span className="ctx">{ctx}</span>
@@ -35,11 +43,10 @@ export function Kpi({ label, value, ctx, prov }: { label: string; value: string;
   );
 }
 
-export function WatchButton({ id, variant = "ghost", label }: { id: string; variant?: "ghost" | "sun" | "glass"; label?: React.ReactNode }) {
+export function WatchButton({ id, floor, variant = "ghost", label }: { id: string; floor?: boolean; variant?: "ghost" | "sun" | "glass"; label?: React.ReactNode }) {
   const { openWatch } = useUI();
   const map = useWatchMap();
-  const p = P[id];
-  if (p.floor) return <span className="tag">Alerts off</span>;
+  if (floor) return <span className="tag">Alerts off</span>;
   const on = !!map[id];
   const cls = on && !label ? "watching sm" : variant === "sun" ? "sun" : variant === "glass" ? "glass" : "ghost sm";
   return (
