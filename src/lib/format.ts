@@ -36,6 +36,10 @@ export function formatAxis(v: number, f: ValueFormat) {
 }
 
 export function niceTicks(min: number, max: number, n: number): number[] {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) { min = 0; max = 1; }
+  // a flat series (or float noise around one value) gets a visible range instead of a zero-width one
+  const flat = max - min <= Math.max(Math.abs(max), Math.abs(min)) * 1e-6;
+  if (flat) { const pad = Math.abs(max) * 0.05 || 1; min -= pad; max += pad; }
   const span = max - min || 1;
   const step0 = span / n;
   const mag = Math.pow(10, Math.floor(Math.log10(step0)));
@@ -43,6 +47,6 @@ export function niceTicks(min: number, max: number, n: number): number[] {
   const lo = Math.floor(min / step) * step;
   const hi = Math.ceil(max / step) * step;
   const t: number[] = [];
-  for (let v = lo; v <= hi + step * 1e-6; v += step) t.push(+v.toFixed(10));
+  for (let v = lo, i = 0; v <= hi + step * 1e-6 && i < 50; v += step, i++) t.push(+v.toFixed(10));
   return t;
 }
