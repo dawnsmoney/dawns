@@ -24,6 +24,8 @@ export interface PoolView {
   chain: "igra" | "kasplex"; pair: string; symbols: [string, string]; usd: number; share: number;
   reserves: [number, number]; impact10k: number | null;
   kind: "v2" | "v3"; fee: number | null; lpShare: number | null;
+  /** V3: in-range liquidity and √price in raw token units, read at the snapshot block */
+  L?: number | null; sqrtP?: number | null;
   /** token address, decimals and USD price (null if unpriced) — used to value indexed events */
   tk: [PoolToken, PoolToken];
 }

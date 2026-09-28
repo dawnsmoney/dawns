@@ -10,7 +10,7 @@ import type { Status } from "@/lib/types";
 export interface AssetLite {
   id: string; path: string; symbol: string; name: string; chain: string; chainName: string; standard: string; standardName: string;
   price: number | null; mcap: number | null; credible: boolean; vol24: number | null; holders: number | null; liquidity: number | null;
-  top10: number | null; holders7: number | null; split: { key: string; label: string; color: string; share: number }[]; venues: number; grade: Status; gradeLabel: string; significant: boolean;
+  top10: number | null; holders7: number | null; d2: number | null; split: { key: string; label: string; color: string; share: number }[]; venues: number; grade: Status; gradeLabel: string; significant: boolean;
 }
 
 const count = (v: number | null) => (v == null ? "—" : v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e4 ? `${(v / 1e3).toFixed(1)}K` : Math.round(v).toLocaleString("en-US"));
@@ -43,7 +43,10 @@ export function AssetTable({ rows }: { rows: AssetLite[] }) {
   return (
     <>
       <div className="filters" style={{ marginBottom: 20, justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <input className="search" type="search" placeholder="Search ticker, name or address" value={q} onChange={(e) => { setQ(e.target.value); setLimit(100); }} aria-label="Search assets" />
+        <span style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <input className="search" type="search" placeholder="Search ticker, name or address" value={q} onChange={(e) => { setQ(e.target.value); setLimit(100); }} aria-label="Search assets" />
+          <Link href="/assets/compare" className="btn ghost">Compare</Link>
+        </span>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(["All", "Native", "KRC-20", "Covenant", "Igra", "Kasplex L2"] as Group[]).map((x) => (
             <button key={x} type="button" className={x === g ? "on" : ""} onClick={() => { setG(x); setLimit(100); }}>
@@ -68,7 +71,7 @@ export function AssetTable({ rows }: { rows: AssetLite[] }) {
               <td>{a.vol24 != null ? usd(a.vol24) : "—"}</td>
               <td>{count(a.holders)}{a.holders != null && a.holders7 ? <small className={a.holders >= a.holders7 ? "up" : "down"} style={{ display: "block", fontSize: 12 }}>{a.holders >= a.holders7 ? "+" : ""}{pct(a.holders / a.holders7 - 1, 1)} 7d</small> : null}</td>
               <td>{a.top10 != null ? <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><MiniSplit parts={a.split} width={48} />{pct(a.top10, 0)}</span> : <span className="muted">—</span>}</td>
-              <td>{a.liquidity ? usd(a.liquidity) : a.venues ? `${a.venues} venues` : <span className="muted">—</span>}</td>
+              <td>{a.liquidity ? usd(a.liquidity) : a.venues ? `${a.venues} venues` : <span className="muted">—</span>}{a.d2 ? <small className="muted" style={{ display: "block", fontSize: 12 }} title="Can be sold before the pool price falls 2%">{usd(a.d2)} to −2%</small> : null}</td>
               <td title={a.gradeLabel}><Pill t={a.grade}>{a.grade === "crit" ? "High" : a.grade === "warn" ? "Watch" : "OK"}</Pill></td>
             </tr>
           ))}

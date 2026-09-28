@@ -1,6 +1,8 @@
 import "server-only";
+import { parseAbi, type Address } from "viem";
 import type { Snapshot } from "../types";
-import { assetId, type Asset, type CovenantInfo, type Holder, type HolderKind, type NetworkStats } from "./types";
+import { clients } from "../chain/clients";
+import { assetId, type Asset, type CovenantInfo, type Holder, type HolderKind, type NetworkStats, type Unlocks } from "./types";
 
 /**
  * Asset sources. Read-only public APIs; every number is checked before it is used
@@ -372,3 +374,60 @@ export async function readCovenantDepth(id: string, dec: number): Promise<{ top1
   };
   return { top10: top.reduce((x, h) => x + h.share, 0), top, holders: num(dist.holder_count), cov };
 }
+
+// ---------------------------------------------------------------------------
+// Vesting contracts on Igra (VestingPools): schedule and releases, read on-chain
+// ---------------------------------------------------------------------------
+const vestingAbi = parseAbi([
+  "function getPool(uint256) view returns ((bool isPreMinted, bool isAdjustable, uint32 start, uint16 vestingDays, uint64 sAllocation, uint64 sUnlocked, uint96 vested))",
+  "function getWallet(uint256) view returns (address)",
+  "function totalAllocation() view returns (uint96)",
+  "function token() view returns (address)",
+]);
+/**
+ * A VestingPools contract: each pool unlocks `sUnlocked` at `start` and the rest linearly over
+ * `vestingDays` (its _getReleasable). Allocations are stored scaled; the scale is recovered
+ * from totalAllocation so nothing about the contract is assumed. Returns null when the
+ * contract does not vest this token.
+ */
+export async function readVestingPools(contract: string, token: string, dec: number): Promise<Unlocks | null> {
+  const c = clients.igra;
+  const address = contract as Address;
+  const tok = await c.readContract({ address, abi: vestingAbi, functionName: "token" }).catch(() => null);
+  if (!tok || tok.toLowerCase() !== token.toLowerCase()) return null;
+  const raw: { w: string; p: { start: number; vestingDays: number; sAllocation: bigint; sUnlocked: bigint; vested: bigint } }[] = [];
+  for (let i = 0; i < 64; i++) {
+    const p = await c.readContract({ address, abi: vestingAbi, functionName: "getPool", args: [BigInt(i)] }).catch(() => null);
+    if (!p) break;
+    const w = await c.readContract({ address, abi: vestingAbi, functionName: "getWallet", args: [BigInt(i)] });
+    raw.push({ w, p });
+  }
+  if (!raw.length) return null;
+  const totalWei = await c.readContract({ address, abi: vestingAbi, functionName: "totalAllocation" });
+  const sSum = raw.reduce((x, r) => x + r.p.sAllocation, BigInt(0));
+  const scale = sSum > BigInt(0) ? totalWei / sSum : BigInt(1);
+  const tokens = (wei: bigint) => Number(wei / BigInt(10) ** BigInt(Math.max(0, dec - 6))) / 10 ** Math.min(dec, 6);
+  const names = new Map<string, string | null>();
+  await Promise.all([...new Set(raw.map((r) => r.w.toLowerCase()))].map(async (w) => {
+    const r = await get<{ name?: string | null; is_contract?: boolean; implementations?: { name?: string }[] }>(`${IGRA_SCOUT}/api/v2/addresses/${w}`).catch(() => null);
+    const impl = r?.implementations?.[0]?.name;
+    names.set(w, r?.name && r.name !== "SafeProxy" ? r.name : impl === "SafeL2" || r?.name === "SafeProxy" ? "Safe multisig" : r?.name ?? null);
+  }));
+  // recent releases, newest first (the explorer's decoded logs)
+  const logs = await get<{ items: { block_timestamp?: string; timestamp?: string; decoded?: { method_call?: string; parameters?: { name: string; value: string }[] } }[] }>(`${IGRA_SCOUT}/api/v2/addresses/${contract}/logs`).catch(() => ({ items: [] }));
+  const releases = (logs.items ?? []).filter((l) => l.decoded?.method_call?.startsWith("Released")).map((l) => {
+    const v = (n: string) => l.decoded!.parameters!.find((x) => x.name === n)?.value ?? "0";
+    return { t: Date.parse(l.block_timestamp ?? l.timestamp ?? "") || 0, pool: Number(v("poolId")), to: v("to"), amount: units(v("amount"), dec) ?? 0 };
+  }).filter((r) => r.t > 0);
+  return {
+    chain: "igra", contract, name: "VestingPools",
+    total: tokens(totalWei),
+    pools: raw.map((r, i) => ({
+      id: i, wallet: r.w, walletName: names.get(r.w.toLowerCase()) ?? null,
+      allocation: tokens(r.p.sAllocation * scale), atStart: tokens(r.p.sUnlocked * scale),
+      start: r.p.start * 1000, days: r.p.vestingDays, released: tokens(r.p.vested),
+    })),
+    releases, readAt: Date.now(),
+  };
+}
+

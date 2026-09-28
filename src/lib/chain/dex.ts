@@ -7,6 +7,7 @@ const factoryAbi = parseAbi([
   "function allPairs(uint256) view returns (address)",
   "function feeTo() view returns (address)",
 ]);
+const liqAbi = parseAbi(["function liquidity() view returns (uint128)"]);
 const slot0Abi = parseAbi(["function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)"]);
 const pairAbi = parseAbi([
   "function token0() view returns (address)",
@@ -22,7 +23,7 @@ const erc20 = parseAbi([
 
 export interface TokenMeta { address: Address; symbol: string; decimals: number }
 /** lpShare: part of the trading fee that stays with liquidity providers, read on-chain (V2 feeTo switch, V3 slot0.feeProtocol). */
-export interface RawPool { chain: ChainKey; kind: "v2" | "v3"; pair: Address; t0: TokenMeta; t1: TokenMeta; r0: number; r1: number; fee?: number; lpShare?: number | null }
+export interface RawPool { chain: ChainKey; kind: "v2" | "v3"; pair: Address; t0: TokenMeta; t1: TokenMeta; r0: number; r1: number; fee?: number; lpShare?: number | null; L?: number | null; sqrtP?: number | null }
 
 const metaCache = new Map<string, TokenMeta>();
 async function tokenMeta(chain: ChainKey, a: Address, blockNumber: bigint): Promise<TokenMeta> {
@@ -89,22 +90,31 @@ export async function readUniV3(chain: ChainKey, factory: Address) {
   const pools = await pool(logs, 6, async (l) => {
     const { token0, token1, fee, pool: addr } = l.args as { token0: Address; token1: Address; fee: number; pool: Address };
     const [t0, t1] = await Promise.all([tokenMeta(chain, token0, block.number), tokenMeta(chain, token1, block.number)]);
-    const [b0, b1, s0] = await Promise.all([
+    const [b0, b1, s0, liq] = await Promise.all([
       c.readContract({ address: token0, abi: erc20, functionName: "balanceOf", args: [addr], ...at }),
       c.readContract({ address: token1, abi: erc20, functionName: "balanceOf", args: [addr], ...at }),
       c.readContract({ address: addr, abi: slot0Abi, functionName: "slot0", ...at }).catch(() => null),
+      c.readContract({ address: addr, abi: liqAbi, functionName: "liquidity", ...at }).catch(() => null),
     ]);
     // feeProtocol packs two 4-bit denominators: the protocol takes 1/n of fees (0 = off)
     const fp = s0 ? Number(s0[5]) : null;
     const den = fp == null ? null : Math.max(fp % 16, fp >> 4);
     const lpShare = fp == null ? null : den ? 1 - 1 / den : 1;
-    const p: RawPool = { chain, kind: "v3", pair: addr, t0, t1, r0: Number(b0) / 10 ** t0.decimals, r1: Number(b1) / 10 ** t1.decimals, fee: Number(fee), lpShare };
+    const p: RawPool = { chain, kind: "v3", pair: addr, t0, t1, r0: Number(b0) / 10 ** t0.decimals, r1: Number(b1) / 10 ** t1.decimals, fee: Number(fee), lpShare,
+      // in-range liquidity and √price (raw units): what sets depth near the current price
+      L: liq == null ? null : Number(liq), sqrtP: s0 ? Number(s0[0]) / 2 ** 96 : null };
     return p;
   });
   return { chain, block: Number(block.number), timestamp: Number(block.timestamp), pairCount: logs.length, pools: pools.filter((p): p is RawPool => p !== null) };
 }
 
-/** Native KAS held by a bonding-curve factory and every curve it created (launchpads). */
+/** Launch event of a bonding-curve factory: topic1 the token, topic2 its curve (KaspaCom LFG). */
+const CURVE_CREATED = "0x9da62411ac8f24fada01fbffe2325f7206006f791ef95d0dead099ba52efdd71";
+
+/**
+ * Native KAS held by a bonding-curve factory and every curve it created (launchpads), and,
+ * when the factory's launch logs can be read, which token each curve launched.
+ */
 export async function readBondingNative(chain: ChainKey, factory: Address) {
   const c = clients[chain];
   const block = await c.getBlock();
@@ -113,7 +123,14 @@ export async function readBondingNative(chain: ChainKey, factory: Address) {
   const owners = [factory, ...curves];
   const bals = await pool(owners, 8, (o) => c.getBalance({ address: o, ...at }));
   const kas = bals.reduce<number>((s, b) => s + (b == null ? 0 : Number(b) / 1e18), 0);
-  return { chain, block: Number(block.number), timestamp: Number(block.timestamp), curves: curves.length, kas };
+  const topicAddr = (t: string | undefined) => (t ? `0x${t.slice(26)}`.toLowerCase() : null);
+  const launched = await c.getLogs({ address: factory, fromBlock: BigInt(0), toBlock: block.number })
+    .then((ls) => ls.filter((l) => l.topics[0] === CURVE_CREATED).map((l) => ({ token: topicAddr(l.topics[1]), curve: topicAddr(l.topics[2]) })))
+    .catch(() => null);
+  const kasOf = new Map(owners.map((o, i) => [o.toLowerCase(), bals[i] == null ? 0 : Number(bals[i]) / 1e18]));
+  const tokens = launched?.filter((x): x is { token: string; curve: string } => !!x.token && !!x.curve)
+    .map((x) => ({ ...x, kas: kasOf.get(x.curve) ?? 0 })) ?? null;
+  return { chain, block: Number(block.number), timestamp: Number(block.timestamp), curves: curves.length, kas, tokens };
 }
 
 /* ---------- pricing ---------- */

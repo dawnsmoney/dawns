@@ -2,10 +2,12 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { sql, insertJson, getMeta, setMeta, hasDb, ensureSchema } from "../db";
 import type { Snapshot } from "../types";
-import { assetId, type Asset, type AssetDay } from "./types";
+import { assetId, type Asset, type AssetDay, type DayHolder, type WalletMove } from "./types";
+import { depthByToken, mergeDepth } from "./depth";
+import { holderCat } from "./holders";
 import { sampleProducers } from "../chain/zkas";
 import type { Producers } from "./types";
-import { readKas, readZkas, readKrc20, readKrc20Holders, readIgraTokens, readIgraHolders, venuesFromSnapshot, readKaspaNames, nameHolders, readCovenantTokens, readCovenantDepth } from "./sources";
+import { readKas, readZkas, readKrc20, readKrc20Holders, readIgraTokens, readIgraHolders, venuesFromSnapshot, readKaspaNames, nameHolders, readCovenantTokens, readCovenantDepth, readVestingPools } from "./sources";
 
 const LIST_EVERY = 55 * 60_000;      // full token lists: hourly
 const HOLDERS_EVERY = 24 * 3600_000; // a holder list is refreshed daily
@@ -28,7 +30,7 @@ export async function refreshAssets(s: Snapshot) {
   const next = new Map<string, Asset>();
   const keepHolders = (a: Asset) => {
     const p = prev.get(a.id);
-    if (p) { a.top10 = p.top10; a.topHolders = p.topHolders; a.holdersAt = p.holdersAt; if (a.holders == null) a.holders = p.holders; if (p.cov) a.cov = p.cov; }
+    if (p) { a.top10 = p.top10; a.topHolders = p.topHolders; a.holdersAt = p.holdersAt; if (a.holders == null) a.holders = p.holders; if (p.cov) a.cov = p.cov; if (p.unlocks) a.unlocks = p.unlocks; }
     return a;
   };
 
@@ -100,6 +102,12 @@ export async function refreshAssets(s: Snapshot) {
   }
   for (const a of next.values()) if (a.price != null && a.supply != null && a.standard !== "native") a.mcap = a.price * a.supply;
 
+  // sell-side depth: how much can be sold into the pools dawns reads before the price falls 2% / 10%
+  const depth = depthByToken(s);
+  for (const a of next.values()) if (a.standard === "erc20") a.depth = depth.get(`${a.chain}:${a.ref.toLowerCase()}`) ?? null;
+  if (kas) kas.depth = mergeDepth([...venues.entries()].filter(([, v]) => /^w?i?kas$/i.test(v.symbol)).map(([k]) => depth.get(k)).filter((d) => d != null));
+  report.depth = depth.size;
+
   // holder lists: the most significant first, stalest first
   const due = [...next.values()]
     .filter((a) => a.standard !== "native" && (a.holdersAt == null || Date.now() - a.holdersAt > HOLDERS_EVERY))
@@ -122,6 +130,17 @@ export async function refreshAssets(s: Snapshot) {
   }
   report.holders = `${read}/${due.length}`;
 
+  // vesting contracts among the top holders (Igra VestingPools): the schedule, read on-chain, daily
+  let vest = 0;
+  for (const a of next.values()) {
+    if (a.chain !== "igra" || a.standard !== "erc20") continue;
+    const v = a.topHolders?.find((h) => h.contract && /^VestingPools$/i.test(h.label ?? ""));
+    if (!v || (a.unlocks && a.unlocks.contract.toLowerCase() === v.address.toLowerCase() && Date.now() - a.unlocks.readAt < HOLDERS_EVERY)) continue;
+    const u = await readVestingPools(v.address, a.ref, a.decimals ?? 18).catch(() => null);
+    if (u) { a.unlocks = u; vest++; }
+  }
+  report.vesting = vest;
+
   // name KRC-20 holders (exchanges, burn, funds) from the Kaspa REST API's published list
   const names = await readKaspaNames().catch(() => null);
   if (names) {
@@ -130,20 +149,47 @@ export async function refreshAssets(s: Snapshot) {
   }
 
   // a week ago, from dawns' own daily record: the nearest day at least 7 days back (within 10)
-  const week = (await sql().query("select distinct on (id) id, holders, price from asset_daily where day <= now() - interval '7 days' and day > now() - interval '10 days' order by id, day desc")) as { id: string; holders: number | null; price: number | null }[];
+  const week = (await sql().query("select distinct on (id) id, holders, price, top from asset_daily where day <= now() - interval '7 days' and day > now() - interval '10 days' order by id, day desc")) as { id: string; holders: number | null; price: number | null; top: DayHolder[] | null }[];
   const ago = new Map(week.map((w) => [w.id, w]));
-  for (const a of next.values()) { const w = ago.get(a.id); a.holders7 = w?.holders ?? null; a.price7 = w?.price ?? null; }
+  for (const a of next.values()) {
+    const w = ago.get(a.id); a.holders7 = w?.holders ?? null; a.price7 = w?.price ?? null;
+    a.moves = w?.top && a.topHolders ? walletMoves(w.top, a.topHolders.map(dayHolder)) : null;
+  }
 
   const rows = [...next.values()];
   await insertJson("assets", [["id", "text"], ["chain", "text"], ["standard", "text"], ["symbol", "text"], ["data", "jsonb"]],
     rows.map((a) => ({ id: a.id, chain: a.chain, standard: a.standard, symbol: a.symbol, data: a })),
     "on conflict (id) do update set data = excluded.data, symbol = excluded.symbol, updated_at = now()");
   const day = new Date().toISOString().slice(0, 10);
-  await insertJson("asset_daily", [["id", "text"], ["day", "date"], ["price", "float8"], ["holders", "float8"], ["mcap", "float8"], ["vol24", "float8"], ["supply", "float8"]],
-    rows.filter((a) => a.price != null || a.holders != null).map((a) => ({ id: a.id, day, price: a.price, holders: a.holders, mcap: a.mcap, vol24: a.vol24, supply: a.supply })),
-    "on conflict (id, day) do update set price = excluded.price, holders = excluded.holders, mcap = excluded.mcap, vol24 = excluded.vol24, supply = excluded.supply");
+  // the day's top holders are kept only when the list is fresh (read within 36 hours)
+  const fresh = (a: Asset) => (a.topHolders?.length && a.holdersAt && Date.now() - a.holdersAt < 36 * 3600_000 ? a.topHolders.map(dayHolder) : null);
+  await insertJson("asset_daily", [["id", "text"], ["day", "date"], ["price", "float8"], ["holders", "float8"], ["mcap", "float8"], ["vol24", "float8"], ["supply", "float8"], ["top", "jsonb"]],
+    rows.filter((a) => a.price != null || a.holders != null).map((a) => ({ id: a.id, day, price: a.price, holders: a.holders, mcap: a.mcap, vol24: a.vol24, supply: a.supply, top: fresh(a) })),
+    "on conflict (id, day) do update set price = excluded.price, holders = excluded.holders, mcap = excluded.mcap, vol24 = excluded.vol24, supply = excluded.supply, top = coalesce(excluded.top, asset_daily.top)");
   report.assets = rows.length;
   return report;
+}
+
+const dayHolder = (h: NonNullable<Asset["topHolders"]>[number]): DayHolder => ({ a: h.address, s: h.share, k: holderCat(h), l: h.label });
+/** Project-side holders: deployer, treasuries, vesting, other contracts and funds. */
+const PROJECT = new Set(["vesting", "multisig", "contract"]);
+const projectSide = (h: DayHolder) => PROJECT.has(h.k) || !!h.l?.startsWith("Deployer");
+/**
+ * Project-side addresses whose share of supply moved by at least 0.25 points over the week.
+ * An address outside the top 10 on one of the two days is taken at that day's smallest top-10 share
+ * (an upper bound), so a move is never overstated.
+ */
+export function walletMoves(then: DayHolder[], now: DayHolder[]): WalletMove[] {
+  const floor = (l: DayHolder[]) => (l.length >= 10 ? Math.min(...l.map((h) => h.s)) : 0);
+  const was = new Map(then.map((h) => [h.a.toLowerCase(), h]));
+  const is = new Map(now.map((h) => [h.a.toLowerCase(), h]));
+  const out: WalletMove[] = [];
+  for (const [k, h] of new Map([...was, ...is])) {
+    if (!projectSide(h)) continue;
+    const a = was.get(k)?.s ?? floor(then), b = is.get(k)?.s ?? floor(now);
+    if (Math.abs(b - a) >= 0.0025) out.push({ address: h.a, label: h.l ?? null, kind: h.k, was: a, now: b });
+  }
+  return out.sort((x, y) => Math.abs(y.now - y.was) - Math.abs(x.now - x.was));
 }
 
 /** Block producers over the last `days` days of dawns' samples. */
@@ -167,6 +213,6 @@ export const getAssets = unstable_cache(async (): Promise<Asset[]> => (hasDb() ?
 export const getAssetHistory = unstable_cache(async (id: string): Promise<AssetDay[]> => {
   if (!hasDb()) return [];
   await ensureSchema();
-  const r = (await sql().query("select to_char(day, 'YYYY-MM-DD') as day, price, holders, mcap, vol24, supply from asset_daily where id = $1 and day > now() - interval '180 days' order by day", [id])) as AssetDay[];
+  const r = (await sql().query("select to_char(day, 'YYYY-MM-DD') as day, price, holders, mcap, vol24, supply, top from asset_daily where id = $1 and day > now() - interval '180 days' order by day", [id])) as AssetDay[];
   return r;
 }, ["dawns-asset-history-v1"], { revalidate: 600, tags: ["assets"] });

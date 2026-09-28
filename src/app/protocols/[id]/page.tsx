@@ -385,10 +385,14 @@ function Verification({ p }: { p: ProtocolView }) {
             </div>
           </>
         )}
-        <div className="c-head" style={{ margin: p.canVerify.length ? "26px 0 6px" : "0 0 6px" }}><h3>What dawns cannot verify yet</h3></div>
-        <div className="vlist">
-          {p.cannotVerify.map(([a, b]) => (<div className="vrow" key={a}><span style={{ color: "var(--ink-3)" }}><Minus /></span><div>{a}<small>{b}</small></div><span className="src">Pending</span></div>))}
-        </div>
+        {p.cannotVerify.length > 0 ? (
+          <>
+            <div className="c-head" style={{ margin: p.canVerify.length ? "26px 0 6px" : "0 0 6px" }}><h3>What dawns cannot verify yet</h3></div>
+            <div className="vlist">
+              {p.cannotVerify.map(([a, b]) => (<div className="vrow" key={a}><span style={{ color: "var(--ink-3)" }}><Minus /></span><div>{a}<small>{b}</small></div><span className="src">Pending</span></div>))}
+            </div>
+          </>
+        ) : <p className="muted" style={{ fontSize: 14, margin: "20px 0 0" }}>Nothing pending: every figure on this page is read directly.</p>}
       </div>
       <div className="card">
         <div className="c-head"><h3>Source of headline figures</h3></div>

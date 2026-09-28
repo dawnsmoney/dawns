@@ -59,7 +59,27 @@ export interface Asset {
   holders7?: number | null;      // holders 7 days ago (dawns' own daily record)
   price7?: number | null;        // price 7 days ago (dawns' own daily record)
   net?: NetworkStats;            // native coins
+  depth?: Depth | null;          // how much can be sold into the pools dawns reads
+  unlocks?: Unlocks | null;      // vesting contracts read on-chain
+  moves?: WalletMove[] | null;   // project-side wallets that moved supply in the last 7 days
   updatedAt: number;
+}
+
+/** Sell-side depth: USD of the asset that can be sold before its pool price falls by a given move. */
+export interface Depth {
+  d2: number; d10: number;       // all pools together, if a sale is split between them
+  curve: { move: number; usd: number }[];
+  pools: { id: string; pname: string; chain: string; pair: string; other: string; kind: "v2" | "v3"; usd: number; d2: number; d10: number }[];
+  v3: boolean;                   // some depth comes from concentrated pools (estimated at current in-range liquidity)
+}
+
+/** A vesting contract's schedule, read on-chain: each pool unlocks `atStart` at `start`, the rest linearly over `days`. */
+export interface Unlocks {
+  chain: string; contract: string; name: string;
+  total: number;                 // tokens allocated across pools
+  pools: { id: number; wallet: string; walletName: string | null; allocation: number; atStart: number; start: number; days: number; released: number }[];
+  releases: { t: number; pool: number; to: string; amount: number }[]; // recent Released events
+  readAt: number;
 }
 
 export interface NetworkStats {
@@ -85,7 +105,10 @@ export interface Producers {
   unknown: number;                        // blocks whose payout could not be read
 }
 
-export interface AssetDay { day: string; price: number | null; holders: number | null; mcap: number | null; vol24: number | null; supply: number | null }
+export interface DayHolder { a: string; s: number; k: string; l?: string | null } // address, share, holder kind (holderCat), label
+export interface AssetDay { day: string; price: number | null; holders: number | null; mcap: number | null; vol24: number | null; supply: number | null; top?: DayHolder[] | null }
+/** A project-side address (deployer, treasury, vesting, other contract) whose share of supply changed over 7 days. */
+export interface WalletMove { address: string; label: string | null; kind: string; was: number; now: number }
 
 /**
  * Is price × supply a value anyone could realize? Only when some market carries it: 7-day
@@ -113,4 +136,12 @@ export interface CovenantInfo {
   lastActive: number | null;       // ms
   days: { day: string; transfers: number; other: number }[]; // last 30 days of activity
   kinds: Record<string, number>;   // actions by kind, last 30 days
+}
+
+/** Tokens a vesting pool has unlocked by time t (ms), following the contract's formula. */
+export function unlockedAt(p: Unlocks["pools"][number], t: number): number {
+  if (t < p.start) return 0;
+  const end = p.start + p.days * 86_400_000;
+  if (t >= end || p.days === 0) return p.allocation;
+  return p.atStart + (p.allocation - p.atStart) * (t - p.start) / (end - p.start);
 }

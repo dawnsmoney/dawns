@@ -176,7 +176,7 @@ function poolViews(pools: PricedPool[], total: number, pp: Map<string, number> =
       chain: p.chain, pair: p.pair, symbols: [p.t0.symbol, p.t1.symbol] as [string, string], usd: p.usd, share: total ? p.usd / total : 0,
       reserves: [p.r0, p.r1] as [number, number],
       impact10k: p.kind === "v2" && p.usd > 0 ? 1e4 / (p.usd / 2 + 1e4) : null,
-      kind: p.kind, fee: p.fee ?? null, lpShare: p.lpShare ?? null,
+      kind: p.kind, fee: p.fee ?? null, lpShare: p.lpShare ?? null, L: p.L ?? null, sqrtP: p.sqrtP ?? null,
       tk: [{ a: p.t0.address, d: p.t0.decimals, px: p.p0, pp: k(p.chain, p.t0.address) }, { a: p.t1.address, d: p.t1.decimals, px: p.p1, pp: k(p.chain, p.t1.address) }] as PoolView["tk"],
     }));
 }
@@ -468,7 +468,29 @@ export async function buildSnapshot(): Promise<Snapshot> {
       base.tokens = [{ sym: "KAS", usd: total }];
       base.contracts = LFG_FACTORIES.map((f) => ({ n: `Bonding factory (${f.chain === "igra" ? "Igra" : "Kasplex"})`, addr: f.factory, chain: f.chain, up: "Unknown", admin: "Unknown", pause: "Unknown", t: "info" as Status }));
       base.canVerify = [["Native KAS held by every live bonding curve", `getAllBondingCurves() → getBalance(), ${reads.reduce((s, r) => s + r.curves, 0)} curves`, "On-chain"]];
-      base.cannotVerify = [["Graduated tokens", "Liquidity that moved to a DEX is counted under that DEX"]];
+      // graduated tokens: a launched token that now trades in a DEX pool dawns reads. That liquidity
+      // is counted under the DEX, never twice here.
+      const launched = reads.flatMap((r) => (r.tokens ?? []).map((t) => ({ ...t, chain: r.chain })));
+      if (reads.every((r) => r.tokens)) {
+        const inDex = new Map<string, { dex: string; usd: number }[]>();
+        dexJobs.forEach((j, k) => {
+          const rd = dexReads[k];
+          if (!rd) return;
+          for (const p of valuePools(rd.pools, pxMap)) for (const t of [p.t0, p.t1]) {
+            if (/^w?i?kas$/i.test(t.symbol) || p.usd <= 0) continue;
+            const key = `${p.chain}:${t.address.toLowerCase()}`;
+            inDex.set(key, [...(inDex.get(key) ?? []), { dex: items.find((x) => x.slug === j.slug)?.name ?? j.slug, usd: p.usd }]);
+          }
+        });
+        const grad = launched.map((t) => ({ ...t, pools: inDex.get(`${t.chain}:${t.token}`) ?? [] })).filter((t) => t.pools.length);
+        const gradUsd = grad.reduce((x, t) => x + t.pools.reduce((y, p) => y + p.usd, 0), 0);
+        const dexes = [...new Set(grad.flatMap((t) => t.pools.map((p) => p.dex)))];
+        const live = launched.filter((t) => t.kas > 0).length;
+        base.canVerify.push(["Graduated tokens", `${grad.length} of ${launched.length} launched tokens trade in DEX pools dawns reads (${usdFull(gradUsd)} in pools${dexes.length ? `, on ${dexes.join(" and ")}` : ""}); counted under that DEX, not here. ${live} curves still hold KAS.`, "On-chain"]);
+        base.cannotVerify = [];
+      } else {
+        base.cannotVerify = [["Graduated tokens", "The factory's launch logs could not be read this time; liquidity that moved to a DEX is still counted under that DEX"]];
+      }
       prov[`${it.slug}-tvl`] = { label: "KAS in bonding curves", value: usdFull(total), trail: [["Contracts", reads.map((r) => `${r.chain === "igra" ? "Igra" : "Kasplex"}: factory + ${r.curves} curves`).join(" · ")], ["Read", "native balance of the factory and every curve"], ["Amount", `${Math.round(kas).toLocaleString("en-US")} KAS`], ["Price", `$${kasPx.toPrecision(4)} per KAS`]] };
       base.status = base.floor ? "info" : "good"; base.statusText = base.floor ? "Below monitoring floor" : "Healthy";
     }

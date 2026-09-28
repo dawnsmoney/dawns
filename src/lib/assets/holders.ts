@@ -41,3 +41,6 @@ export function supplyParts(top: Holder[] | null, top10: number | null): SupplyP
   return [...shown, ...(rest > 0.0005 ? [{ key: "rest", label: "Everyone else", color: REST_COLOR, share: rest, count: 0 }] : [])];
 }
 export const catOf = (key: string) => HOLDER_CATS.find((c) => c.key === key);
+
+/** Slot colours for compared assets, fixed by position (validated categorical slots 1–3). */
+export const SLOT = ["#3987e5", "#d95926", "#199e70"];

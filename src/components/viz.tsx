@@ -139,3 +139,65 @@ export function CopyId({ text }: { text: string }) {
     </button>
   );
 }
+
+export interface Span { key: string; label: string; sub?: string; start: number; end: number; done: number; claimed?: number; display: string; color: string }
+/**
+ * Schedules on one time axis (vesting pools): each row spans start → end; the solid part is
+ * what has unlocked by today, the hatched part is still locked. A line marks today.
+ */
+export function Timeline({ rows, now, label }: { rows: Span[]; now: number; label: string }) {
+  const [hover, setHover] = useState<string | null>(null);
+  const t0 = Math.min(...rows.map((r) => r.start)), t1 = Math.max(...rows.map((r) => r.end), now);
+  const pos = (t: number) => ((t - t0) / Math.max(1, t1 - t0)) * 100;
+  const years: number[] = [];
+  for (let y = new Date(t0).getUTCFullYear() + 1; Date.UTC(y, 0, 1) <= t1; y++) if (Math.abs(((Date.UTC(y, 0, 1) - now) / Math.max(1, t1 - t0)) * 100) > 7) years.push(y);
+  const on = rows.find((r) => r.key === hover) ?? null;
+  return (
+    <div className="tl" role="img" aria-label={`${label}: ${rows.map((r) => `${r.label} ${r.display}, ${Math.round(r.done * 100)}% unlocked`).join("; ")}`}>
+      <div className="tl-row tl-axis" aria-hidden>
+        <span />
+        <div className="tl-t">
+          {years.map((y) => <span key={y} style={{ left: `${pos(Date.UTC(y, 0, 1))}%` }}>{y}</span>)}
+          <em style={{ left: `${pos(now)}%` }}>Today</em>
+        </div>
+        <span />
+      </div>
+      {rows.map((r) => (
+        <div key={r.key} className="tl-row" tabIndex={0} onMouseEnter={() => setHover(r.key)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(r.key)} onBlur={() => setHover(null)}>
+          <div className="tl-l"><span>{r.label}</span>{r.sub && <small>{r.sub}</small>}</div>
+          <div className="tl-t">
+            <span className="tl-bar" style={{ left: `${pos(r.start)}%`, width: `${Math.max(0.8, pos(r.end) - pos(r.start))}%`, ["--c" as string]: r.color, opacity: hover && hover !== r.key ? 0.45 : 1 }}>
+              <i style={{ width: `${r.done * 100}%` }} />
+            </span>
+            <i className="tl-now" style={{ left: `${pos(now)}%` }} />
+          </div>
+          <b>{r.display}</b>
+        </div>
+      ))}
+      <div className="split-tip" aria-live="polite">{on ? <><i style={{ background: on.color }} /><b>{on.label}</b> {Math.round(on.done * 100)}% unlocked{on.claimed != null ? ` · ${Math.round(on.claimed * 100)}% claimed` : ""} · {new Date(on.start).toISOString().slice(0, 10)} → {new Date(on.end).toISOString().slice(0, 10)}</> : <span className="muted">Solid: unlocked by today · hatched: still locked</span>}</div>
+    </div>
+  );
+}
+
+/** 100% stacked columns over time: how one whole splits, period by period (holder flow). */
+export function StackedCols({ cols, keys, label }: { cols: { key: string; label: string; parts: Record<string, number> }[]; keys: { key: string; label: string; color: string }[]; label: string }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const on = hover == null ? null : cols[hover];
+  return (
+    <div className="scols">
+      <div className="scols-plot" role="img" aria-label={label}>
+        {cols.map((c, i) => {
+          const tot = keys.reduce((s, k) => s + (c.parts[k.key] ?? 0), 0) || 1;
+          return (
+            <div key={c.key} className="scol" tabIndex={0} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} style={{ opacity: hover != null && hover !== i ? 0.5 : 1 }}>
+              <span className="scol-t">{[...keys].reverse().map((k) => { const v = (c.parts[k.key] ?? 0) / tot; return v > 0 ? <i key={k.key} style={{ height: `${v * 100}%`, background: k.color }} /> : null; })}</span>
+              <small>{c.label}</small>
+            </div>
+          );
+        })}
+      </div>
+      <div className="split-tip" aria-live="polite">{on ? <><b>{on.label}</b>{keys.filter((k) => (on.parts[k.key] ?? 0) > 0.0005).map((k) => <span key={k.key} style={{ marginLeft: 10 }}><i style={{ background: k.color }} />{k.label} {pctS(on.parts[k.key], 1)}</span>)}</> : <span className="muted">Hover a column</span>}</div>
+      <div className="split-legend">{keys.map((k) => <span key={k.key}><i style={{ background: k.color }} />{k.label}</span>)}</div>
+    </div>
+  );
+}

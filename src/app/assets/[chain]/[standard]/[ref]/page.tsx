@@ -8,12 +8,13 @@ import { RangeChart, AreaChart } from "@/components/charts";
 import { OpportunityTable } from "@/components/opportunities";
 import { getAssets, getAssetHistory } from "@/lib/assets";
 import { analyse, dimensions } from "@/lib/assets/analysis";
-import { supplyParts, holderCat, catOf } from "@/lib/assets/holders";
-import { SplitBar, Ring, Tiles, Bars, Compare, Columns, CopyId } from "@/components/viz";
+import { supplyParts, holderCat, catOf, HOLDER_CATS, REST_COLOR } from "@/lib/assets/holders";
+import { SplitBar, Ring, Tiles, Bars, Compare, Columns, CopyId, StackedCols } from "@/components/viz";
+import { DepthCard, UnlocksCard, MovesCard } from "@/components/asset-sections";
 import { AssetCoin } from "@/components/bits";
 import { External } from "@/components/icons";
 import { CURATED } from "@/lib/assets/profiles";
-import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, valueCredible, type Asset, type AssetChain, type AssetStandard } from "@/lib/assets/types";
+import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, valueCredible, type Asset, type AssetDay, type AssetChain, type AssetStandard } from "@/lib/assets/types";
 import { getSnapshot } from "@/lib/snapshot";
 import { knownOf, holdingsOf } from "@/lib/assets/view";
 import { usd, pct, price } from "@/lib/format";
@@ -41,6 +42,21 @@ const whole = (v: number | null, sym: string) => (v == null ? "—" : `${v >= 1e
 const hash = (h: number | null) => (h == null ? "—" : h >= 1e18 ? `${(h / 1e18).toFixed(2)} EH/s` : h >= 1e15 ? `${(h / 1e15).toFixed(1)} PH/s` : `${(h / 1e12).toFixed(0)} TH/s`);
 const short = (s: string) => (s.length > 20 ? `${s.slice(0, 12)}…${s.slice(-6)}` : s);
 const when = (ms: number | null) => (ms == null ? "—" : new Date(ms).toISOString().slice(0, 10));
+
+/** Holder split per period from the daily records: weekly once there are 8+ weeks, daily before. */
+function holderFlow(hist: AssetDay[]) {
+  const days = hist.filter((d) => d.top?.length);
+  if (days.length < 2) return { cols: [], since: days[0]?.day ?? null };
+  const weekly = days.length > 56;
+  const pick = weekly ? days.filter((d, i) => i === days.length - 1 || new Date(days[i + 1].day).getUTCDay() < new Date(d.day).getUTCDay() || Date.parse(days[i + 1].day) - Date.parse(d.day) >= 7 * 864e5) : days;
+  const cols = pick.slice(-16).map((d) => {
+    const parts: Record<string, number> = {};
+    for (const h of d.top!) parts[h.k] = (parts[h.k] ?? 0) + h.s;
+    parts.rest = Math.max(0, 1 - Object.values(parts).reduce((x, v) => x + v, 0));
+    return { key: d.day, label: d.day.slice(5).replace("-", "/"), parts };
+  });
+  return { cols, since: days[0].day, weekly };
+}
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string | null }) {
   return (
@@ -71,6 +87,7 @@ export default async function AssetPage({ params }: P) {
   const sameTicker = all.filter((x) => x.id !== a.id && (isKas ? /^(w?i?kas|wikas|ikas|wkas)$/i.test(x.symbol) : x.symbol.toUpperCase() === a.symbol.toUpperCase()))
     .sort((x, y) => (y.liquidity ?? y.mcap ?? 0) - (x.liquidity ?? x.mcap ?? 0));
   const dates = hist.map((d) => Date.parse(d.day));
+  const flow = holderFlow(hist);
   const priced = hist.filter((d) => d.price != null).length >= 2;
   const holdersHist = hist.filter((d) => d.holders != null).length >= 3;
   const explorer = a.standard === "kcc20" || a.standard === "kron" ? `https://kcc20.info/v1/tokens/${a.ref}` : a.chain === "igra" ? `https://explorer.igralabs.com/token/${a.ref}` : a.standard === "krc20" ? `https://kaspa.com/tokens/marketplace/token/${a.ref}` : a.chain === "kasplex" ? `https://explorer.kasplex.org/token/${a.ref}` : a.chain === "zkas" ? "https://explorer.zkas.info/analytics" : "https://explorer.kaspa.org";
@@ -108,6 +125,10 @@ export default async function AssetPage({ params }: P) {
           </div>
         )}
 
+        {a.depth && a.depth.d10 > 0 && <DepthCard a={a} />}
+        {a.unlocks && <UnlocksCard a={a} />}
+        {a.moves && a.moves.length > 0 && <MovesCard a={a} />}
+
         <div className={(parts.length > 0 || !a.net ? 1 : 0) + (supplyVisual ? 1 : 0) + (a.net ? 1 : 0) > 1 ? "grid gA" : "grid"} style={{ alignItems: "start" }}>
           {parts.length > 0 ? (
             <div className="card">
@@ -116,6 +137,13 @@ export default async function AssetPage({ params }: P) {
               <div style={{ marginTop: 20 }}>
                 <Bars rows={(a.topHolders ?? []).map((h, i) => ({ key: h.address, label: h.label ?? short(h.address), sub: `#${i + 1} · ${catOf(holderCat(h))?.label ?? ""}`, value: h.share, display: pct(h.share, 1), color: catOf(holderCat(h))?.color }))} />
               </div>
+              {flow.cols.length >= 2 && (
+                <div style={{ marginTop: 22 }}>
+                  <div className="eyebrow muted" style={{ marginBottom: 10 }}>How it shifted, {flow.weekly ? "week by week" : "day by day"}</div>
+                  <StackedCols label={`${a.symbol} top-10 holdings by kind over time`} cols={flow.cols}
+                    keys={[...HOLDER_CATS.filter((c) => flow.cols.some((x) => (x.parts[c.key] ?? 0) > 0)).map((c) => ({ key: c.key, label: c.label, color: c.color })), { key: "rest", label: "Everyone else", color: REST_COLOR }]} />
+                </div>
+              )}
               {a.standard === "krc20" && <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>Names from the list the Kaspa REST API publishes. An unnamed address may still be an exchange or a marketplace escrow.</p>}
             </div>
           ) : a.net ? null : (
@@ -241,6 +269,7 @@ export default async function AssetPage({ params }: P) {
           {cur?.sources.map(([l, u]) => <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="srcchip"><External width={13} height={13} />{l}</a>)}
           <span className="srcchip plain">dawns on-chain reads · {when(a.updatedAt)}</span>
           <CopyId text={a.id} />
+          <Link href={`/assets/compare?ids=${encodeURIComponent(a.id)}`} className="btn ghost" style={{ marginLeft: "auto" }}>Compare with…</Link>
         </div>
       </div>
     </>

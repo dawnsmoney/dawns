@@ -1,5 +1,5 @@
 import type { Status } from "../types";
-import { CHAIN_NAME, STANDARD_NAME, valueCredible, isCovenant, type Asset } from "./types";
+import { CHAIN_NAME, STANDARD_NAME, valueCredible, isCovenant, unlockedAt, type Asset } from "./types";
 import { CURATED, BRIDGED } from "./profiles";
 import { holderCat } from "./holders";
 
@@ -68,11 +68,26 @@ export function analyse(a: Asset): Analysis {
     flags.push([t, `The 10 largest addresses hold ${pct(a.top10)} of supply: ${[forMany >= 0.01 && `${pct(forMany)} in pools, markets, staking and exchanges`, locked >= 0.01 && `${pct(locked)} in vesting, treasuries and other contracts`, burned >= 0.01 && `${pct(burned)} burned`, `${pct(wallets)} in large wallets`].filter(Boolean).join(", ")}.`]);
     if (locked >= 0.3) {
       flags.push(["warn", `${pct(locked)} of supply sits in vesting contracts and treasuries: it can reach the market as it unlocks.`]);
-      questions.push("What is the unlock schedule of the vesting and treasury holdings?");
+      if (!a.unlocks) questions.push("What is the unlock schedule of the vesting and treasury holdings?");
     }
     if (forMany >= 0.1 && by(["exchange"]) >= 0.1) questions.push("How much of the supply on exchanges is liquid, and how quickly could it be sold?");
     if (wallets >= 0.5) questions.push("Who are the largest holders: the team, a fund, or individuals? Can they exit into the available liquidity?");
   }
+  // vesting read on-chain, and project wallets that moved
+  const u = a.unlocks;
+  if (u) {
+    const t = a.updatedAt, at = (x: number) => u.pools.reduce((s, p) => s + unlockedAt(p, x), 0);
+    const next12 = at(t + 365 * 864e5) - at(t);
+    const base = a.supply ?? u.total;
+    flags.push([next12 / base >= 0.25 ? "warn" : "info", `${n(next12)} ${a.symbol} unlock over the next 12 months on its vesting contract's schedule: ${pct(next12 / base)} of today's circulating supply.`]);
+    const pending = at(t) - u.pools.reduce((s, p) => s + p.released, 0);
+    if (pending / base >= 0.02) flags.push(["info", `${n(pending)} ${a.symbol} have unlocked but are not yet claimed: they can be claimed and sold at any time.`]);
+  }
+  const out = (a.moves ?? []).filter((m) => m.now < m.was);
+  if (out.length) flags.push([out.reduce((s, m) => s + m.was - m.now, 0) >= 0.02 ? "warn" : "info", `Project-side wallets moved out ${pct(out.reduce((s, m) => s + m.was - m.now, 0), 1)} of supply in the last 7 days (${out.slice(0, 2).map((m) => m.label ?? `${m.address.slice(0, 8)}…`).join(", ")}).`]);
+  if (a.depth && a.mcap && valueCredible(a) && a.standard !== "native" && a.depth.d10 / a.mcap < 0.01)
+    flags.push(["warn", `Only ${usd(a.depth.d10)} can be sold before its pool price falls 10%: under 1% of its ${usd(a.mcap)} value.`]);
+
   if (a.holders != null && a.holders < 100 && a.standard !== "native") flags.push(["warn", `Only ${n(a.holders)} holders.`]);
 
   // supply
@@ -103,10 +118,10 @@ export function analyse(a: Asset): Analysis {
   if (!a.pools.length && a.standard !== "native") questions.push("Is there any DeFi venue for it at all, or is holding the only option?");
 
   // capacity: what could leave in a day without dominating the market (heuristic)
-  let capacity: Analysis["capacity"] = null;
+  let capacity: Analysis["capacity"] = a.depth && a.depth.d2 > 0 ? { usd: a.depth.d2, basis: "a 2% price move across the pools dawns reads, from their reserves" } : null;
   const dexCap = a.liquidity ? a.liquidity * 0.02 : 0;         // ~2% price impact on one pool side
   const volCap = a.vol24 ? a.vol24 * 0.1 : 0;                  // 10% of a day's volume
-  if (dexCap || volCap) capacity = dexCap >= volCap
+  if (!capacity && (dexCap || volCap)) capacity = dexCap >= volCap
     ? { usd: dexCap, basis: "about a 2% price move in the DEX pools dawns reads" }
     : { usd: volCap, basis: "10% of a day's traded volume" };
 
@@ -150,7 +165,7 @@ export function dimensions(a: Asset, r: Analysis): { key: string; title: string;
       : { key: "market", title: "Market", t: otc ? "warn" : "good", big: a.vol24 != null ? usd(a.vol24) : a.liquidity ? usd(a.liquidity) : "—", small: otc ? "OTC quotes only" : a.vol24 != null ? "traded in 24h" : "in DEX pools" });
   // exit capacity
   tiles.push(r.capacity
-    ? { key: "exit", title: "Exit in a day", t: r.capacity.usd >= 50_000 ? "good" : r.capacity.usd >= 5_000 ? "info" : "warn", big: `≈ ${usd(r.capacity.usd)}`, small: r.capacity.basis.startsWith("about") ? "at a 2% price move" : "10% of daily volume" }
+    ? { key: "exit", title: "Exit in a day", t: r.capacity.usd >= 50_000 ? "good" : r.capacity.usd >= 5_000 ? "info" : "warn", big: `≈ ${usd(r.capacity.usd)}`, small: r.capacity.basis.startsWith("a 2%") ? "before a 2% price drop" : r.capacity.basis.startsWith("about") ? "at a 2% price move" : "10% of daily volume" }
     : { key: "exit", title: "Exit in a day", t: "warn", big: "—", small: "no measured market" });
   // holders
   const conc = find(/largest addresses hold/);
@@ -158,7 +173,9 @@ export function dimensions(a: Asset, r: Analysis): { key: string; title: string;
   else if (a.chain === "zkas") tiles.push({ key: "holders", title: "Holders", t: "info", big: "Private", small: "shielded by design" });
   // supply
   const locked = find(/vesting contracts and treasuries/);
-  if (a.net?.inflation != null) tiles.push({ key: "supply", title: "New supply, 12 months", t: a.net.inflation >= 0.2 ? "warn" : "good", big: `+${pct(a.net.inflation, a.net.inflation >= 1 ? 0 : 1)}`, small: "on its emission schedule" });
+  const unl = find(/unlock over the next 12 months/);
+  if (unl && a.unlocks) tiles.push({ key: "supply", title: "Unlocks, 12 months", t: unl[0], big: unl[1].match(/([\d.]+%) of today/)?.[1] ?? "—", small: "of circulating, on-chain schedule" });
+  else if (a.net?.inflation != null) tiles.push({ key: "supply", title: "New supply, 12 months", t: a.net.inflation >= 0.2 ? "warn" : "good", big: `+${pct(a.net.inflation, a.net.inflation >= 1 ? 0 : 1)}`, small: "on its emission schedule" });
   else if (locked) tiles.push({ key: "supply", title: "Locked supply", t: "warn", big: locked[1].match(/^[\d.]+%/)?.[0] ?? "—", small: "vesting and treasuries" });
   else if (a.state === "minting" && a.mintedShare != null) tiles.push({ key: "supply", title: "Minted", t: "info", big: pct(a.mintedShare), small: "still minting" });
   else if (a.premineShare != null) tiles.push({ key: "supply", title: "Pre-minted", t: a.premineShare >= 0.1 ? "warn" : "good", big: pct(a.premineShare), small: a.premineShare === 0 ? "fair mint" : "to the deployer" });
