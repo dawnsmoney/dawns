@@ -126,6 +126,8 @@ const SCHEMA = [
   `alter table strategies add column if not exists parent text`,
   `alter table strategies add column if not exists effective_at timestamptz`,
   `update strategies set family = id, version = 1, effective_at = created_at where family is null`,
+  // staking vaults' exchange rates, once a day: their yield, measured
+  `create table if not exists infinity_rates (day date not null, chain text not null, vault text not null, rate double precision not null, primary key (day, chain, vault))`,
   // dawns' daily evaluation of each strategy's version in force (not realized returns)
   `create table if not exists strategy_daily (day date not null, family text not null, id text not null, net double precision, gross double precision,
     exit_now double precision, status text, primary key (day, family))`,

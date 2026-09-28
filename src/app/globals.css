@@ -911,3 +911,13 @@ textarea.st-ta:focus{outline:none;border-color:rgba(123,108,255,.8)}
 .farm-bars em{font-style:normal;font:600 13px var(--display);text-align:right}
 .hatch{background:repeating-linear-gradient(135deg,#c98500 0 3px,rgba(201,133,0,.35) 3px 6px)!important}
 .split-legend i.hatch{display:inline-block;width:10px;height:10px;border-radius:3px}
+.inf-rows{display:grid}
+.inf-row{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr) minmax(0,1.4fr) minmax(0,1fr) minmax(0,1.3fr);gap:14px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.inf-row.head{border-top:0;padding-top:0;font-size:12px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em}
+.inf-n{display:flex;gap:10px;align-items:center;min-width:0}
+.inf-n > span{display:grid;min-width:0}
+.inf-n small,.inf-v small,.inf-g small,.inf-s small{color:var(--ink-3);font-size:12.5px}
+.inf-v,.inf-g,.inf-s{display:grid;gap:4px;min-width:0}
+.inf-v b{font:600 16px var(--display)}
+.inf-s .pill{justify-self:start}
+@media (max-width:860px){.inf-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.inf-row.head{display:none}.inf-n{grid-column:1/-1}.inf-g{grid-column:1/-1}}

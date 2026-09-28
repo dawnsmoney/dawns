@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Banner } from "@/components/Banner";
 import { DataBridge } from "@/components/providers";
-import { FarmPanel, OpportunityTable, YieldLadder } from "@/components/opportunities";
+import { FarmPanel, InfinityPanel, OpportunityTable, YieldLadder } from "@/components/opportunities";
+import { infinityHistory } from "@/lib/infinity";
 import { getSnapshot } from "@/lib/snapshot";
 import { getAssets } from "@/lib/assets";
 import { knownOf } from "@/lib/assets/view";
@@ -16,13 +17,14 @@ export const metadata: Metadata = {
 export const revalidate = 120;
 
 export default async function OpportunitiesPage() {
-  const [s, assets] = await Promise.all([getSnapshot(), getAssets()]);
+  const [s, assets, rates] = await Promise.all([getSnapshot(), getAssets(), infinityHistory()]);
   const rows = s.opportunities;
   const known = knownOf(assets, rows.flatMap((o) => o.assetIds ?? []));
   const lend = rows.filter((o) => o.kind === "supply");
   const lp = rows.filter((o) => o.kind === "lp" && !o.farm);
   const farms = rows.filter((o) => o.farm);
   const farm = s.protocols.flatMap((p) => (p.dex?.farms ?? []).map((f) => ({ p, f })))[0] ?? null;
+  const inf = s.protocols.filter((p) => p.dex?.infinity?.length).map((p) => ({ p, rows: p.dex!.infinity!.map((v) => { const h = rates.get(`${v.chain}:${v.vault}`); return { ...v, apy7: h?.apy7 ?? null, apy30: h?.apy30 ?? null, since: h?.points[0]?.day ?? null }; }) }))[0] ?? null;
   const bestOpen = lend.filter((o) => o.status === "good").sort((a, b) => (b.apy ?? 0) - (a.apy ?? 0))[0];
   const bestLp = lp.filter((o) => o.apy != null && o.status === "good")[0];
   const blocked = lend.filter((o) => o.status === "crit");
@@ -59,6 +61,7 @@ export default async function OpportunitiesPage() {
         </div>
 
         {farm && <div style={{ marginBottom: 28 }}><FarmPanel p={{ id: farm.p.id, name: farm.p.name }} f={farm.f} opps={farms} now={s.asOf} /></div>}
+        {inf && <div style={{ marginBottom: 28 }}><InfinityPanel p={{ id: inf.p.id, name: inf.p.name }} rows={inf.rows} /></div>}
 
         <OpportunityTable rows={rows} known={known} />
 

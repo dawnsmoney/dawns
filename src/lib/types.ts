@@ -29,6 +29,13 @@ export interface PoolView {
   /** token address, decimals and USD price (null if unpriced) — used to value indexed events */
   tk: [PoolToken, PoolToken];
 }
+/** A single-asset staking vault: the xToken's exchange rate is the yield. */
+export interface InfinityView {
+  chain: "igra" | "kasplex"; symbol: string; vault: string; token: string; own: boolean;
+  amount: number; usd: number | null; usdPool: number | null;
+  rate: number | null;                       // underlying per xToken; 1 at launch
+  emissions: { paused: boolean | null; perBlock: number | null; lastAt: number | null } | null;
+}
 /** A farm: stake a pool's LP tokens, earn the protocol's token. Incentives, never native yield. */
 export interface FarmView {
   chain: "igra" | "kasplex"; address: string; owner: string;
@@ -108,6 +115,7 @@ export interface ProtocolView {
     /** trading fee per unit of volume, and the share of it paid to LPs (DefiLlama fees ÷ volume, 7 days) */
     feeRate: number | null; lpShare: number | null; feeSource: "on-chain" | "defillama" | null; feeSamples: number;
     farms?: FarmView[];
+    infinity?: InfinityView[];
   };
 }
 

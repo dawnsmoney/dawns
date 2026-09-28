@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Fragment, useState } from "react";
 import { AssetCoin, Pill } from "./bits";
 import { usd, pct } from "@/lib/format";
-import type { FarmView, Opportunity } from "@/lib/types";
+import type { FarmView, InfinityView, Opportunity, Status } from "@/lib/types";
 
 type Filter = "All" | "Lending" | "Liquidity" | "Farms";
 const inFilter = (o: Opportunity, f: Filter) => f === "All" || (f === "Lending" ? o.kind === "supply" : f === "Farms" ? !!o.farm : o.kind === "lp" && !o.farm);
@@ -193,6 +193,48 @@ export function FarmPanel({ p, f, opps, now }: { p: { id: string; name: string }
         </div>
       </div>
       <p className="muted" style={{ fontSize: 13, margin: "16px 0 0" }}>{on ? `The owner can change the rate or the pools at any time; rewards are worth what ${f.reward.sym} can be sold for.` : `Rewards are off: a staked LP earns the same trading fees as an unstaked one, with one more contract in between and a ${pct(f.emergencyFeeBps / 10_000, 0)} fee on emergency exits.`} Contract <a href={`https://explorer.igralabs.com/address/${f.address}`} target="_blank" rel="noopener noreferrer">{f.address.slice(0, 8)}…{f.address.slice(-4)}</a>, not verified on the explorer; see <Link href={`/protocols/${p.id}`}>{p.name}</Link>.</p>
+    </div>
+  );
+}
+
+/**
+ * Single-asset staking (Infinity Pools): you hold one token and earn more of it. The only
+ * yield is the xToken's exchange rate; dawns shows what it grew since launch and what it
+ * grew over the last 7 and 30 days, and whether anything is still feeding it.
+ */
+export function InfinityPanel({ p, rows }: { p: { id: string; name: string }; rows: (InfinityView & { apy7: number | null; apy30: number | null; since: string | null })[] }) {
+  const maxG = Math.max(0.01, ...rows.map((r) => (r.rate ?? 1) - 1));
+  const day = (t: number) => new Date(t).toISOString().slice(0, 10);
+  const state = (r: (typeof rows)[number]): [Status, string, string] => {
+    if (r.emissions) {
+      if (r.emissions.paused) return ["warn", "Emissions paused", r.emissions.lastAt ? `No new ${r.symbol} since ${day(r.emissions.lastAt)}` : "No new rewards"];
+      if (r.emissions.perBlock) return ["good", "Emitting", `${r.emissions.perBlock} ${r.symbol} a block`];
+    }
+    return ["info", "Owner top-ups only", "Grows only when the owner adds rewards"];
+  };
+  return (
+    <div className="card">
+      <div className="c-head"><h3>{p.name} Infinity Pools · single-asset staking</h3><span className="tag">yield = growth of the xToken&apos;s exchange rate</span></div>
+      <div className="inf-rows">
+        <div className="inf-row head" aria-hidden><span>Pool</span><span>Staked</span><span>Grown since launch</span><span>Measured yield</span><span>Source of yield now</span></div>
+        {rows.map((r) => {
+          const [t, word, sub] = state(r);
+          const g = r.rate != null ? r.rate - 1 : null;
+          return (
+            <div key={r.chain + r.vault} className="inf-row">
+              <span className="inf-n"><AssetCoin a={r.symbol} size={30} /><span><b>{r.symbol}</b><small>{r.chain === "igra" ? "Igra" : "Kasplex"}{r.own ? ` · ${p.name}'s own token` : ""}</small></span></span>
+              <span className="inf-v"><b>{r.amount >= 1e9 ? `${(r.amount / 1e9).toFixed(2)}B` : r.amount >= 1e6 ? `${(r.amount / 1e6).toFixed(1)}M` : Math.round(r.amount).toLocaleString("en-US")}</b><small>{r.usdPool != null ? `${usd(r.usdPool)} at pool price` : r.usd != null ? usd(r.usd) : "unpriced"}</small></span>
+              <span className="inf-g" title={r.rate != null ? `1 x${r.symbol} = ${r.rate.toFixed(6)} ${r.symbol}` : "exchange rate not read"}>
+                <span className="farm-bars"><span><i style={{ width: `${Math.max(0, (g ?? 0) / maxG) * 100}%`, background: "#199e70" }} /><em>{g != null ? pct(g, g < 0.01 ? 2 : 1) : "—"}</em></span></span>
+                <small className="muted">{r.rate != null ? `1 x${r.symbol} = ${r.rate.toFixed(4)} ${r.symbol}` : ""}</small>
+              </span>
+              <span className="inf-v"><b>{r.apy7 != null ? pct(r.apy7, 1) : "—"}</b><small>{r.apy7 != null ? `7 days${r.apy30 != null ? ` · 30 days ${pct(r.apy30, 1)}` : ""}` : r.since ? `measuring since ${r.since}` : "measuring from the next daily run"}</small></span>
+              <span className="inf-s"><Pill t={t}>{word}</Pill><small className="muted">{sub}</small></span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="muted" style={{ fontSize: 13, margin: "14px 0 0" }}>Staking pays in the same token you stake, so its dollar value moves with that token. Growth since launch is a fact of the contract; the yearly figure is measured from dawns&apos; own daily readings and appears after 7 days of them. Vault contracts are not verified; functions matched from their bytecode.</p>
     </div>
   );
 }

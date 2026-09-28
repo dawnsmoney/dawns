@@ -423,6 +423,8 @@ export async function buildSnapshot(): Promise<Snapshot> {
         const addTvl = tvlVaults.reduce((x, v) => x + val(v), 0), staking = own.reduce((x, v) => x + val(v), 0);
         const valP = (v: (typeof vaults)[number]) => (v.pp != null ? v.amount * v.pp : 0);
         const addPool = tvlVaults.reduce((x, v) => x + valP(v), 0), stakingPool = own.reduce((x, v) => x + valP(v), 0);
+        if (infinity && base.dex) base.dex.infinity = vaults.map((v) => ({ chain: v.chain as "igra" | "kasplex", symbol: v.symbol, vault: v.vault.toLowerCase(), token: v.token.toLowerCase(), own: v.own,
+          amount: v.amount, usd: v.px != null ? v.amount * v.px : null, usdPool: v.pp != null ? v.amount * v.pp : null, rate: v.rate, emissions: v.emissions }));
         if (infinity) {
           base.tvl += addTvl;
           if (base.tvlPool != null) base.tvlPool += addPool;
@@ -466,7 +468,10 @@ export async function buildSnapshot(): Promise<Snapshot> {
             note: "Farm rewards are paid in ZEAL, the protocol's own token: shown next to trading-fee yield, never added to it. The owner can change the rate at any time.",
             links: [explorerAddress(f.chain, f.address)] };
           base.canVerify.push(["Farm", `${farmPools.length} farmed pools read on-chain: ${usd(staked)} of LP staked (already inside the pools' TVL), ${perDay > 0 ? `${Math.round(perDay).toLocaleString("en-US")} ZEAL a day` : "rewards currently off"}`, "On-chain"]);
-          if (perDay === 0) base.flags.push(["info", `Farm rewards are off${cur && cur.perBlock === 0 ? ` since ${new Date(cur.t).toISOString().slice(0, 10)}` : ""}: staked LP earns trading fees only`]);
+          const zealPaused = (infinity ?? []).filter((v) => v.own && v.emissions?.paused);
+          if (perDay === 0) base.flags.push(["info", zealPaused.length
+            ? `ZEAL emissions are stopped: farm rewards set to 0${cur && cur.perBlock === 0 ? ` on ${new Date(cur.t).toISOString().slice(0, 10)}` : ""} and ZEAL staking emissions paused on ${zealPaused.length === 1 ? "one chain" : "both chains"}`
+            : `Farm rewards are off${cur && cur.perBlock === 0 ? ` since ${new Date(cur.t).toISOString().slice(0, 10)}` : ""}: staked LP earns trading fees only`]);
         } else base.cannotVerify.push(["Farm deposits", "The farm read failed this run; farms hold LP tokens of the pools above, so their value is already in TVL"]);
       }
       if (base.tvlPool != null && Math.abs(base.tvlPool / Math.max(1, base.tvl) - 1) >= 0.03)
