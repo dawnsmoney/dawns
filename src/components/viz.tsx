@@ -129,3 +129,13 @@ export function Columns({ cols, label }: { cols: { key: string; label: string; v
     </div>
   );
 }
+
+/** An identifier with a copy button. */
+export function CopyId({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button type="button" className="copyid" onClick={() => { navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1400); }).catch(() => {}); }} title="Copy">
+      <span className="mono">{text}</span><em>{done ? "Copied" : "Copy"}</em>
+    </button>
+  );
+}

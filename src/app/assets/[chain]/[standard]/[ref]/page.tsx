@@ -9,7 +9,9 @@ import { OpportunityTable } from "@/components/opportunities";
 import { getAssets, getAssetHistory } from "@/lib/assets";
 import { analyse, dimensions } from "@/lib/assets/analysis";
 import { supplyParts, holderCat, catOf } from "@/lib/assets/holders";
-import { SplitBar, Ring, Tiles, Bars, Compare, Columns } from "@/components/viz";
+import { SplitBar, Ring, Tiles, Bars, Compare, Columns, CopyId } from "@/components/viz";
+import { AssetCoin } from "@/components/bits";
+import { External } from "@/components/icons";
 import { CURATED } from "@/lib/assets/profiles";
 import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, valueCredible, type Asset, type AssetChain, type AssetStandard } from "@/lib/assets/types";
 import { getSnapshot } from "@/lib/snapshot";
@@ -64,7 +66,10 @@ export default async function AssetPage({ params }: P) {
   const held = holdingsOf(a, s);
   const heldTotal = held.reduce((x, h) => x + h.usd, 0);
   const all = await getAssets();
-  const sameTicker = all.filter((x) => x.symbol.toUpperCase() === a.symbol.toUpperCase() && x.id !== a.id);
+  const isKas = a.id === "kaspa:native:KAS";
+  // KAS: its wrapped forms on the L2s; anything else: other assets with the same ticker
+  const sameTicker = all.filter((x) => x.id !== a.id && (isKas ? /^(w?i?kas|wikas|ikas|wkas)$/i.test(x.symbol) : x.symbol.toUpperCase() === a.symbol.toUpperCase()))
+    .sort((x, y) => (y.liquidity ?? y.mcap ?? 0) - (x.liquidity ?? x.mcap ?? 0));
   const dates = hist.map((d) => Date.parse(d.day));
   const priced = hist.filter((d) => d.price != null).length >= 2;
   const holdersHist = hist.filter((d) => d.holders != null).length >= 3;
@@ -211,27 +216,31 @@ export default async function AssetPage({ params }: P) {
           )}
         </section>
 
-        <div className="grid gA">
-          {sameTicker.length > 0 && (
-            <div className="card">
-              <div className="c-head"><h3>Same ticker, different asset</h3></div>
-              <p className="muted" style={{ marginTop: 0 }}>These share the name {a.symbol} but are separate assets with their own supply, holders and risks.</p>
-              <div className="vlist">
-                {sameTicker.slice(0, 6).map((x) => (
-                  <div className="vrow" key={x.id}><span /><div><Link href={assetPath(x.id)}>{x.symbol} · {STANDARD_NAME[x.standard]} on {CHAIN_NAME[x.chain]}</Link><small className="mono">{short(x.ref)}</small></div><b>{x.mcap != null ? usd(x.mcap) : ""}</b></div>
-                ))}
-              </div>
+        {sameTicker.length > 0 && (
+          <section>
+            <div className="c-head" style={{ marginBottom: 14 }}><h3>{isKas ? "KAS on other chains" : `Also called ${a.symbol}`}</h3><span className="muted" style={{ fontSize: 14 }}>{isKas ? "wrapped KAS: each depends on its bridge" : "separate assets: own supply, holders and risks"}</span></div>
+            <div className="twins">
+              {sameTicker.slice(0, 6).map((x) => (
+                <Link key={x.id} href={assetPath(x.id)} className="twin card">
+                  <span className="twin-h"><AssetCoin a={x.symbol} size={36} /><span><b>{x.name !== x.symbol ? x.name : x.symbol}</b><small>{STANDARD_NAME[x.standard]} · {CHAIN_NAME[x.chain]}</small></span></span>
+                  <span className="twin-s">
+                    <span><small>Price</small><b>{price(x.price)}</b></span>
+                    <span><small>Holders</small><b>{x.holders != null ? x.holders.toLocaleString("en-US") : "—"}</b></span>
+                    <span><small>Value</small><b>{x.mcap != null && valueCredible(x) ? usd(x.mcap) : "—"}</b></span>
+                  </span>
+                  <small className="mono twin-ref">{short(x.ref)}</small>
+                </Link>
+              ))}
             </div>
-          )}
-          <div className="card">
-            <div className="c-head"><h3>Sources</h3></div>
-            <div className="vlist">
-              <div className="vrow"><span /><div><a href={explorer} target="_blank" rel="noopener noreferrer">{a.standard === "kcc20" || a.standard === "kron" ? "KCC20 indexer" : a.chain === "igra" ? "Igra explorer" : a.standard === "krc20" ? "KaspaCom market" : a.chain === "zkas" ? "ZKas explorer" : "Explorer"}</a><small>{a.standard === "krc20" ? "price, volume, holders" : a.chain === "zkas" ? "supply, emission, hashrate, shielded pool" : "supply, holders"}</small></div><b /></div>
-              {cur?.sources.map(([l, u]) => <div className="vrow" key={u}><span /><div><a href={u} target="_blank" rel="noopener noreferrer">{l}</a><small>{new URL(u).host}</small></div><b /></div>)}
-              <div className="vrow"><span /><div>dawns<small>DEX pools and lending markets read on-chain; updated {when(a.updatedAt)}</small></div><b /></div>
-              <div className="vrow"><span /><div>Identifier<small className="mono" style={{ wordBreak: "break-all" }}>{a.id}</small></div><b /></div>
-            </div>
-          </div>
+          </section>
+        )}
+
+        <div className="srcbar">
+          <span className="eyebrow muted">Sources</span>
+          <a href={explorer} target="_blank" rel="noopener noreferrer" className="srcchip"><External width={13} height={13} />{a.standard === "kcc20" || a.standard === "kron" ? "KCC20 indexer" : a.chain === "igra" ? "Igra explorer" : a.standard === "krc20" ? "KaspaCom market" : a.chain === "zkas" ? "ZKas explorer" : "Kaspa explorer"}</a>
+          {cur?.sources.map(([l, u]) => <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="srcchip"><External width={13} height={13} />{l}</a>)}
+          <span className="srcchip plain">dawns on-chain reads · {when(a.updatedAt)}</span>
+          <CopyId text={a.id} />
         </div>
       </div>
     </>

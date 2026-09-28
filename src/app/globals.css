@@ -526,3 +526,25 @@ table.opps-tbl td.soft small{white-space:normal}
 .ladder-exit.x-warn{border-color:#FFC061}.ladder-exit.x-warn em{color:#FFC061}
 .ladder-exit.x-crit{border-color:#FF6B7A}.ladder-exit.x-crit em{color:#FF6B7A}
 @media (max-width:760px){.ladder-row{grid-template-columns:22px 1fr 54px;gap:8px 10px}.ladder-bar{grid-column:2/4;grid-row:2}.ladder-exit{grid-column:2/4;grid-row:3}}
+.twins{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.twin{display:grid;gap:14px;padding:18px;text-decoration:none;color:inherit;transition:border-color .15s,transform .15s}
+.twin:hover{border-color:rgba(123,108,255,.6);transform:translateY(-1px)}
+.twin-h{display:flex;align-items:center;gap:12px}
+.twin-h > span{display:grid}
+.twin-h b{font:600 16px var(--display)}
+.twin-h small{color:var(--ink-3);font-size:13px}
+.twin-s{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding-top:12px;border-top:1px solid var(--line)}
+.twin-s > span{display:grid;gap:2px}
+.twin-s small{color:var(--ink-3);font-size:12px}
+.twin-s b{font:600 14.5px var(--display)}
+.twin-ref{color:var(--ink-3);font-size:12px}
+.srcbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:16px 20px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.02)}
+.srcbar .eyebrow{margin-right:6px}
+.srcchip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid var(--line-2);font-size:13.5px;color:var(--ink-2);text-decoration:none}
+a.srcchip:hover{color:#fff;border-color:rgba(123,108,255,.6)}
+.srcchip.plain{border-style:dashed}
+.copyid{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-radius:999px;border:1px solid var(--line-2);max-width:100%;margin-left:auto}
+.copyid span{font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:360px}
+.copyid em{font-style:normal;font-size:12px;padding:3px 9px;border-radius:999px;background:rgba(123,108,255,.22);color:#fff}
+.copyid:focus-visible{outline:2px solid rgba(255,255,255,.8);outline-offset:2px}
+@media (max-width:760px){.copyid{margin-left:0}.copyid span{max-width:220px}}
