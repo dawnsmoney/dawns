@@ -19,7 +19,7 @@ export default async function VaultsHub() {
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
 
         <div className="card">
-          <div className="c-head"><h3>What stops a manager</h3><span className="tag">enforced by the network, not by dawns</span></div>
+          <div className="c-head"><h3>What stops a manager</h3><Link href="/strategies" className="tag">A vault runs a strategy: browse strategies →</Link></div>
           <div className="flow">
             {[["Mandate", "Approved destinations, caps, a reserve, limits per move and per hour. Fixed at launch; its hash is in the vault's address."],
               ["Keys", "Allocator moves capital. Valuer marks positions. Guardian stops the vault. No key does two jobs."],

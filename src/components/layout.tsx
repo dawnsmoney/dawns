@@ -13,8 +13,9 @@ const EXPLORE = [
   { href: "/assets", label: "Assets", badge: "New" },
   { href: "/protocols", label: "Protocols" },
   { href: "/opportunities", label: "Opportunities", badge: "Beta" },
-  { href: "/bridge", label: "Igra bridge" },
+  { href: "/strategies", label: "Strategies", badge: "New" },
   { href: "/vaults", label: "Vaults", badge: "Testnet" },
+  { href: "/bridge", label: "Igra bridge" },
 ];
 
 export function Header() {

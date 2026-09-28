@@ -12,7 +12,7 @@ const pctS = (x: number, d = 0) => `${(x * 100).toFixed(x > 0 && x < 0.01 && d =
 export interface Part { key: string; label: string; color: string; share: number; note?: string }
 
 /** A 100% stacked bar with a legend: how one whole splits. Fixed order, 2px gaps, rounded ends. */
-export function SplitBar({ parts, height = 34, label, legend = true }: { parts: Part[]; height?: number; label: string; legend?: boolean }) {
+export function SplitBar({ parts, height = 34, label, legend = true, tip = true }: { parts: Part[]; height?: number; label: string; legend?: boolean; tip?: boolean }) {
   const [hover, setHover] = useState<string | null>(null);
   const total = parts.reduce((s, p) => s + p.share, 0) || 1;
   const on = parts.find((p) => p.key === hover) ?? null;
@@ -24,7 +24,7 @@ export function SplitBar({ parts, height = 34, label, legend = true }: { parts: 
             style={{ flexGrow: p.share / total, background: p.color, opacity: hover && hover !== p.key ? 0.45 : 1 }} aria-label={`${p.label} ${pctS(p.share / total, 1)}`} />
         ))}
       </div>
-      <div className="split-tip" aria-live="polite">{on ? <><i style={{ background: on.color }} /><b>{on.label}</b> {pctS(on.share / total, 1)}{on.note ? <span className="muted"> · {on.note}</span> : null}</> : <span className="muted">Hover a segment</span>}</div>
+      {tip && <div className="split-tip" aria-live="polite">{on ? <><i style={{ background: on.color }} /><b>{on.label}</b> {pctS(on.share / total, 1)}{on.note ? <span className="muted"> · {on.note}</span> : null}</> : <span className="muted">Hover a segment</span>}</div>}
       {legend && (
         <div className="split-legend">
           {parts.map((p) => (

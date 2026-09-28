@@ -116,6 +116,10 @@ const SCHEMA = [
     status text not null default 'draft', origin text not null default 'daily',
     created_at timestamptz not null default now(), updated_at timestamptz not null default now(), sent_at timestamptz,
     unique (day, kind, ref))`,
+  // strategies strategists publish: content-addressed (hash of the canonical document), signed in with a wallet
+  `create table if not exists strategies (
+    id text primary key, hash text not null unique, doc jsonb not null, user_id text not null, strategist text not null,
+    listed boolean not null default true, created_at timestamptz not null default now())`,
 ];
 
 let ready: Promise<void> | null = null;

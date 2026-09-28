@@ -77,7 +77,7 @@ export default async function OpportunitiesPage() {
         </div>
         <div className="preview" style={{ marginTop: 18 }}>
           <span>A high rate next to a blocked exit is a warning, not an opportunity. dawns can turn these into a split that fits your risk and exit window.</span>
-          <Link className="btn iris" href="/allocate">Build an allocation</Link>
+          <span style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><Link className="btn glass" href="/strategies/new">Write a strategy</Link><Link className="btn iris" href="/allocate">Build an allocation</Link></span>
         </div>
       </div>
     </>
