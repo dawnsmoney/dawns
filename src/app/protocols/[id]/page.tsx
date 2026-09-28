@@ -53,7 +53,7 @@ function Kpis({ p }: { p: ProtocolView }) {
     return (
       <>
         <Kpi label="Total liquidity" value={usd(p.tvl)} ctx={<><Change v={p.d24} /> 24h</>} prov={`${id}-tvl`} />
-        <Kpi label="24h volume" value={d.vol24 != null ? usd(d.vol24) : "—"} ctx={<span className="flat">DefiLlama</span>} prov={`${id}-vol`} />
+        <Kpi label="24h volume" value={d.vol24 != null ? usd(d.vol24) : "—"} ctx={<span className="flat">{p.activity && p.asOf && p.activity.upTo > p.asOf.timestamp * 1000 - 45 * 60_000 ? "read on-chain" : "DefiLlama"}</span>} prov={`${id}-vol`} />
         <Kpi label="24h fees" value={d.fees24 != null ? usd(d.fees24) : "—"} ctx={<span className="flat">{d.fees24 != null && p.tvl ? `${pct((d.fees24 * 365) / p.tvl)} fee APR` : "—"}</span>} prov={`${id}-fee`} />
         <Kpi label="Pools" value={String(d.pairCount)} ctx={<span className="flat">{d.pools.filter((x) => x.usd >= 1000).length} over $1K</span>} />
         <Kpi label="Largest pool" value={d.pools[0] ? pct(d.pools[0].share) : "—"} ctx={<span className="flat">{d.pools[0]?.symbols.join(" / ")}</span>} />

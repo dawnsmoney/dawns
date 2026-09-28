@@ -46,6 +46,7 @@ const SCHEMA = [
   // first-party product events: no cookies, no IP; user id only when signed in
   `create table if not exists app_events (t timestamptz not null default now(), name text not null, path text, user_id text, props jsonb)`,
   `create index if not exists app_events_t on app_events (t desc)`,
+  `alter table app_events add column if not exists vid text`,
   // event index (dawns' own reads of contract logs)
   `create table if not exists dex_events (
     chain text not null, tx text not null, log_index int not null, block bigint not null, t timestamptz not null,

@@ -1,4 +1,5 @@
 import { Analytics } from "@vercel/analytics/next";
+import { PageView } from "@/components/PageView";
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <Footer />
         </AppProviders>
         <Analytics />
+        <PageView />
       </body>
     </html>
   );
