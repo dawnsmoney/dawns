@@ -70,7 +70,9 @@ export default async function AssetPage({ params }: P) {
         lede={r.what} />
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
         <div className="grid g3">
-          <Stat label="Price" value={price(a.price)} sub={a.priceSrc} />
+          <Stat label="Price" value={price(a.price)} sub={a.poolPrice != null && a.price != null && Math.abs(a.price / a.poolPrice - 1) >= 0.05
+            ? `${a.priceSrc} · ${price(a.poolPrice)} in its ${CHAIN_NAME[a.chain]} pools (${a.price > a.poolPrice ? `${(a.price / a.poolPrice).toFixed(1)}× lower` : `${(a.poolPrice / a.price).toFixed(1)}× higher`})`
+            : a.priceSrc} />
           <Stat label={a.standard === "native" ? "Market value" : "Value on chain"} value={a.mcap != null ? usd(a.mcap) : "—"} sub={a.mcap == null ? "no price to value it" : valueCredible(a) ? "price × circulating supply" : "not realizable: too little trading behind the price"} />
           <Stat label="Traded 24h" value={a.vol24 != null ? usd(a.vol24) : "—"} sub={a.volSrc ?? "not measured"} />
           <Stat label="Holders" value={a.holders != null ? a.holders.toLocaleString("en-US") : a.chain === "zkas" ? "Shielded" : "—"} sub={a.top10 != null ? `10 largest hold ${pct(a.top10, 0)}` : a.chain === "zkas" ? "balances are private by design" : null} />

@@ -79,7 +79,14 @@ export async function refreshAssets(s: Snapshot) {
     if (!a) continue;
     a.liquidity = v.liquidity;
     a.pools = [...new Set(v.pools)];
-    if (v.price != null) { a.price = v.price; a.priceSrc = "dawns: DEX pools and lending markets read on-chain"; }
+    if (v.price != null) {
+      // the headline price follows the site-wide rule (CoinGecko where it lists the token);
+      // the pool price is what the token trades at in its own pools on this chain
+      const anchored = v.poolPrice == null || Math.abs(v.price / v.poolPrice - 1) > 0.001;
+      a.price = v.price;
+      a.priceSrc = anchored ? "CoinGecko via DefiLlama" : "dawns: pools and markets read on-chain";
+      a.poolPrice = v.poolPrice;
+    }
     a.updatedAt = Date.now();
   }
   // KAS itself is what the WiKAS / iKAS pools price; link its opportunities too

@@ -31,6 +31,8 @@ export function analyse(a: Asset): Analysis {
   else if (a.priceSrc?.startsWith("Igra explorer")) flags.push(["info", "Price comes from the Igra explorer, not from pools dawns reads itself."]);
 
   const otc = !!a.priceSrc?.startsWith("OTC");
+  if (a.poolPrice != null && a.price != null && Math.abs(a.price / a.poolPrice - 1) >= 0.2)
+    flags.push(["warn", `Its pools on ${CHAIN_NAME[a.chain]} price it at ${a.price > a.poolPrice ? `${(a.price / a.poolPrice).toFixed(1)}× less` : `${(a.poolPrice / a.price).toFixed(1)}× more`} than the headline price. What you could sell for here is the pool price.`]);
   const thin = (a.vol24 ?? 0) < 1_000 && (a.liquidity ?? 0) < 10_000;
   if (a.mcap != null && !valueCredible(a))
     flags.push(["warn", `Its supply is priced at ${usd(a.mcap)}, but only ${usd(Math.max(a.vol7 ?? 0, a.vol24 ?? 0))} traded in the last 7 days${a.liquidity ? ` and ${usd(a.liquidity)} sits in DEX pools` : ""}. That value could not be realized.`]);

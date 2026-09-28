@@ -58,7 +58,7 @@ function Kpis({ p }: { p: ProtocolView }) {
     const d = p.dex;
     return (
       <>
-        <Kpi label="Total liquidity" value={usd(p.tvl)} ctx={<><Change v={p.d24} /> 24h</>} prov={`${id}-tvl`} />
+        <Kpi label="Total liquidity" value={usd(p.tvl)} ctx={<><Change v={p.d24} /> 24h{p.tvlPool != null && Math.abs(p.tvlPool / Math.max(1, p.tvl) - 1) >= 0.03 && <span className="flat" style={{ display: "block", marginTop: 4 }} title="Ecosystem tokens valued at their own pool price on each chain instead of CoinGecko">{usd(p.tvlPool)} at pool prices</span>}</>} prov={`${id}-tvl`} />
         <Kpi label="24h volume" value={d.vol24 != null ? usd(d.vol24) : "—"} ctx={<span className="flat">{p.activity && p.asOf && p.activity.upTo > p.asOf.timestamp * 1000 - 45 * 60_000 ? "read on-chain" : "DefiLlama"}</span>} prov={`${id}-vol`} />
         <Kpi label="24h fees" value={d.fees24 != null ? usd(d.fees24) : "—"} ctx={<span className="flat">{d.fees24 != null && p.tvl ? `${pct((d.fees24 * 365) / p.tvl)} fee APR` : "—"}</span>} prov={`${id}-fee`} />
         <Kpi label="Pools" value={String(d.pairCount)} ctx={<span className="flat">{d.pools.filter((x) => x.usd >= 1000).length} over $1K</span>} />

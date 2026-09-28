@@ -30,6 +30,7 @@ export interface Asset {
 
   price: number | null;          // USD
   priceSrc: string | null;       // where the price comes from, in words
+  poolPrice?: number | null;     // the price of its own pools on this chain, when it differs from the headline
   mcap: number | null;           // price × circulating supply
   vol24: number | null;          // USD traded in 24h
   vol7?: number | null;          // USD traded in 7 days

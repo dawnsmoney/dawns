@@ -119,6 +119,7 @@ export async function readBondingNative(chain: ChainKey, factory: Address) {
 /* ---------- pricing ---------- */
 const KAS_SYMBOLS = /^(w?i?kas|wikas|ikas|wkas)$/i;
 const STABLES = /^(usdc|usdt|usdt0|usdc\.e|dai|usd₮)$/i;
+const MAJORS = /^(weth|eth|btc|wbtc|cbbtc|wsteth)$/i;
 
 export type PriceBook = Map<string, number>; // lowercased symbol → USD
 
@@ -127,12 +128,15 @@ export type PriceBook = Map<string, number>; // lowercased symbol → USD
  * stablecoins and majors from the external book. Other tokens take their price from
  * the deepest V2 pool that pairs them with an already-priced token.
  */
-export function buildPriceMap(pools: RawPool[], kasUsd: number, book: PriceBook) {
+export function buildPriceMap(pools: RawPool[], kasUsd: number, book: PriceBook, poolOnly = false) {
   const px = new Map<string, number>(); // chain:address → usd
   const key = (p: RawPool, t: TokenMeta) => `${p.chain}:${t.address.toLowerCase()}`;
   const anchor = (t: TokenMeta) => {
     if (KAS_SYMBOLS.test(t.symbol)) return kasUsd;
     if (STABLES.test(t.symbol)) return book.get(t.symbol.toLowerCase()) ?? 1;
+    // pool-only: ecosystem tokens (NACHO, ZEAL, IGRA, KSKD…) take the price of their own pool on
+    // that chain; only majors whose real market is elsewhere keep an external anchor
+    if (poolOnly && !MAJORS.test(t.symbol)) return undefined;
     return book.get(t.symbol.toLowerCase());
   };
   for (const p of pools) for (const t of [p.t0, p.t1]) { const a = anchor(t); if (a != null) px.set(key(p, t), a); }

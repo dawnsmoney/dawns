@@ -167,7 +167,8 @@ function lendingView(k: KaskadState, book: PriceBook): { markets: MarketView[]; 
   };
 }
 
-function poolViews(pools: PricedPool[], total: number): PoolView[] {
+function poolViews(pools: PricedPool[], total: number, pp: Map<string, number> = new Map()): PoolView[] {
+  const k = (chain: string, a: string) => pp.get(`${chain}:${a.toLowerCase()}`) ?? null;
   return pools
     .filter((p) => p.usd > 0)
     .sort((a, b) => b.usd - a.usd)
@@ -176,7 +177,7 @@ function poolViews(pools: PricedPool[], total: number): PoolView[] {
       reserves: [p.r0, p.r1] as [number, number],
       impact10k: p.kind === "v2" && p.usd > 0 ? 1e4 / (p.usd / 2 + 1e4) : null,
       kind: p.kind, fee: p.fee ?? null, lpShare: p.lpShare ?? null,
-      tk: [{ a: p.t0.address, d: p.t0.decimals, px: p.p0 }, { a: p.t1.address, d: p.t1.decimals, px: p.p1 }] as PoolView["tk"],
+      tk: [{ a: p.t0.address, d: p.t0.decimals, px: p.p0, pp: k(p.chain, p.t0.address) }, { a: p.t1.address, d: p.t1.decimals, px: p.p1, pp: k(p.chain, p.t1.address) }] as PoolView["tk"],
     }));
 }
 
@@ -229,6 +230,8 @@ export async function buildSnapshot(): Promise<Snapshot> {
   // one price map across every V2 pool on both networks, so thin DEXs borrow prices from deep ones
   const allRaw: RawPool[] = dexReads.flatMap((r) => r?.pools ?? []);
   const pxMap = kasPx ? buildPriceMap(allRaw, kasPx, book) : new Map<string, number>();
+  // the same, but ecosystem tokens priced only by their own pools on that chain (shown next to the headline)
+  const pxPool = kasPx ? buildPriceMap(allRaw, kasPx, book, true) : new Map<string, number>();
 
   const prov: Record<string, Provenance> = {};
   const signals: Signal[] = [];
@@ -363,7 +366,8 @@ export async function buildSnapshot(): Promise<Snapshot> {
       const raw = dexRead.flatMap((x) => x.read.pools);
       const priced = valuePools(raw, pxMap);
       const total = priced.reduce((s, p) => s + p.usd, 0);
-      const pools = poolViews(priced, total);
+      const pools = poolViews(priced, total, pxPool);
+      base.tvlPool = valuePools(raw, pxPool).reduce((x, p) => x + p.usd, 0);
       const pairCount = dexRead.reduce((s, x) => s + x.read.pairCount, 0);
       const vol = volBy[it.slug], fee = feeBy[it.slug];
       const first = dexRead[0].read;
@@ -411,12 +415,15 @@ export async function buildSnapshot(): Promise<Snapshot> {
       base.cannotVerify = [["Swap volume and fees", "Taken from DefiLlama until the indexer reads Swap events"]];
       if (it.slug === "zealousswap") {
         // Infinity Pools: third-party tokens are TVL, the protocol's own token is staking
-        const vaults = (infinity ?? []).map((v) => ({ ...v, px: pxMap.get(`${v.chain}:${v.token.toLowerCase()}`) ?? null }));
+        const vaults = (infinity ?? []).map((v) => ({ ...v, px: pxMap.get(`${v.chain}:${v.token.toLowerCase()}`) ?? null, pp: pxPool.get(`${v.chain}:${v.token.toLowerCase()}`) ?? null }));
         const val = (v: (typeof vaults)[number]) => (v.px != null ? v.amount * v.px : 0);
         const tvlVaults = vaults.filter((v) => !v.own), own = vaults.filter((v) => v.own);
         const addTvl = tvlVaults.reduce((x, v) => x + val(v), 0), staking = own.reduce((x, v) => x + val(v), 0);
+        const valP = (v: (typeof vaults)[number]) => (v.pp != null ? v.amount * v.pp : 0);
+        const addPool = tvlVaults.reduce((x, v) => x + valP(v), 0), stakingPool = own.reduce((x, v) => x + valP(v), 0);
         if (infinity) {
           base.tvl += addTvl;
+          if (base.tvlPool != null) base.tvlPool += addPool;
           for (const v of tvlVaults) if (v.px != null) { const e = base.tokens.find((t) => t.sym === normSym(v.symbol)); if (e) e.usd += val(v); else base.tokens.push({ sym: normSym(v.symbol), usd: val(v) }); }
           base.tokens.sort((a, b) => b.usd - a.usd);
           const fmt = (v: (typeof vaults)[number]) => `${Math.round(v.amount).toLocaleString("en-US")} ${v.symbol} (${v.chain === "igra" ? "Igra" : "Kasplex"})${v.px == null ? ", unpriced" : ""}`;
@@ -424,10 +431,12 @@ export async function buildSnapshot(): Promise<Snapshot> {
           t.value = usdFull(base.tvl);
           t.trail.push(["Infinity Pools", `+ ${usdFull(addTvl)}: totalStaked + totalRewards of ${tvlVaults.map(fmt).join(", ")}`]);
           prov[`${it.slug}-staking`] = { label: "ZEAL staked", value: usdFull(staking), trail: [["Contracts", own.map((v) => `${v.vault} (${v.chain === "igra" ? "Igra" : "Kasplex"})`).join(" · ")], ["Read", "totalStaked() + totalRewards()"], ["Amount", own.map(fmt).join(" + ")]], note: "The protocol's own token staked in its own vaults: reported as staking, never added to TVL.", links: own.map((v) => explorerAddress(v.chain, v.vault)) };
-          base.canVerify.push(["Infinity Pools", `${vaults.length} vaults read on-chain: ${usd(addTvl)} of NACHO and KASPER in TVL, ${usd(staking)} of ZEAL staking kept out of TVL`, "On-chain"]);
+          base.canVerify.push(["Infinity Pools", `${vaults.length} vaults read on-chain: ${usd(addTvl)} of NACHO and KASPER in TVL (${usd(addPool)} at pool prices), ${usd(staking)} of ZEAL staking kept out of TVL (${usd(stakingPool)} at pool prices)`, "On-chain"]);
         } else base.cannotVerify.push(["Infinity Pools", "The vault read failed this run"]);
         base.cannotVerify.push(["Farm deposits", "Farms hold LP tokens of the pools above, so their value is already in TVL; how much of each pool is farmed is not read yet"]);
       }
+      if (base.tvlPool != null && Math.abs(base.tvlPool / Math.max(1, base.tvl) - 1) >= 0.03)
+        prov[`${it.slug}-tvl`].trail.push(["At pool prices", `${usdFull(base.tvlPool)}: ecosystem tokens (NACHO, ZEAL, IGRA…) valued at their own pool price on each chain, not the CoinGecko price. KAS, stablecoins and majors unchanged.`]);
       const top = pools[0];
       base.status = top && top.share > 0.6 ? "warn" : "good";
       base.statusText = base.status === "warn" ? "Concentrated" : "Healthy";

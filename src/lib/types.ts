@@ -27,7 +27,7 @@ export interface PoolView {
   /** token address, decimals and USD price (null if unpriced) — used to value indexed events */
   tk: [PoolToken, PoolToken];
 }
-export interface PoolToken { a: string; d: number; px: number | null }
+export interface PoolToken { a: string; d: number; px: number | null; pp?: number | null } // px headline price, pp price from pools on that chain only
 
 /** Events dawns indexed itself from contract logs. */
 export interface ActivityEvent { t: number; kind: "swap" | "remove" | "supply" | "withdraw" | "borrow" | "repay" | "liquidation"; usd: number; label: string; tx: string; chain: "igra" | "kasplex" }
@@ -49,6 +49,8 @@ export interface ProtocolView {
   chains: string[];
   site: string | null;
   tvl: number;
+  /** the same value with ecosystem tokens at their own pool price on that chain (DEXs only) */
+  tvlPool?: number | null;
   llamaTvl: number;
   d24: number | null;
   d7: number | null;

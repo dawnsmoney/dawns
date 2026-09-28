@@ -232,14 +232,14 @@ export async function readIgraHolders(addr: string, supply: number | null, dec: 
 // ---------------------------------------------------------------------------
 // what dawns reads itself: DEX prices, pool liquidity, lending markets
 // ---------------------------------------------------------------------------
-export interface Venue { liquidity: number; price: number | null; pools: string[]; symbol: string; decimals: number }
+export interface Venue { liquidity: number; price: number | null; poolPrice: number | null; pools: string[]; symbol: string; decimals: number }
 /** Per token address (lower case), per chain: dawns' own DEX price and the liquidity it sits in. */
 export function venuesFromSnapshot(s: Snapshot): Map<string, Venue> {
   const m = new Map<string, Venue>();
   const at = (chain: string, addr: string, symbol: string, decimals: number) => {
     const k = `${chain}:${addr.toLowerCase()}`;
     let v = m.get(k);
-    if (!v) { v = { liquidity: 0, price: null, pools: [], symbol, decimals }; m.set(k, v); }
+    if (!v) { v = { liquidity: 0, price: null, poolPrice: null, pools: [], symbol, decimals }; m.set(k, v); }
     return v;
   };
   for (const p of s.protocols) {
@@ -248,6 +248,7 @@ export function venuesFromSnapshot(s: Snapshot): Map<string, Venue> {
         const v = at(pool.chain, t.a, pool.symbols[i], t.d);
         v.liquidity += pool.usd / 2;
         if (t.px != null && v.price == null) v.price = t.px;
+        if (t.pp != null && v.poolPrice == null) v.poolPrice = t.pp;
         if (pool.usd >= 5_000) v.pools.push(`${p.id}:${pool.pair.toLowerCase()}`);
       });
     }
