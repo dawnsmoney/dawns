@@ -1,6 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
-import { sql, insertJson, getMeta, setMeta, hasDb } from "../db";
+import { sql, insertJson, getMeta, setMeta, hasDb, ensureSchema } from "../db";
 import type { Snapshot } from "../types";
 import { assetId, type Asset, type AssetDay } from "./types";
 import { readKas, readZkas, readKrc20, readKrc20Holders, readIgraTokens, readIgraHolders, venuesFromSnapshot } from "./sources";
@@ -10,6 +10,7 @@ const HOLDERS_EVERY = 24 * 3600_000; // a holder list is refreshed daily
 const HOLDERS_PER_TICK = 24;
 
 async function loadAll(): Promise<Asset[]> {
+  await ensureSchema(); // pages can render (and build) before the first tick has created the tables
   const r = (await sql().query("select data from assets where updated_at > now() - interval '7 days'")) as { data: Asset }[];
   return r.map((x) => x.data);
 }
@@ -112,6 +113,7 @@ export const getAssets = unstable_cache(async (): Promise<Asset[]> => (hasDb() ?
 
 export const getAssetHistory = unstable_cache(async (id: string): Promise<AssetDay[]> => {
   if (!hasDb()) return [];
+  await ensureSchema();
   const r = (await sql().query("select to_char(day, 'YYYY-MM-DD') as day, price, holders, mcap, vol24, supply from asset_daily where id = $1 and day > now() - interval '180 days' order by day", [id])) as AssetDay[];
   return r;
 }, ["dawns-asset-history-v1"], { revalidate: 600, tags: ["assets"] });
