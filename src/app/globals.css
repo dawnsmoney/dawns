@@ -426,3 +426,6 @@ th button.sort:focus-visible{outline:2px solid rgba(123,108,255,.8);outline-offs
 .navcard .badge.new{border-color:#4ADE9B;color:#fff;background:rgba(74,222,155,.18)}
 @media (prefers-reduced-motion:reduce){.navcard{animation:none}.pillnav .chev{transition:none}}
 @media (max-width:760px){.pillnav .navbtn{padding:8px 11px;font-size:14px}.navcard{width:calc(100vw - 32px)}}
+select.sel{font:500 16px var(--display);background:rgba(0,0,0,.2);border:1px solid var(--line-2);border-radius:12px;padding:10px 12px;color:#fff}
+select.sel option{background:#1C1642}
+input[type=range]{accent-color:#7B6CFF;width:100%}

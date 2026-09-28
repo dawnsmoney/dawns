@@ -16,10 +16,10 @@ export default async function AllocatePage() {
   return (
     <>
       <DataBridge prov={s.prov} protocols={s.protocols.map(toLite)} signals={s.signals} />
-      <Banner short crumb={[{ href: "/opportunities", label: "Opportunities" }, { label: "Allocate · Beta" }]} title="Build an allocation"
-        lede="Your risk, your exit window, your amount. dawns suggests a split across live Kaspa DeFi opportunities and explains every line. Advisory only: nothing moves unless you move it." />
+      <Banner short crumb={[{ href: "/opportunities", label: "Opportunities" }, { label: "Allocate · Beta" }]} title="Build a portfolio"
+        lede="Your amount in KAS or dollars, your risk, your exit window, your limits. dawns proposes a split across live Kaspa DeFi, checks it against every rule, and shows what could go wrong. Change any assumption and it recomputes. Advisory only: nothing moves unless you move it." />
       <div className="wrap" style={{ paddingTop: 40 }}>
-        <Allocator opps={s.opportunities} />
+        <Allocator opps={s.opportunities} kasUsd={s.kasUsd} />
       </div>
     </>
   );

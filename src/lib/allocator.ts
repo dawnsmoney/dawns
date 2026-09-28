@@ -8,9 +8,21 @@ import type { Opportunity } from "./types";
 export type Risk = "low" | "medium" | "high";
 export type ExitNeed = "instant" | "days" | "weeks";
 export type Avoid = "lp" | "lending" | "v3";
-export interface Policy { risk: Risk; exit: ExitNeed; amount: number; avoid: Avoid[] }
+export type Unit = "USD" | "KAS";
+export interface Policy {
+  risk: Risk; exit: ExitNeed; amount: number; avoid: Avoid[];
+  unit?: Unit;             // what `amount` is counted in (default USD)
+  maxProtocol?: number;    // most of the amount in one protocol, 0.1–1 (default by risk)
+  horizon?: number;        // months the capital stays, 1–36 (for projections only)
+  target?: number;         // yield the investor hopes for, e.g. 0.08 (compared, never forced)
+}
 
-export const DEFAULT_POLICY: Policy = { risk: "medium", exit: "days", amount: 10_000, avoid: [] };
+export const DEFAULT_POLICY: Policy = { risk: "medium", exit: "days", amount: 10_000, avoid: [], unit: "USD", horizon: 6 };
+
+/** The allocator works in USD; a KAS amount is converted at the current KAS price. */
+export function usdPolicy(p: Policy, kasUsd: number | null): Policy {
+  return p.unit === "KAS" && kasUsd ? { ...p, amount: Math.max(1, Math.round(p.amount * kasUsd)) } : p;
+}
 
 export function parsePolicy(x: unknown): Policy | null {
   if (!x || typeof x !== "object") return null;
@@ -19,8 +31,14 @@ export function parsePolicy(x: unknown): Policy | null {
   const exit = ["instant", "days", "weeks"].includes(String(o.exit)) ? (o.exit as ExitNeed) : null;
   const amount = Number(o.amount);
   const avoid = Array.isArray(o.avoid) ? (o.avoid.filter((a) => ["lp", "lending", "v3"].includes(String(a))) as Avoid[]) : [];
-  if (!risk || !exit || !Number.isFinite(amount) || amount < 100 || amount > 1e9) return null;
-  return { risk, exit, amount: Math.round(amount), avoid: [...new Set(avoid)] };
+  if (!risk || !exit || !Number.isFinite(amount) || amount < 100 || amount > 1e10) return null;
+  const unit: Unit = o.unit === "KAS" ? "KAS" : "USD";
+  const opt = (v: unknown, lo: number, hi: number) => { const n = Number(v); return v != null && Number.isFinite(n) && n >= lo && n <= hi ? n : undefined; };
+  const maxProtocol = opt(o.maxProtocol, 0.1, 1), horizon = opt(o.horizon, 1, 36), target = opt(o.target, 0, 5);
+  return { risk, exit, amount: Math.round(amount), avoid: [...new Set(avoid)], unit,
+    ...(maxProtocol != null ? { maxProtocol: Math.round(maxProtocol * 100) / 100 } : {}),
+    ...(horizon != null ? { horizon: Math.round(horizon) } : {}),
+    ...(target != null ? { target: Math.round(target * 1000) / 1000 } : {}) };
 }
 
 /** A plan the user chose to follow: what dawns watches for them. */
@@ -58,11 +76,14 @@ const CAPS: Record<Risk, { perLine: number; perProtocol: number; poolShare: numb
   medium: { perLine: 0.35, perProtocol: 0.5, poolShare: 0.1, maxLines: 6 },
   high: { perLine: 0.5, perProtocol: 0.7, poolShare: 0.15, maxLines: 6 },
 };
+export const defaultPerProtocol = (r: Risk) => CAPS[r].perProtocol;
 /** How many times the position the market's withdrawable cash must cover. */
 export const EXIT_COVER: Record<ExitNeed, number> = { instant: 3, days: 1.5, weeks: 1 };
 
 export function allocate(opps: Opportunity[], p: Policy): Plan {
-  const caps = CAPS[p.risk];
+  const base = CAPS[p.risk];
+  const perProtocol = p.maxProtocol ?? base.perProtocol;
+  const caps = { ...base, perProtocol, perLine: Math.min(base.perLine, perProtocol) };
   const excluded: Plan["excluded"] = [];
   const out = (o: Opportunity, why: string) => excluded.push({ name: o.name, pname: o.pname, why });
 
@@ -147,4 +168,64 @@ export function allocate(opps: Opportunity[], p: Policy): Plan {
     "Yields are native only (borrowers and traders). Token incentives are not counted.",
   ];
   return { lines, cash, excluded, blended, notes };
+}
+
+/* ------------------------------------------------------------------ */
+/* The mandate check: every rule re-verified against the finished plan */
+/* ------------------------------------------------------------------ */
+export interface RuleCheck { rule: string; limit: string; actual: string; ok: boolean }
+
+/**
+ * Independent of how the plan was built: it takes the lines as they are and tests each rule
+ * of the mandate against them, so a bug in the allocator shows up as a breach instead of
+ * being assumed away. `p` is the USD policy the plan was built from.
+ */
+export function checkPlan(plan: Plan, p: Policy, opps: Opportunity[]): RuleCheck[] {
+  const base = CAPS[p.risk];
+  const perProtocol = p.maxProtocol ?? base.perProtocol;
+  const perLine = Math.min(base.perLine, perProtocol);
+  const tol = 1; // dollars of rounding
+  const byId = new Map(opps.map((o) => [o.id, o]));
+  const byProtocol = new Map<string, number>();
+  for (const l of plan.lines) byProtocol.set(l.protocol, (byProtocol.get(l.protocol) ?? 0) + l.usd);
+  const maxProto = Math.max(0, ...byProtocol.values());
+  const maxLine = Math.max(0, ...plan.lines.map((l) => l.usd));
+  const lp = plan.lines.filter((l) => l.kind === "lp").reduce((s, l) => s + l.usd, 0);
+  const placed = plan.lines.reduce((s, l) => s + l.usd, 0);
+  const poolWorst = Math.max(0, ...plan.lines.map((l) => { const o = byId.get(l.id); return o && o.size > 0 ? l.usd / o.size : 1; }));
+  const supply = plan.lines.filter((l) => l.kind === "supply");
+  const coverWorst = supply.length ? Math.min(...supply.map((l) => { const o = byId.get(l.id); return (o?.exitNow ?? 0) / Math.max(1, l.usd); })) : null;
+  const blocked = plan.lines.filter((l) => { const o = byId.get(l.id); return !o || o.status === "crit" || o.notes.some((n) => n.startsWith("Frozen")); });
+  const notStable = plan.lines.filter((l) => !l.assets.every(isStable));
+  const avoided = plan.lines.filter((l) => (l.kind === "lp" && p.avoid.includes("lp")) || (l.kind === "supply" && p.avoid.includes("lending")) || (l.kind === "lp" && p.avoid.includes("v3") && byId.get(l.id)?.notes.some((n) => n.startsWith("Concentrated"))));
+  const sh = (x: number) => pctS(x / p.amount, 1);
+  return [
+    { rule: "Nothing beyond the amount", limit: usdS(p.amount), actual: usdS(placed), ok: placed <= p.amount + tol },
+    { rule: "Per protocol", limit: `≤ ${pctS(perProtocol, 0)}`, actual: `${sh(maxProto)} largest`, ok: maxProto <= perProtocol * p.amount + tol },
+    { rule: "Per position", limit: `≤ ${pctS(perLine, 0)}`, actual: `${sh(maxLine)} largest`, ok: maxLine <= perLine * p.amount + tol },
+    { rule: "Share of any pool or market", limit: `≤ ${pctS(base.poolShare, 0)}`, actual: `${pctS(poolWorst, 1)} largest`, ok: plan.lines.every((l) => { const o = byId.get(l.id); return !!o && l.usd <= base.poolShare * o.size + tol; }) },
+    { rule: "In liquidity pools", limit: `≤ ${pctS(LP_MAX[p.exit], 0)}`, actual: sh(lp), ok: lp <= LP_MAX[p.exit] * p.amount + tol },
+    { rule: "Withdrawable cash behind each loan", limit: `≥ ${EXIT_COVER[p.exit]}× the position`, actual: coverWorst == null ? "no lending" : `${coverWorst.toFixed(1)}× lowest`, ok: supply.every((l) => (byId.get(l.id)?.exitNow ?? 0) + tol >= EXIT_COVER[p.exit] * l.usd) },
+    { rule: "No blocked or frozen position", limit: "none", actual: blocked.length ? blocked.map((l) => l.name).join(", ") : "none", ok: !blocked.length },
+    ...(p.risk === "low" ? [{ rule: "Stablecoins only (low risk)", limit: "all positions", actual: notStable.length ? notStable.map((l) => l.name).join(", ") : "all positions", ok: !notStable.length }] : []),
+    ...(p.avoid.length ? [{ rule: "Nothing you chose to avoid", limit: p.avoid.map((a) => ({ lp: "pools", lending: "lending", v3: "concentrated" })[a]).join(", "), actual: avoided.length ? avoided.map((l) => l.name).join(", ") : "none", ok: !avoided.length }] : []),
+  ];
+}
+
+/** What the plan could do over the horizon: plain arithmetic on today's readings, stated as such. */
+export function project(plan: Plan, p: Policy, opps: Opportunity[]) {
+  const months = p.horizon ?? 6;
+  const byId = new Map(opps.map((o) => [o.id, o]));
+  const earn = plan.lines.reduce((s, l) => s + l.usd * l.apy, 0) * (months / 12);
+  const byProtocol = new Map<string, { name: string; usd: number }>();
+  for (const l of plan.lines) { const x = byProtocol.get(l.protocol) ?? { name: l.pname, usd: 0 }; x.usd += l.usd; byProtocol.set(l.protocol, x); }
+  const worst = [...byProtocol.values()].sort((a, b) => b.usd - a.usd)[0] ?? null;
+  const lpDrag = plan.lines.filter((l) => l.kind === "lp").reduce((s, l) => s + l.usd * (byId.get(l.id)?.ilAtMove ?? 0), 0);
+  return {
+    months,
+    earn, earnHalf: earn / 2,
+    worst: worst ? { name: worst.name, usd: worst.usd, share: worst.usd / p.amount } : null,
+    lpDrag,
+    target: p.target != null ? { want: p.target, got: plan.blended, met: plan.blended + 1e-9 >= p.target } : null,
+  };
 }

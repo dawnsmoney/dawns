@@ -4,7 +4,7 @@ import { track } from "@/lib/track";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AssetCoin, Pill } from "./bits";
-import { allocate, parsePolicy, DEFAULT_POLICY, type Avoid, type ExitNeed, type Policy, type Risk } from "@/lib/allocator";
+import { allocate, checkPlan, project, usdPolicy, defaultPerProtocol, parsePolicy, DEFAULT_POLICY, type Avoid, type ExitNeed, type Policy, type Risk, type Unit } from "@/lib/allocator";
 import { usd, pct } from "@/lib/format";
 import type { Opportunity } from "@/lib/types";
 import { loadAccount, shortAddr, signInWith, signOut, useWalletOptions, type Account } from "./wallet";
@@ -35,7 +35,7 @@ function Choice<T extends string>({ items, value, onPick }: { items: [T, string,
   );
 }
 
-export function Allocator({ opps }: { opps: Opportunity[] }) {
+export function Allocator({ opps, kasUsd }: { opps: Opportunity[]; kasUsd: number | null }) {
   const [policy, setPolicy] = useState<Policy>(DEFAULT_POLICY);
   const [amountText, setAmountText] = useState(String(DEFAULT_POLICY.amount));
   const [account, setAccount] = useState<Account>(null);
@@ -43,7 +43,14 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [showOut, setShowOut] = useState(false);
   const wallets = useWalletOptions();
-  const plan = useMemo(() => allocate(opps, policy), [opps, policy]);
+  const up = useMemo(() => usdPolicy(policy, kasUsd), [policy, kasUsd]);
+  const plan = useMemo(() => allocate(opps, up), [opps, up]);
+  const checks = useMemo(() => checkPlan(plan, up, opps), [plan, up, opps]);
+  const proj = useMemo(() => project(plan, up, opps), [plan, up, opps]);
+  const breaches = checks.filter((c) => !c.ok).length;
+  const inKas = policy.unit === "KAS" && !!kasUsd;
+  /** Amounts in the investor's unit */
+  const money = (v: number) => (inKas ? `${Math.round(v / kasUsd!).toLocaleString("en-US")} KAS` : usd(v));
   const saved = account?.policy ? parsePolicy(account.policy) : null;
   const dirty = !saved || JSON.stringify(saved) !== JSON.stringify(policy);
 
@@ -149,11 +156,46 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
             <Choice items={EXITS} value={policy.exit} onPick={(v) => set({ exit: v })} />
           </div>
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ display: "grid", gap: 8 }}>
+              <span className="eyebrow muted">Amount</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input inputMode="decimal" value={amountText} aria-label={`Amount in ${policy.unit ?? "USD"}`}
+                  onChange={(e) => { setAmountText(e.target.value); const n = Number(e.target.value.replace(/[^0-9.]/g, "")); if (n >= 100 && n <= 1e10) set({ amount: Math.round(n) }); }}
+                  style={{ font: "600 22px var(--display)", background: "rgba(0,0,0,.2)", border: "1px solid var(--line-2)", borderRadius: 12, padding: "10px 14px", color: "#fff", width: 170 }} />
+                <div className="seg" role="group" aria-label="Unit">
+                  {(["USD", "KAS"] as Unit[]).map((u) => (
+                    <button key={u} type="button" className={(policy.unit ?? "USD") === u ? "on" : ""} disabled={u === "KAS" && !kasUsd}
+                      onClick={() => {
+                        const cur = policy.unit ?? "USD";
+                        if (u === cur || !kasUsd) return;
+                        const n = u === "KAS" ? Math.round(policy.amount / kasUsd) : Math.round(policy.amount * kasUsd);
+                        const amount = Math.max(100, n);
+                        set({ unit: u, amount }); setAmountText(String(amount));
+                      }}>{u}</button>
+                  ))}
+                </div>
+              </div>
+              {kasUsd && <small className="muted">{inKas ? `≈ ${usd(up.amount)} at $${kasUsd.toPrecision(3)} per KAS` : `≈ ${Math.round(policy.amount / kasUsd).toLocaleString("en-US")} KAS`}</small>}
+            </div>
             <label style={{ display: "grid", gap: 8 }}>
-              <span className="eyebrow muted">Amount in USD</span>
-              <input inputMode="decimal" value={amountText} aria-label="Amount in USD"
-                onChange={(e) => { setAmountText(e.target.value); const n = Number(e.target.value.replace(/[^0-9.]/g, "")); if (n >= 100 && n <= 1e9) set({ amount: Math.round(n) }); }}
-                style={{ font: "600 22px var(--display)", background: "rgba(0,0,0,.2)", border: "1px solid var(--line-2)", borderRadius: 12, padding: "10px 14px", color: "#fff", width: 180 }} />
+              <span className="eyebrow muted">Horizon</span>
+              <select value={policy.horizon ?? 6} onChange={(e) => set({ horizon: Number(e.target.value) })} aria-label="Horizon in months" className="sel">
+                {[1, 3, 6, 12, 24].map((m) => <option key={m} value={m}>{m} month{m > 1 ? "s" : ""}</option>)}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 8, minWidth: 200 }}>
+              <span className="eyebrow muted">Most in one protocol: {pct(policy.maxProtocol ?? defaultPerProtocol(policy.risk), 0)}</span>
+              <input type="range" min={10} max={100} step={5} value={Math.round((policy.maxProtocol ?? defaultPerProtocol(policy.risk)) * 100)}
+                onChange={(e) => set({ maxProtocol: Number(e.target.value) / 100 })} aria-label="Most in one protocol, percent" />
+            </label>
+            <label style={{ display: "grid", gap: 8 }}>
+              <span className="eyebrow muted">Target yield (optional)</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input inputMode="decimal" placeholder="e.g. 8" defaultValue={policy.target != null ? String(Math.round(policy.target * 1000) / 10) : ""} aria-label="Target yield in percent"
+                  onChange={(e) => { const t = e.target.value.trim(); if (!t) { const { target: _t, ...rest } = policy; void _t; setPolicy(rest); return; } const n = Number(t.replace(",", ".")); if (Number.isFinite(n) && n >= 0 && n <= 500) set({ target: n / 100 }); }}
+                  style={{ font: "500 17px var(--display)", background: "rgba(0,0,0,.2)", border: "1px solid var(--line-2)", borderRadius: 12, padding: "10px 12px", color: "#fff", width: 90 }} />
+                <span className="muted">% a year</span>
+              </span>
             </label>
             <div style={{ display: "grid", gap: 8 }}>
               <span className="eyebrow muted">Leave out</span>
@@ -171,10 +213,12 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
         <div className="card" style={{ display: "grid", gap: 14, alignContent: "start" }}>
           <div className="c-head" style={{ margin: 0 }}><h3>Suggested split</h3><span className="tag">advisory</span></div>
           <div className="vlist">
-            <div className="vrow"><span /><div>Placed<small>of {usd(policy.amount)}</small></div><b>{usd(placed)}</b></div>
-            <div className="vrow"><span /><div>Kept in your wallet</div><b>{usd(plan.cash?.usd ?? 0)}</b></div>
+            <div className="vrow"><span /><div>Placed<small>of {money(up.amount)}</small></div><b>{money(placed)}</b></div>
+            <div className="vrow"><span /><div>Kept in your wallet<small>the reserve</small></div><b>{money(plan.cash?.usd ?? 0)}</b></div>
             <div className="vrow"><span /><div>Expected native yield<small>on the whole amount, per year</small></div><b className="up">{pct(plan.blended, 2)}</b></div>
-            <div className="vrow"><span /><div>Positions</div><b>{plan.lines.length}</b></div>
+            <div className="vrow"><span /><div>Over {proj.months} month{proj.months > 1 ? "s" : ""}<small>if today&apos;s rates hold · if they halve</small></div><b>+{money(proj.earn)}<small className="muted" style={{ display: "block", fontWeight: 400, textAlign: "right" }}>+{money(proj.earnHalf)}</small></b></div>
+            {proj.target && <div className="vrow"><span /><div>Your target<small>{proj.target.met ? "reached within your rules" : "not reachable within your rules today"}</small></div><b className={proj.target.met ? "up" : "down"}>{pct(proj.target.want, 1)}</b></div>}
+            <div className="vrow"><span /><div>Mandate breaches<small>{checks.length} rules checked against this plan</small></div><b style={{ color: breaches ? "var(--crit)" : "var(--good)" }}>{breaches}</b></div>
           </div>
           {account && (
             <div style={{ display: "grid", gap: 10, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
@@ -203,7 +247,7 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
           {plan.lines.map((l) => (
             <tr key={l.id}>
               <td><span className="proto"><AssetCoin a={l.assets[0]} size={32} /><span><b>{l.name}</b><small><Link href={`/protocols/${l.protocol}`}>{l.pname}</Link></small></span></span></td>
-              <td><b style={{ fontFamily: "var(--display)" }}>{usd(l.usd)}</b><small className="muted" style={{ display: "block" }}>{pct(l.share, 0)}</small></td>
+              <td><b style={{ fontFamily: "var(--display)" }}>{money(l.usd)}</b><small className="muted" style={{ display: "block" }}>{pct(l.share, 0)}</small></td>
               <td>{pct(l.apy, 1)}</td>
               <td className="muted wrap" style={{ fontSize: 14, minWidth: 280, maxWidth: 380 }}>{l.why}</td>
               <td className="muted wrap" style={{ fontSize: 14, minWidth: 200, maxWidth: 260 }}>{l.exit}</td>
@@ -212,12 +256,34 @@ export function Allocator({ opps }: { opps: Opportunity[] }) {
           {plan.cash && (
             <tr>
               <td><b>Keep in your wallet</b></td>
-              <td><b style={{ fontFamily: "var(--display)" }}>{usd(plan.cash.usd)}</b><small className="muted" style={{ display: "block" }}>{pct(plan.cash.share, 0)}</small></td>
+              <td><b style={{ fontFamily: "var(--display)" }}>{money(plan.cash.usd)}</b><small className="muted" style={{ display: "block" }}>{pct(plan.cash.share, 0)}</small></td>
               <td>—</td><td className="muted wrap" style={{ fontSize: 14 }} colSpan={2}>{plan.cash.why}</td>
             </tr>
           )}
         </tbody>
       </table></div></div>
+
+      <div className="grid gA">
+        <div className="card">
+          <div className="c-head"><h3>Mandate check</h3><Pill t={breaches ? "crit" : "good"}>{breaches ? `${breaches} breach${breaches > 1 ? "es" : ""}` : "0 breaches"}</Pill></div>
+          <div className="vlist">
+            {checks.map((c) => (
+              <div className="vrow" key={c.rule}><span style={{ color: c.ok ? "var(--good)" : "var(--crit)" }}>{c.ok ? "✓" : "✕"}</span><div>{c.rule}<small>limit {c.limit}</small></div><b style={{ fontWeight: 500 }}>{c.actual}</b></div>
+            ))}
+          </div>
+          <p className="foot" style={{ marginBottom: 0 }}>Checked independently of how the split was built: each rule is tested against the positions above. A vault would enforce the same rules on-chain.</p>
+        </div>
+        <div className="card">
+          <div className="c-head"><h3>What could go wrong</h3></div>
+          <div className="vlist">
+            {proj.worst && <div className="vrow"><span /><div>If {proj.worst.name} failed<small>the largest exposure to one protocol</small></div><b className="down">−{money(proj.worst.usd)}<small className="muted" style={{ display: "block", fontWeight: 400, textAlign: "right" }}>{pct(proj.worst.share, 0)} of the amount</small></b></div>}
+            {proj.lpDrag > 0 && <div className="vrow"><span /><div>If prices swing like the last 7 days<small>liquidity positions trail simply holding the tokens</small></div><b className="down">−{money(proj.lpDrag)}</b></div>}
+            <div className="vrow"><span /><div>If rates halve<small>native yield over {proj.months} months</small></div><b>+{money(proj.earnHalf)}</b></div>
+            {plan.lines.some((l) => l.kind === "supply") && <div className="vrow"><span /><div>If a market fills up<small>borrowers can take the cash; your exit waits for repayments</small></div><b className="muted" style={{ fontWeight: 400 }}>exit delayed</b></div>}
+          </div>
+          <p className="foot" style={{ marginBottom: 0 }}>Arithmetic on today&apos;s readings, not a forecast. Token prices are not modelled: a stablecoin plan and a KAS plan carry very different price risk.</p>
+        </div>
+      </div>
 
       <div className="grid gA">
         <div className="card">
