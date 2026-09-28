@@ -60,7 +60,11 @@ export interface Activity {
   events: ActivityEvent[];       // largest events of the last 7 days
 }
 
+/** An owner or admin transaction on a contract that holds users' money or pays their rewards. */
+export interface OwnerAction { protocol: string; contract: string; label: string; t: number; block: number; tx: string; from: string; method: string; what: string }
 export interface ProtocolView {
+  /** owner/admin transactions on the protocol's watched contracts, newest first */
+  ownerLog?: OwnerAction[];
   id: string;
   name: string;
   letter: string;

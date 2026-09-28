@@ -300,6 +300,7 @@ function Activity({ p, s }: { p: ProtocolView; s: Snapshot }) {
           <Feed list={sig} names={names(s)} />
         </div>
       </div>
+      {p.ownerLog && p.ownerLog.length > 0 && <OwnerLog p={p} />}
     </div>
   );
 }
@@ -482,5 +483,29 @@ export default async function ProtocolPage({ params }: PageProps<"/protocols/[id
         ))}
       </div>
     </>
+  );
+}
+
+/** What the protocol's owner did to the contracts that pay users, newest first. */
+function OwnerLog({ p }: { p: ProtocolView }) {
+  const log = p.ownerLog ?? [];
+  const labels = [...new Set(log.map((a) => a.label))];
+  const color = (l: string) => SERIES[labels.indexOf(l) % SERIES.length];
+  const day = (t: number) => new Date(t).toISOString().slice(0, 16).replace("T", " ");
+  return (
+    <div className="card">
+      <div className="c-head"><h3>Owner actions</h3><span className="tag">every admin transaction · explorer</span></div>
+      <p className="muted" style={{ marginTop: 0 }}>What {p.name}&apos;s owner changed on the contracts that pay users: reward rates, pauses, pools, ownership. A new one within 48 hours raises a signal and a Telegram alert.</p>
+      <div className="olog">
+        {log.map((a) => (
+          <a key={a.tx} className="olog-row" href={`https://explorer.igralabs.com/tx/${a.tx}`} target="_blank" rel="noopener noreferrer">
+            <span className="olog-when">{day(a.t)} UTC</span>
+            <span className="olog-dot" style={{ background: color(a.label) }} aria-hidden />
+            <span className="olog-what"><b>{a.what.charAt(0).toUpperCase() + a.what.slice(1)}</b><small>{a.label} · {a.method} · block {a.block.toLocaleString("en-US")}</small></span>
+          </a>
+        ))}
+      </div>
+      <div className="split-legend">{labels.map((l) => <span key={l}><i style={{ background: color(l) }} />{l}</span>)}</div>
+    </div>
   );
 }

@@ -77,7 +77,7 @@ export async function diffSignals(s: Snapshot): Promise<AlertEvent[]> {
   for (const r of rows) {
     if (r.resolved_at || seen.has(r.key) || new Date(r.last_seen) > cutoff) continue;
     await q.query("update signals_log set resolved_at = $2 where key = $1", [r.key, now.toISOString()]);
-    if (alertable({ t: r.severity, rule: r.rule }) && r.rule !== "tvl" && r.rule !== "large") events.push({ kind: "resolved", key: r.key, protocol: r.protocol, t: "good", strong: r.strong, rest: "" });
+    if (alertable({ t: r.severity, rule: r.rule }) && r.rule !== "tvl" && r.rule !== "large" && !r.key.includes(":admin-action:")) events.push({ kind: "resolved", key: r.key, protocol: r.protocol, t: "good", strong: r.strong, rest: "" });
   }
   return events;
 }

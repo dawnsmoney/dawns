@@ -4,8 +4,9 @@ import type { Address } from "viem";
 import { readKaskad, KASKAD, type KaskadState } from "./chain/kaskad";
 import { readUniV2, readUniV3, readBalances, readBondingNative, buildPriceMap, valuePools, type PriceBook, type PricedPool, type RawPool } from "./chain/dex";
 import { readIgraBridge, IGRA_BRIDGE } from "./chain/bridge";
-import { readInfinityPools } from "./chain/zealous";
-import { readZealousFarm } from "./chain/farms";
+import { readInfinityPools, INFINITY_POOLS } from "./chain/zealous";
+import { readZealousFarm, ZEALOUS_FARM } from "./chain/farms";
+import { ownerActions, txLink } from "./chain/owner-actions";
 import { readOwn } from "./history";
 import { buildOpportunities } from "./opportunities";
 import { explorerAddress, explorerBlock, type ChainKey } from "./chain/clients";
@@ -216,6 +217,12 @@ export async function buildSnapshot(): Promise<Snapshot> {
     safe("ZealousSwap Infinity Pools", readInfinityPools),
     safe("ZealousSwap farm", readZealousFarm),
   ]);
+  // owner actions on contracts that pay users (explorer, cached 10 min)
+  const zOwner = zfarm?.owner ?? null;
+  const zLog = await safe("ZealousSwap owner actions", () => ownerActions([
+    { protocol: "zealousswap", label: "Farm", address: ZEALOUS_FARM.address, owner: zOwner },
+    ...INFINITY_POOLS.filter((v) => v.chain === "igra").map((v) => ({ protocol: "zealousswap", label: `${v.symbol} Infinity Pool`, address: v.vault, owner: zOwner })),
+  ]));
   const dexBySlug = new Map<string, { src: DexSource; read: NonNullable<(typeof dexReads)[number]> }[]>();
   dexJobs.forEach((j, i) => { const r = dexReads[i]; if (r) dexBySlug.set(j.slug, [...(dexBySlug.get(j.slug) ?? []), { src: j.src, read: r }]); });
   const zIgra = dexBySlug.get("zealousswap")?.find((x) => x.src.chain === "igra")?.read ?? null;
@@ -423,6 +430,13 @@ export async function buildSnapshot(): Promise<Snapshot> {
         const addTvl = tvlVaults.reduce((x, v) => x + val(v), 0), staking = own.reduce((x, v) => x + val(v), 0);
         const valP = (v: (typeof vaults)[number]) => (v.pp != null ? v.amount * v.pp : 0);
         const addPool = tvlVaults.reduce((x, v) => x + valP(v), 0), stakingPool = own.reduce((x, v) => x + valP(v), 0);
+        if (zLog) {
+          base.ownerLog = zLog.slice(0, 50);
+          // a fresh owner action is news: one signal per transaction, for 48 hours
+          for (const a of zLog.filter((x) => Date.now() - x.t < 48 * 3600_000))
+            signals.push({ key: `${it.slug}:admin-action:${a.tx}`, t: "warn", p: it.slug, rule: "contract", strong: `ZealousSwap's owner ${a.what}`, rest: ` on the ${a.label} (${new Date(a.t).toISOString().slice(0, 16).replace("T", " ")} UTC). ${txLink(a.tx)}` });
+          base.canVerify.push(["Owner actions", `${zLog.length} admin transactions read from the explorer on the farm and the Igra Infinity Pools`, "Explorer"]);
+        }
         if (infinity && base.dex) base.dex.infinity = vaults.map((v) => ({ chain: v.chain as "igra" | "kasplex", symbol: v.symbol, vault: v.vault.toLowerCase(), token: v.token.toLowerCase(), own: v.own,
           amount: v.amount, usd: v.px != null ? v.amount * v.px : null, usdPool: v.pp != null ? v.amount * v.pp : null, rate: v.rate, emissions: v.emissions }));
         if (infinity) {
