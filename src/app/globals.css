@@ -1060,3 +1060,11 @@ textarea.st-ta:focus{outline:none;border-color:rgba(123,108,255,.8)}
 .st-cta{grid-template-columns:minmax(0,1fr)}
 .st-cta small{overflow-wrap:anywhere}
 @media (max-width:640px){.tbl-wrap td{padding:0!important}}
+/* rows of small figure cards (eyebrow + number): two to a row on phones */
+@media (max-width:560px){
+  .g3:has(> .card > .eyebrow:first-child),.st-tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .g3:has(> .card > .eyebrow:first-child) > .card,.st-tiles > .card{padding:14px}
+  .g3:has(> .card > .eyebrow:first-child) > .card > b,.st-tiles > .card > b{font-size:21px!important;margin:6px 0 2px!important}
+  .g3:has(> .card > .eyebrow:first-child) > .card .eyebrow,.st-tiles .eyebrow{font-size:10.5px}
+  .g3:has(> .card > .eyebrow:first-child) > .card > span.muted,.g3:has(> .card > .eyebrow:first-child) > .card > small{font-size:12.5px}
+}
