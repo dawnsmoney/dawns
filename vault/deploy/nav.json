@@ -1,3 +1,52 @@
 {
-  "status": "planned"
+  "accountTemplate": {
+    "prefix": "6b",
+    "suffix": "6c7604e33b26fa87637500cf52798769b9519c69b4539c6976009c63b3539c696776519c69b3549c69687575755167760435eecca687637553798201419d7553795379ac697575757551676a6868"
+  },
+  "address": "kaspatest:pqa8xlawx0uhvw6s7c0uysf4gg5efmdv2cvrgd8jzssg2rzh97j9xunp67qwf",
+  "covenantId": "dc2c6e39f9a6027d38ceb9b694d197d42dd40ff2e83d44f7bf95fc21b2998e47",
+  "createdAt": 1790604574,
+  "genesisTx": "335f0638877d0c4d0432e57ee5c1fc332e1f3cdf8960cbc2a0a4b57e9578fe67",
+  "manager": "dawns",
+  "mandateHash": "4d43baaa7b19a08549e31b9f03d8a46d53ed8f8b957960c50a3105aefc0f12e0",
+  "moves": [
+    {
+      "at": 1790604830,
+      "kind": "token",
+      "navAfter": 295000000,
+      "shareCovid": "8f94b0601421a75b83a252e372b6f54589cfdec727d3c4cf464715db89c2dd54",
+      "sharesAfter": 0,
+      "txid": "8508b252ec5276734d28b9ad657b3a701535af26a6e87ef3ff24ffc48924a2be",
+      "valueAfter": 395000000
+    }
+  ],
+  "name": "Dawns TN10 NAV vault",
+  "network": "testnet-10",
+  "notes": [],
+  "pending": null,
+  "seed": 500000000,
+  "shareCovid": "8f94b0601421a75b83a252e372b6f54589cfdec727d3c4cf464715db89c2dd54",
+  "standard": "dawns-nav/1",
+  "state": {
+    "deployed": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "epochIndex": 0,
+    "epochSpent": 0,
+    "halted": false,
+    "markEpoch": -1,
+    "marks": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "shareCovid": "8f94b0601421a75b83a252e372b6f54589cfdec727d3c4cf464715db89c2dd54",
+    "shares": 0
+  },
+  "tokenTx": "8508b252ec5276734d28b9ad657b3a701535af26a6e87ef3ff24ffc48924a2be",
+  "value": 395000000
 }
