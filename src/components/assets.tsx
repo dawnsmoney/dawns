@@ -15,10 +15,10 @@ export interface AssetLite {
 
 const count = (v: number | null) => (v == null ? "—" : v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e4 ? `${(v / 1e3).toFixed(1)}K` : Math.round(v).toLocaleString("en-US"));
 
-type Group = "All" | "Native" | "KRC-20" | "Igra" | "Kasplex L2";
+type Group = "All" | "Native" | "KRC-20" | "Covenant" | "Igra" | "Kasplex L2";
 type Key = "mcap" | "vol24" | "holders" | "liquidity" | "top10";
 const inGroup = (a: AssetLite, g: Group) =>
-  g === "All" || (g === "Native" ? a.standard === "native" : g === "KRC-20" ? a.standard === "krc20" : g === "Igra" ? a.chain === "igra" : a.chain === "kasplex");
+  g === "All" || (g === "Native" ? a.standard === "native" : g === "KRC-20" ? a.standard === "krc20" : g === "Covenant" ? a.standard === "kcc20" || a.standard === "kron" : g === "Igra" ? a.chain === "igra" : a.chain === "kasplex");
 
 export function AssetTable({ rows }: { rows: AssetLite[] }) {
   const [g, setG] = useState<Group>("All");
@@ -45,14 +45,14 @@ export function AssetTable({ rows }: { rows: AssetLite[] }) {
       <div className="filters" style={{ marginBottom: 20, justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <input className="search" type="search" placeholder="Search ticker, name or address" value={q} onChange={(e) => { setQ(e.target.value); setLimit(100); }} aria-label="Search assets" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {(["All", "Native", "KRC-20", "Igra", "Kasplex L2"] as Group[]).map((x) => (
+          {(["All", "Native", "KRC-20", "Covenant", "Igra", "Kasplex L2"] as Group[]).map((x) => (
             <button key={x} type="button" className={x === g ? "on" : ""} onClick={() => { setG(x); setLimit(100); }}>
               {x} <span className="muted">{rows.filter((a) => inGroup(a, x) && (all || a.significant)).length}</span>
             </button>
           ))}
         </div>
       </div>
-      <div className="card flush"><div className="tbl-wrap"><table>
+      <div className="card flush"><div className="tbl-wrap"><table className="assets-tbl">
         <thead><tr><th>Asset</th><th>Price</th>{th("mcap", "Value")}{th("vol24", "Traded 24h")}{th("holders", "Holders")}{th("top10", "Top 10 hold")}{th("liquidity", "In DeFi")}<th>Reading</th></tr></thead>
         <tbody>
           {shown.slice(0, limit).map((a) => (
@@ -60,16 +60,16 @@ export function AssetTable({ rows }: { rows: AssetLite[] }) {
               <td>
                 <Link href={a.path} className="asset-cell" style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
                   <AssetCoin a={a.symbol} size={30} />
-                  <span><b>{a.symbol}</b><small className="muted" style={{ display: "block", whiteSpace: "nowrap" }}>{a.standardName} · {a.chainName}</small></span>
+                  <span><b>{a.symbol}</b><small className="muted" style={{ display: "block", whiteSpace: "nowrap" }}>{a.standard === "native" ? a.chainName : `${a.standardName} · ${a.chainName}`}</small></span>
                 </Link>
               </td>
-              <td className="mono">{price(a.price)}</td>
+              <td>{price(a.price)}</td>
               <td>{a.mcap == null ? "—" : a.credible ? usd(a.mcap) : <span className="muted" title="Priced by too little trading: no market could realize this value">{usd(a.mcap)}<small style={{ display: "block" }}>not realizable</small></span>}</td>
               <td>{a.vol24 != null ? usd(a.vol24) : "—"}</td>
               <td>{count(a.holders)}</td>
-              <td>{a.top10 != null ? <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}><MiniSplit parts={a.split} width={80} />{pct(a.top10, 0)}</span> : <span className="muted">—</span>}</td>
+              <td>{a.top10 != null ? <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><MiniSplit parts={a.split} width={48} />{pct(a.top10, 0)}</span> : <span className="muted">—</span>}</td>
               <td>{a.liquidity ? usd(a.liquidity) : a.venues ? `${a.venues} venues` : <span className="muted">—</span>}</td>
-              <td><Pill t={a.grade}>{a.gradeLabel}</Pill></td>
+              <td title={a.gradeLabel}><Pill t={a.grade}>{a.grade === "crit" ? "High" : a.grade === "warn" ? "Watch" : "OK"}</Pill></td>
             </tr>
           ))}
           {!shown.length && <tr><td colSpan={8} className="muted" style={{ textAlign: "center", padding: 28 }}>No assets match.</td></tr>}

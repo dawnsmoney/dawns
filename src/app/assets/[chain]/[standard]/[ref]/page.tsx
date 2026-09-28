@@ -20,7 +20,7 @@ export const revalidate = 300;
 
 type P = { params: Promise<{ chain: string; standard: string; ref: string }> };
 const CHAINS: AssetChain[] = ["kaspa", "igra", "kasplex", "zkas"];
-const STANDARDS: AssetStandard[] = ["native", "krc20", "erc20"];
+const STANDARDS: AssetStandard[] = ["native", "krc20", "erc20", "kcc20", "kron"];
 
 async function find(params: P["params"]): Promise<Asset | null> {
   const { chain, standard, ref } = await params;
@@ -57,6 +57,7 @@ export default async function AssetPage({ params }: P) {
   const r = analyse(a);
   const tiles = dimensions(a, r);
   const parts = supplyParts(a.topHolders, a.top10);
+  const supplyVisual = !!a.net?.path?.length || (a.maxSupply != null && a.supply != null && a.maxSupply > 0) || (a.premineShare ?? 0) > 0 || a.net?.inflation != null;
   const gap = a.poolPrice != null && a.price != null && Math.abs(a.price / a.poolPrice - 1) >= 0.05;
   const cur = CURATED[a.id];
   const opps = s.opportunities.filter((o) => a.pools.includes(o.id));
@@ -66,7 +67,7 @@ export default async function AssetPage({ params }: P) {
   const sameTicker = all.filter((x) => x.symbol.toUpperCase() === a.symbol.toUpperCase() && x.id !== a.id);
   const dates = hist.map((d) => Date.parse(d.day));
   const priced = hist.filter((d) => d.price != null).length >= 2;
-  const explorer = a.chain === "igra" ? `https://explorer.igralabs.com/token/${a.ref}` : a.standard === "krc20" ? `https://kaspa.com/tokens/marketplace/token/${a.ref}` : a.chain === "kasplex" ? `https://explorer.kasplex.org/token/${a.ref}` : a.chain === "zkas" ? "https://explorer.zkas.info/analytics" : "https://explorer.kaspa.org";
+  const explorer = a.standard === "kcc20" || a.standard === "kron" ? `https://kcc20.info/v1/tokens/${a.ref}` : a.chain === "igra" ? `https://explorer.igralabs.com/token/${a.ref}` : a.standard === "krc20" ? `https://kaspa.com/tokens/marketplace/token/${a.ref}` : a.chain === "kasplex" ? `https://explorer.kasplex.org/token/${a.ref}` : a.chain === "zkas" ? "https://explorer.zkas.info/analytics" : "https://explorer.kaspa.org";
 
   return (
     <>
@@ -76,7 +77,7 @@ export default async function AssetPage({ params }: P) {
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
         <div className="grid g3">
           <Stat label="Price" value={price(a.price)} sub={a.priceSrc} />
-          <Stat label={a.standard === "native" ? "Market value" : "Value on chain"} value={a.mcap != null ? usd(a.mcap) : "—"} sub={a.mcap == null ? "no price to value it" : valueCredible(a) ? "price × circulating supply" : "not realizable: too little trading"} />
+          <Stat label={a.standard === "native" ? "Market value" : "Value on chain"} value={a.mcap != null ? usd(a.mcap) : "—"} sub={`${whole(a.supply, a.symbol)} circulating${a.mcap != null && !valueCredible(a) ? " · not realizable: too little trading" : ""}`} />
           <Stat label="Holders" value={a.holders != null ? a.holders.toLocaleString("en-US") : a.chain === "zkas" ? "Shielded" : "—"} sub={a.chain === "zkas" ? "balances are private by design" : a.holdersAt ? `top holders read ${when(a.holdersAt)}` : null} />
         </div>
 
@@ -101,7 +102,7 @@ export default async function AssetPage({ params }: P) {
           </div>
         )}
 
-        <div className="grid gA">
+        <div className={(parts.length > 0 || !a.net ? 1 : 0) + (supplyVisual ? 1 : 0) + (a.net ? 1 : 0) > 1 ? "grid gA" : "grid"} style={{ alignItems: "start" }}>
           {parts.length > 0 ? (
             <div className="card">
               <div className="c-head"><h3>Who holds it</h3>{a.top10 != null && <span className="tag">top 10: {pct(a.top10, 0)}</span>}</div>
@@ -115,7 +116,7 @@ export default async function AssetPage({ params }: P) {
             <div className="card"><div className="c-head"><h3>Who holds it</h3></div><p className="muted" style={{ margin: 0 }}>Not read yet. dawns reads the holder lists of the most significant assets first.</p></div>
           )}
 
-          <div className="card">
+          {supplyVisual && <div className="card">
             <div className="c-head"><h3>Supply</h3><span className="tag">{whole(a.supply, a.symbol)}</span></div>
             {a.net?.path?.length ? (
               <AreaChart label={`${a.symbol} supply, next 24 months`} dates={a.net.path.map((x) => x.t)} series={[{ name: "Supply", color: "#9085e9", values: a.net.path.map((x) => x.supply) }]} fmt="num" zero={false} height={200} />
@@ -128,10 +129,9 @@ export default async function AssetPage({ params }: P) {
             <dl className="kv" style={{ marginTop: 14 }}>
               {a.net?.nextReduction && <><dt>Next reduction</dt><dd>{when(a.net.nextReduction.at)} to {a.net.nextReduction.amount.toFixed(4)} {a.symbol}/block</dd></>}
               {a.maxSupply == null && a.chain === "zkas" && <><dt>Maximum</dt><dd>No cap: perpetual tail emission</dd></>}
-              <dt>Launched</dt><dd>{when(a.launched)}</dd>
-              <dt>Identifier</dt><dd className="mono" style={{ wordBreak: "break-all", fontSize: 13 }}>{a.id}</dd>
+              {a.launched && <><dt>Launched</dt><dd>{when(a.launched)}</dd></>}
             </dl>
-          </div>
+          </div>}
 
           {a.net && (
             <div className="card">
@@ -193,9 +193,10 @@ export default async function AssetPage({ params }: P) {
           <div className="card">
             <div className="c-head"><h3>Sources</h3></div>
             <div className="vlist">
-              <div className="vrow"><span /><div><a href={explorer} target="_blank" rel="noopener noreferrer">{a.chain === "igra" ? "Igra explorer" : a.standard === "krc20" ? "KaspaCom market" : a.chain === "zkas" ? "ZKas explorer" : "Explorer"}</a><small>{a.standard === "krc20" ? "price, volume, holders" : a.chain === "zkas" ? "supply, emission, hashrate, shielded pool" : "supply, holders"}</small></div><b /></div>
+              <div className="vrow"><span /><div><a href={explorer} target="_blank" rel="noopener noreferrer">{a.standard === "kcc20" || a.standard === "kron" ? "KCC20 indexer" : a.chain === "igra" ? "Igra explorer" : a.standard === "krc20" ? "KaspaCom market" : a.chain === "zkas" ? "ZKas explorer" : "Explorer"}</a><small>{a.standard === "krc20" ? "price, volume, holders" : a.chain === "zkas" ? "supply, emission, hashrate, shielded pool" : "supply, holders"}</small></div><b /></div>
               {cur?.sources.map(([l, u]) => <div className="vrow" key={u}><span /><div><a href={u} target="_blank" rel="noopener noreferrer">{l}</a><small>{new URL(u).host}</small></div><b /></div>)}
               <div className="vrow"><span /><div>dawns<small>DEX pools and lending markets read on-chain; updated {when(a.updatedAt)}</small></div><b /></div>
+              <div className="vrow"><span /><div>Identifier<small className="mono" style={{ wordBreak: "break-all" }}>{a.id}</small></div><b /></div>
             </div>
           </div>
         </div>

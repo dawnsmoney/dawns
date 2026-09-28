@@ -21,7 +21,7 @@ export default async function AssetsPage() {
   return (
     <>
       <Banner short crumb={[{ label: "Beta" }]} title="Assets"
-        lede="Every asset in the Kaspa ecosystem, whatever issued it: KAS, KRC-20 on Kaspa L1, tokens on Igra and Kasplex, and ZKAS. Each one identified by chain and contract, never by ticker alone." />
+        lede="Every asset in the Kaspa ecosystem, whatever issued it: KAS, KRC-20 and covenant tokens (KCC-20) on Kaspa L1, tokens on Igra and Kasplex, and ZKAS. Each one identified by chain and contract, never by ticker alone." />
       <div className="wrap" style={{ paddingTop: 40 }}>
         {!all.length ? (
           <div className="card"><p className="muted" style={{ margin: 0 }}>The asset index is being built. It fills on the next data refresh.</p></div>
@@ -34,7 +34,7 @@ export default async function AssetsPage() {
             </div>
             <AssetTable rows={rows} />
             <p className="muted" style={{ fontSize: 13.5, marginTop: 22, lineHeight: 1.6 }}>
-              Sources: KaspaCom (KRC-20 prices, volume, holders), Igra Blockscout (tokens, holders), the Kaspa and ZKas REST APIs (supply, emission, hashrate), the ZKas OTC desk (price), and dawns&apos; own reads of every DEX pool and lending market. &ldquo;Value&rdquo; is price × circulating supply on that chain. &ldquo;Reading&rdquo; is dawns&apos; flags, never a buy or sell call. Updated {new Date(updated).toISOString().slice(11, 16)} UTC.
+              Sources: KaspaCom (KRC-20 prices, volume, holders), the KCC20 indexer (covenant tokens, validated from chain data), Igra Blockscout (tokens, holders), the Kaspa and ZKas REST APIs (supply, emission, hashrate), the ZKas OTC desk (price), and dawns&apos; own reads of every DEX pool and lending market. &ldquo;Value&rdquo; is price × circulating supply on that chain. &ldquo;Reading&rdquo; is dawns&apos; flags, never a buy or sell call. Updated {new Date(updated).toISOString().slice(11, 16)} UTC.
             </p>
           </>
         )}

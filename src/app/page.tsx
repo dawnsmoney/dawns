@@ -1,7 +1,8 @@
 import { dawnReport } from "@/lib/report";
 import Link from "next/link";
 import { getSnapshot } from "@/lib/snapshot";
-import { toLite, toRow, names } from "@/lib/view";
+import { toLite, toRow, names, ecoTiles } from "@/lib/view";
+import { Tiles, SplitBar } from "@/components/viz";
 import { usd, usdFull, pct } from "@/lib/format";
 import { Clouds, BAND_CLOUDS, COIN, HealthMeter, Pill, ProtocolCoin, SERIES, assetColor } from "@/components/bits";
 import { Arrow, Bell, Info } from "@/components/icons";
@@ -92,6 +93,7 @@ export default async function Home() {
             <h2>How healthy is Kaspa DeFi<br />today?</h2>
             <p>The two largest protocols hold {pct(top2, 0)} of the value dawns tracks. Here is how each one looks right now.</p>
           </div>
+          <div className="card" style={{ marginBottom: 22 }}><Tiles tiles={ecoTiles(s)} /></div>
           <div className="grid g2">
             {featured.map((p) => {
               const L = !!p.lending;
@@ -103,13 +105,16 @@ export default async function Home() {
                   </div>
                   <div>
                     <h3>{p.name}</h3>
-                    <p style={{ marginTop: 10 }}>
-                      {L && p.lending
-                        ? `Lending on Kaspa via Igra. ${usd(p.lending.suppliedUsd)} supplied across ${p.lending.markets.length} markets, ${usd(p.lending.borrowedUsd)} borrowed. ${p.flags[0] ? p.flags[0][1] + "." : ""}`
-                        : p.dex
-                          ? `${p.dex.pairCount} pools across ${p.chains.join(" and ")}. The largest, ${p.dex.pools[0]?.symbols.join("/")}, holds ${pct(p.dex.pools[0]?.share ?? 0, 0)} of liquidity.`
-                          : ""}
-                    </p>
+                    <div style={{ marginTop: 14 }}>
+                      {L && p.lending ? (
+                        <SplitBar height={22} label={`${p.name} supplied by market`} parts={[...p.lending.markets].filter((m) => m.suppliedUsd > 0).sort((a, b) => b.suppliedUsd - a.suppliedUsd).slice(0, 5).map((m, i) => ({
+                          key: m.symbol, label: `${m.symbol}${m.utilization >= 0.95 ? " · blocked" : ""}`, color: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"][i], share: m.suppliedUsd, note: `${pct(m.utilization, 0)} used`,
+                        }))} />
+                      ) : p.dex ? (
+                        <SplitBar height={22} label={`${p.name} liquidity by pool`} parts={[...p.dex.pools.slice(0, 4).map((q, i) => ({ key: q.chain + q.pair, label: q.symbols.join("/"), color: ["#3987e5", "#d95926", "#199e70", "#c98500"][i], share: q.share })),
+                          { key: "rest", label: "Other pools", color: "#4A4270", share: Math.max(0, 1 - p.dex.pools.slice(0, 4).reduce((x, q) => x + q.share, 0)) }]} />
+                      ) : null}
+                    </div>
                   </div>
                   <div className="row">
                     <div className="stats">

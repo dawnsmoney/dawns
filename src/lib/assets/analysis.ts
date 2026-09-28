@@ -1,5 +1,5 @@
 import type { Status } from "../types";
-import { CHAIN_NAME, STANDARD_NAME, valueCredible, type Asset } from "./types";
+import { CHAIN_NAME, STANDARD_NAME, valueCredible, isCovenant, type Asset } from "./types";
 import { CURATED, BRIDGED } from "./profiles";
 import { holderCat } from "./holders";
 
@@ -26,6 +26,14 @@ export function analyse(a: Asset): Analysis {
   const flags: [Status, string][] = [...(cur?.flags ?? [])];
   const questions: string[] = [...(cur?.questions ?? [])];
 
+  // covenant tokens: does the token behave by its declared rules?
+  if (isCovenant(a.standard)) {
+    const v = a.validation ?? "unknown";
+    if (v === "verified") flags.push(["good", "Every transfer checked against chain data by the KCC20 indexer: the token behaves by its declared rules."]);
+    else if (v === "template_verified") flags.push(["info", "Its covenant matches a known, verified template; individual transfers are not all re-checked."]);
+    else flags.push(["warn", `The indexer could not confirm this token against its rules (status: ${v}).`]);
+    questions.push("Who can still mint or change it: is the covenant's authority fixed, or held by a key?");
+  }
   // price and market
   if (a.price == null) flags.push(["warn", "No market price dawns can read. Any value put on it is a guess."]);
   else if (a.priceSrc?.startsWith("OTC")) flags.push(["warn", `Priced from OTC desk quotes only${a.priceSrc.includes("(") ? " " + a.priceSrc.slice(a.priceSrc.indexOf("(")) : ""}. No DEX pool or public order book dawns reads.`]);
@@ -101,7 +109,9 @@ export function analyse(a: Asset): Analysis {
 }
 
 function generated(a: Asset): string {
-  const std = a.standard === "krc20" ? "A KRC-20 token on Kaspa L1, issued through Kasplex inscriptions" : `An ${STANDARD_NAME[a.standard]} token on ${CHAIN_NAME[a.chain]}`;
+  const std = a.standard === "krc20" ? "A KRC-20 token on Kaspa L1, issued through Kasplex inscriptions"
+    : isCovenant(a.standard) ? `A ${STANDARD_NAME[a.standard]} token on Kaspa L1: its rules live in a Toccata covenant, enforced by Kaspa itself rather than by an indexer's reading of inscriptions`
+    : `An ${STANDARD_NAME[a.standard]} token on ${CHAIN_NAME[a.chain]}`;
   const parts: string[] = [std + "."];
   if (a.standard === "krc20") {
     if (a.premineShare === 0) parts.push("It was fair-minted: no pre-mint to the deployer.");
@@ -148,6 +158,7 @@ export function dimensions(a: Asset, r: Analysis): { key: string; title: string;
   const pr = a.net?.producers;
   if (pr) tiles.push({ key: "security", title: "Block producers for 50%", t: pr.toMajority <= 1 ? "crit" : pr.toMajority <= 2 ? "warn" : "good", big: String(pr.toMajority), small: `largest makes ${pct(pr.top[0]?.share ?? 0)}` });
   else if (a.net?.mergedShare != null) tiles.push({ key: "security", title: "Of Kaspa's hashrate", t: "info", big: pct(a.net.mergedShare, 1), small: "merge-mined" });
+  if (isCovenant(a.standard)) tiles.push({ key: "rules", title: "Rules check", t: a.validation === "verified" ? "good" : a.validation === "template_verified" ? "info" : "warn", big: a.validation === "verified" ? "Verified" : a.validation === "template_verified" ? "Template" : "Unconfirmed", small: "against chain data" });
   // DeFi
   tiles.push({ key: "defi", title: "DeFi venues", t: a.pools.length ? "good" : "info", big: String(a.pools.length), small: a.pools.length ? "pools and markets dawns reads" : "only holding" });
   return tiles.slice(0, 6);

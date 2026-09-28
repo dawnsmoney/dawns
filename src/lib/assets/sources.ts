@@ -11,6 +11,7 @@ const KASPACOM = "https://api.kaspa.com";
 const IGRA_SCOUT = "https://explorer.igralabs.com";
 const ZKAS_API = "https://explorer.zkas.info/api";
 const ZKAS_OTC = "https://mining-pool.zkas.info/api/otc/price";
+const KCC20 = "https://kcc20.info/v1";
 const YEAR_S = 31_536_000;
 const VENUE: Record<string, string> = { nonkyc: "NonKYC", neoxa: "Neoxa" };
 
@@ -287,4 +288,40 @@ export const holderKind = (name: string | null): HolderKind =>
 export function nameHolders(top: Holder[] | null, names: Map<string, string>): Holder[] | null {
   if (!top) return top;
   return top.map((h) => { const n = names.get(h.address) ?? null; const label = n ?? h.label; return { ...h, label, kind: n ? holderKind(n) : h.label?.startsWith("Deployer") ? "project" : h.kind ?? null }; });
+}
+
+// ---------------------------------------------------------------------------
+// Covenant tokens on Kaspa L1 — the KCC20 indexer (kcc20.info), validated from chain data
+// ---------------------------------------------------------------------------
+interface KccToken {
+  token_id: string; name?: string; ticker?: string; standard?: string; decimals?: number; image?: string;
+  supply?: string; circulating_supply?: string; holders?: number; genesis_daa?: number; validation_status?: string;
+  price_kas?: number | string | null; organic_rank?: number;
+}
+export async function readCovenantTokens(kasUsd: number | null): Promise<Asset[]> {
+  const r = await get<{ tokens: KccToken[] }>(`${KCC20}/tokens?limit=1000`, 20_000);
+  const out: Asset[] = [];
+  for (const t of r.tokens ?? []) {
+    if (!/^[0-9a-f]{64}$/.test(t.token_id)) continue;
+    const std = t.standard === "kron-native" ? "kron" : "kcc20";
+    const dec = num(t.decimals) ?? 0;
+    const symbol = (t.ticker || t.name || t.token_id.slice(0, 8)).slice(0, 20);
+    const a = blank({ id: assetId("kaspa", std, t.token_id), chain: "kaspa", standard: std, ref: t.token_id, symbol, name: (t.name || symbol).slice(0, 60) });
+    const supply = units(t.circulating_supply ?? t.supply ?? "", dec);
+    const pk = num(t.price_kas);
+    const px = pk && kasUsd ? pk * kasUsd : null;
+    Object.assign(a, {
+      decimals: dec, logo: t.image || null, supply, holders: num(t.holders), rank: num(t.organic_rank),
+      validation: t.validation_status ?? null,
+      price: px, priceSrc: px != null ? "KCC20 indexer, in KAS" : null, mcap: px != null && supply != null ? px * supply : null,
+    });
+    out.push(a);
+  }
+  return out;
+}
+export async function readCovenantHolders(id: string, supply: number | null, dec: number): Promise<{ top10: number | null; top: Holder[] } | null> {
+  if (!supply) return null;
+  const r = await get<{ holders: { address?: string; owner: string; balance: string }[] }>(`${KCC20}/tokens/${id}/holders?limit=10`);
+  const top = (r.holders ?? []).slice(0, 10).map((h) => ({ address: h.address ?? h.owner, share: (units(h.balance, dec) ?? 0) / supply, contract: !h.address, label: null }));
+  return { top10: top.reduce((x, h) => x + h.share, 0), top };
 }

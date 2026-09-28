@@ -5,7 +5,7 @@ import type { Snapshot } from "../types";
 import { assetId, type Asset, type AssetDay } from "./types";
 import { sampleProducers } from "../chain/zkas";
 import type { Producers } from "./types";
-import { readKas, readZkas, readKrc20, readKrc20Holders, readIgraTokens, readIgraHolders, venuesFromSnapshot, readKaspaNames, nameHolders } from "./sources";
+import { readKas, readZkas, readKrc20, readKrc20Holders, readIgraTokens, readIgraHolders, venuesFromSnapshot, readKaspaNames, nameHolders, readCovenantTokens, readCovenantHolders } from "./sources";
 
 const LIST_EVERY = 55 * 60_000;      // full token lists: hourly
 const HOLDERS_EVERY = 24 * 3600_000; // a holder list is refreshed daily
@@ -50,15 +50,18 @@ export async function refreshAssets(s: Snapshot) {
 
   // token lists
   const lastList = Number((await getMeta("assets_list_at")) ?? 0);
-  if (Date.now() - lastList > LIST_EVERY || prev.size < 50) {
-    const [krc, igra] = await Promise.all([
+  const hasCovenant = [...prev.values()].some((x) => x.standard === "kcc20" || x.standard === "kron");
+  if (Date.now() - lastList > LIST_EVERY || prev.size < 50 || !hasCovenant) {
+    const [krc, igra, cov] = await Promise.all([
       readKrc20().catch((e) => { report.krc20 = (e as Error).message; return null; }),
       readIgraTokens().catch((e) => { report.igra = (e as Error).message; return null; }),
+      readCovenantTokens(s.kasUsd).catch((e) => { report.kcc20 = (e as Error).message; return null; }),
     ]);
+    for (const a of cov ?? [...prev.values()].filter((x) => x.standard === "kcc20" || x.standard === "kron")) next.set(a.id, keepHolders(a));
     for (const a of krc ?? [...prev.values()].filter((x) => x.standard === "krc20")) next.set(a.id, keepHolders(a));
     for (const a of igra ?? [...prev.values()].filter((x) => x.chain === "igra" && x.standard === "erc20")) next.set(a.id, keepHolders(a));
     if (krc && igra) await setMeta("assets_list_at", String(Date.now()));
-    report.lists = { krc20: krc?.length ?? "kept", igra: igra?.length ?? "kept" };
+    report.lists = { krc20: krc?.length ?? "kept", igra: igra?.length ?? "kept", covenant: cov?.length ?? "kept" };
   } else {
     for (const a of prev.values()) if (a.standard !== "native") next.set(a.id, a);
   }
@@ -106,7 +109,9 @@ export async function refreshAssets(s: Snapshot) {
   for (let i = 0; i < due.length; i += 6) {
     await Promise.all(due.slice(i, i + 6).map(async (a) => {
       try {
-        const h = a.standard === "krc20" ? await readKrc20Holders(a.ref) : a.chain === "igra" ? await readIgraHolders(a.ref, a.supply, a.decimals ?? 18) : null;
+        const h = a.standard === "krc20" ? await readKrc20Holders(a.ref)
+          : a.standard === "kcc20" || a.standard === "kron" ? await readCovenantHolders(a.ref, a.supply, a.decimals ?? 0)
+          : a.chain === "igra" ? await readIgraHolders(a.ref, a.supply, a.decimals ?? 18) : null;
         a.holdersAt = Date.now();
         if (h) { a.top10 = h.top10; a.topHolders = h.top; read++; }
         const n = h && "holders" in h ? (h.holders as number | null) : null;
@@ -119,7 +124,7 @@ export async function refreshAssets(s: Snapshot) {
   // name KRC-20 holders (exchanges, burn, funds) from the Kaspa REST API's published list
   const names = await readKaspaNames().catch(() => null);
   if (names) {
-    for (const a of next.values()) if (a.standard === "krc20" && a.topHolders) a.topHolders = nameHolders(a.topHolders, names);
+    for (const a of next.values()) if ((a.standard === "krc20" || a.standard === "kcc20" || a.standard === "kron") && a.topHolders) a.topHolders = nameHolders(a.topHolders, names);
     report.names = names.size;
   }
 

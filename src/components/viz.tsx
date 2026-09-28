@@ -113,3 +113,77 @@ export function MiniSplit({ parts, width = 96 }: { parts: Part[]; width?: number
     </span>
   );
 }
+
+export interface Pt2 { key: string; label: string; sub?: string; x: number; y: number; size: number; color: string; alert?: boolean; href?: string }
+/**
+ * A scatter: x on a log scale (money), y linear (a rate). Dot area ∝ size. Hover or focus a dot
+ * for its card; the few largest dots carry direct labels. A shaded corner marks where
+ * both axes are good.
+ */
+export function Scatter({ points, xLabel, yLabel, xFmt, good }: {
+  points: Pt2[]; xLabel: string; yLabel: string; xFmt: "usd" | "pct"; good?: { x: number; y: number; label: string };
+}) {
+  const [on, setOn] = useState<string | null>(null);
+  const W = 760, H = 380, L = 58, R = 18, T = 16, B = 44;
+  const xs = points.map((p) => Math.max(1, p.x)), ys = points.map((p) => p.y);
+  // a blocked exit ($0) sits on the left edge rather than stretching the axis to $1
+  const x0 = 1e3, x1 = Math.pow(10, Math.ceil(Math.log10(Math.max(...xs, 1e5))));
+  const y1 = Math.max(0.1, Math.ceil(Math.max(...ys, 0.05) * 10) / 10);
+  const sx = (v: number) => L + ((Math.log10(Math.max(x0, v)) - Math.log10(x0)) / (Math.log10(x1) - Math.log10(x0))) * (W - L - R);
+  const sy = (v: number) => T + (1 - Math.max(0, v) / y1) * (H - T - B);
+  const maxSize = Math.max(...points.map((p) => p.size), 1);
+  const rad = (s: number) => 5 + Math.sqrt(s / maxSize) * 16;
+  const fx = (v: number) => (xFmt === "usd" ? (v >= 1e6 ? `$${+(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${+(v / 1e3).toFixed(1)}K` : `$${Math.round(v)}`) : pctS(v));
+  const xt: number[] = []; for (let v = x0; v <= x1; v *= 10) xt.push(v);
+  const yt = Array.from({ length: 5 }, (_, i) => (y1 * i) / 4);
+  const hot = points.find((p) => p.key === on) ?? null;
+  // direct labels for the largest dots, skipping any that would collide with one already placed
+  const placed: { x: number; y: number }[] = [];
+  const labeled = new Set<string>();
+  for (const p of [...points].sort((a, b) => b.size - a.size)) {
+    if (labeled.size >= 6) break;
+    const x = sx(p.x), y = sy(p.y) - rad(p.size) - 6;
+    if (placed.some((q) => Math.abs(q.x - x) < 90 && Math.abs(q.y - y) < 18) || y < T + 10) continue;
+    placed.push({ x, y }); labeled.add(p.key);
+  }
+  return (
+    <div className="scatter">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${yLabel} against ${xLabel}, ${points.length} opportunities`}>
+        {good && <rect x={sx(good.x)} y={T} width={W - R - sx(good.x)} height={sy(good.y) - T} fill="rgba(74,222,155,.07)" rx="6" />}
+        {good && <text x={W - R - 8} y={T + 16} textAnchor="end" fill="#4ADE9B" style={{ font: "500 12px var(--body)" }}>{good.label}</text>}
+        {yt.map((v) => <g key={v}><line x1={L} x2={W - R} y1={sy(v)} y2={sy(v)} stroke="rgba(255,255,255,.07)" /><text x={L - 8} y={sy(v) + 4} textAnchor="end" fill="var(--ink-3)" style={{ font: "12px var(--body)" }}>{pctS(v)}</text></g>)}
+        {xt.map((v, i) => <text key={v} x={sx(v)} y={H - B + 18} textAnchor={i ? "middle" : "start"} fill="var(--ink-3)" style={{ font: "12px var(--body)" }}>{i ? fx(v) : `≤ ${fx(v)}`}</text>)}
+        <text x={(L + W - R) / 2} y={H - 6} textAnchor="middle" fill="var(--ink-2)" style={{ font: "12.5px var(--body)" }}>{xLabel} →</text>
+        <text x={14} y={(T + H - B) / 2} textAnchor="middle" fill="var(--ink-2)" transform={`rotate(-90 14 ${(T + H - B) / 2})`} style={{ font: "12.5px var(--body)" }}>{yLabel} →</text>
+        {[...points].sort((a, b) => b.size - a.size).map((p) => (
+          <g key={p.key} tabIndex={0} onMouseEnter={() => setOn(p.key)} onMouseLeave={() => setOn(null)} onFocus={() => setOn(p.key)} onBlur={() => setOn(null)} style={{ outline: "none", cursor: "default" }}>
+            <circle cx={sx(p.x)} cy={sy(p.y)} r={rad(p.size) + 6} fill="transparent" />
+            <circle cx={sx(p.x)} cy={sy(p.y)} r={rad(p.size)} fill={p.color} fillOpacity={on && on !== p.key ? 0.3 : 0.85} stroke={p.alert ? "#FF6B7A" : "#1C1642"} strokeWidth={p.alert ? 3 : 2} />
+          </g>
+        ))}
+        {points.filter((p) => labeled.has(p.key)).map((p) => (
+          <text key={`l-${p.key}`} x={sx(p.x)} y={sy(p.y) - rad(p.size) - 6} textAnchor="middle" fill="var(--ink)" stroke="#1C1642" strokeWidth={3} paintOrder="stroke" style={{ font: "500 12px var(--body)", pointerEvents: "none" }}>{p.label}</text>
+        ))}
+      </svg>
+      <div className="scatter-tip" aria-live="polite">
+        {hot ? <><i style={{ background: hot.color }} /><b>{hot.label}</b><span>{pctS(hot.y, 1)} · {fx(hot.x)} {xLabel.toLowerCase()}</span>{hot.sub && <span className="muted">{hot.sub}</span>}{hot.href && <Link href={hot.href}>open</Link>}</> : <span className="muted">Hover a dot. Size is the size of the pool or market; a red ring means the exit is blocked.</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Columns for a distribution: e.g. how long bridge payouts took. */
+export function Columns({ cols, label }: { cols: { key: string; label: string; value: number; color: string; display?: string }[]; label: string }) {
+  const m = Math.max(...cols.map((c) => c.value), 1);
+  return (
+    <div className="cols" role="img" aria-label={`${label}: ${cols.map((c) => `${c.label} ${c.value}`).join(", ")}`}>
+      {cols.map((c) => (
+        <div key={c.key} className="col" title={`${c.label}: ${c.display ?? c.value}`}>
+          <b>{c.display ?? c.value}</b>
+          <span className="col-t"><i style={{ height: `${Math.max(2, (c.value / m) * 100)}%`, background: c.color }} /></span>
+          <small>{c.label}</small>
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -465,7 +465,7 @@ th button.sort:focus-visible{outline:2px solid rgba(123,108,255,.8);outline-offs
 .gauge{display:grid;justify-items:center;text-align:center;gap:4px;align-content:start;flex:1 1 100px;max-width:170px}
 .gauge b{font:500 14px var(--display);color:var(--ink)}
 .gauge small{font-size:12.5px;max-width:150px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .tile{border-radius:16px;padding:14px 16px 16px;border:1px solid var(--line-2);background:rgba(255,255,255,.03);display:grid;gap:4px;position:relative;overflow:hidden}
 .tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
 .tile.t-good::before{background:#4ADE9B}.tile.t-warn::before{background:#FFC061}.tile.t-crit::before{background:#FF6B7A}.tile.t-info::before{background:#8C7CF0}
@@ -490,3 +490,16 @@ details.more summary{cursor:pointer;color:var(--ink-2);font-size:14px}
 @media (max-width:760px){.hbar{grid-template-columns:minmax(90px,1fr) 1.4fr auto;gap:10px}}
 .gauge svg{width:min(132px,26vw);height:auto}
 @media (max-width:760px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.tile b{font-size:22px}.rings{gap:8px}}
+.scatter svg{width:100%;height:auto;display:block}
+.scatter svg g:focus-visible circle:last-of-type{stroke:#fff}
+.scatter-tip{min-height:24px;margin-top:6px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:14px;color:var(--ink-2)}
+.scatter-tip i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.cols{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:10px;align-items:end;height:220px}
+.col{display:grid;grid-template-rows:auto 1fr auto;gap:6px;height:100%;text-align:center}
+.col b{font:600 14px var(--display)}
+.col-t{display:flex;align-items:flex-end;background:rgba(255,255,255,.04);border-radius:6px;overflow:hidden}
+.col-t i{display:block;width:100%;border-radius:4px 4px 0 0}
+.col small{color:var(--ink-3);font-size:12px}
+table.assets-tbl th,table.assets-tbl td{padding-left:12px;padding-right:12px}
+table.assets-tbl td:first-child,table.assets-tbl th:first-child{padding-left:22px}
+table.assets-tbl td:last-child,table.assets-tbl th:last-child{padding-right:22px}

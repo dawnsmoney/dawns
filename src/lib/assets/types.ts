@@ -1,10 +1,12 @@
 /* Dawns asset index: one normalized record per asset, whatever chain or standard issued it. */
 
 export type AssetChain = "kaspa" | "igra" | "kasplex" | "zkas";
-export type AssetStandard = "native" | "krc20" | "erc20";
+export type AssetStandard = "native" | "krc20" | "erc20" | "kcc20" | "kron";
 
 export const CHAIN_NAME: Record<AssetChain, string> = { kaspa: "Kaspa", igra: "Igra", kasplex: "Kasplex L2", zkas: "ZKas" };
-export const STANDARD_NAME: Record<AssetStandard, string> = { native: "Native coin", krc20: "KRC-20", erc20: "ERC-20" };
+export const STANDARD_NAME: Record<AssetStandard, string> = { native: "Native coin", krc20: "KRC-20", erc20: "ERC-20", kcc20: "KCC-20 covenant", kron: "Kron covenant" };
+/** Covenant tokens live in Kaspa L1 covenants; their id is the covenant token id. */
+export const isCovenant = (s: AssetStandard) => s === "kcc20" || s === "kron";
 
 /**
  * The canonical id is `chain:standard:ref`, never a ticker: NACHO on Kaspa L1 (KRC-20)
@@ -12,7 +14,7 @@ export const STANDARD_NAME: Record<AssetStandard, string> = { native: "Native co
  * ref: the ticker for native coins and KRC-20 (Kasplex ticks are unique), the lower-case
  * contract address for ERC-20.
  */
-export const assetId = (chain: AssetChain, standard: AssetStandard, ref: string) => `${chain}:${standard}:${standard === "erc20" ? ref.toLowerCase() : ref.toUpperCase()}`;
+export const assetId = (chain: AssetChain, standard: AssetStandard, ref: string) => `${chain}:${standard}:${standard === "erc20" || standard === "kcc20" || standard === "kron" ? ref.toLowerCase() : ref.toUpperCase()}`;
 export const assetPath = (id: string) => `/assets/${id.split(":").map(encodeURIComponent).join("/")}`;
 
 export type HolderKind = "exchange" | "burn" | "project" | null;
@@ -52,6 +54,7 @@ export interface Asset {
   pools: string[];               // opportunity ids (pools / markets) that hold this asset
 
   rank: number | null;           // source rank (KaspaCom for KRC-20)
+  validation?: string | null;    // covenant tokens: the indexer's check of the token against chain data
   net?: NetworkStats;            // native coins
   updatedAt: number;
 }

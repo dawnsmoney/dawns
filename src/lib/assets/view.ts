@@ -6,7 +6,7 @@ import { CHAIN_NAME, STANDARD_NAME, assetPath, valueCredible, type Asset } from 
 
 /** An asset is listed by default once something real happens with it. */
 export const significant = (a: Asset) =>
-  a.standard === "native" || a.pools.length > 0 || (a.holders ?? 0) >= 100 || (a.price != null && ((a.vol24 ?? 0) > 0 || (a.liquidity ?? 0) > 0));
+  a.standard === "native" || ((a.standard === "kcc20" || a.standard === "kron") && (a.holders ?? 0) > 0) || a.pools.length > 0 || (a.holders ?? 0) >= 100 || (a.price != null && ((a.vol24 ?? 0) > 0 || (a.liquidity ?? 0) > 0));
 
 export function toAssetLite(a: Asset): AssetLite {
   const r = analyse(a);

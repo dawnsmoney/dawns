@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Banner } from "@/components/Banner";
 import { Pill, SERIES } from "@/components/bits";
 import { AreaChart } from "@/components/charts";
+import { SplitBar, Columns } from "@/components/viz";
 import { Kpi, ProvRow } from "@/components/actions";
 import { DataBridge } from "@/components/providers";
 import { Fresh } from "@/components/Fresh";
@@ -45,6 +46,18 @@ export default async function BridgePage() {
   const pending = po ? po.unpaidKas : b.inWindowKas;
   const hrs = (ms: number) => { const h = ms / 3600_000; return h < 48 ? `${Math.max(1, Math.round(h))} h` : `${Math.round(h / 24)} days`; };
   const t = b.coverage >= 1 ? "good" : b.coverage >= 0.99 ? "warn" : "crit";
+  // payout times of recent exits, in buckets
+  const now = b.timestamp * 1000;
+  const took = b.recentExits.map((e) => (e.paidAt ? (e.paidAt - (now - e.ageSec * 1000)) / 3600_000 : null));
+  const waiting = b.recentExits.filter((e) => !e.paidTx);
+  const payoutCols = [
+    { key: "a", label: "< 12 h", value: took.filter((h) => h != null && h < 12).length, color: "#199e70" },
+    { key: "b", label: "12–24 h", value: took.filter((h) => h != null && h >= 12 && h < 24).length, color: "#199e70" },
+    { key: "c", label: "24–48 h", value: took.filter((h) => h != null && h >= 24 && h < 48).length, color: "#3987e5" },
+    { key: "d", label: "48–72 h", value: took.filter((h) => h != null && h >= 48 && h < 72).length, color: "#c98500" },
+    { key: "e", label: "> 72 h", value: took.filter((h) => h != null && h >= 72).length, color: "#d95926" },
+    { key: "w", label: "Waiting", value: waiting.length, color: "#4A4270" },
+  ];
   return (
     <>
       {bridge}
@@ -84,6 +97,22 @@ export default async function BridgePage() {
                 <div className="vrow"><span /><div>{b.surplusKas >= 0 ? "Surplus" : "Shortfall"}<small>Locked minus minted</small></div><b className={b.surplusKas >= 0 ? "up" : "down"}>{b.surplusKas >= 0 ? "+" : "−"}{kas(Math.abs(b.surplusKas))}</b></div>
                 <ProvRow id="bridge-cov" className="vrow"><span style={{ color: ok ? "var(--good)" : "var(--crit)" }}>{ok ? <Check /> : <Alert />}</span><div><b style={{ fontSize: 15 }}>Backing</b><small>KAS locked ÷ iKAS minted</small></div><b className={ok ? "up" : "down"}>{pct(b.coverage)}</b></ProvRow>
               </div>
+            </div>
+            <div className="card">
+              <div className="c-head"><h3>Where the locked KAS goes</h3><span className="tag">{shortKas(b.lockedKas)} KAS</span></div>
+              <SplitBar label="Locked KAS" parts={[
+                { key: "ikas", label: "Backs iKAS in circulation", color: "#3987e5", share: Math.min(b.ikasSupply, b.lockedKas) },
+                ...(b.surplusKas > 0 ? [
+                  { key: "exits", label: "Exits awaiting L1 payout", color: "#c98500", share: Math.min(pending, b.surplusKas) },
+                  { key: "extra", label: "Surplus beyond pending exits", color: "#199e70", share: Math.max(0, b.surplusKas - pending) },
+                ] : []),
+              ].filter((x) => x.share > 0)} />
+              {payoutCols.some((c) => c.value > 0) && (
+                <div style={{ marginTop: 22 }}>
+                  <div className="eyebrow muted" style={{ marginBottom: 10 }}>How long the last {b.recentExits.length} exits took to be paid on L1</div>
+                  <Columns label="Payout times" cols={payoutCols} />
+                </div>
+              )}
             </div>
             <div className="card">
               <div className="c-head"><h3>Why it reads above 100%</h3></div>

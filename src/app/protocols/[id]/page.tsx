@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getSnapshot, findProtocol } from "@/lib/snapshot";
-import { toLite, names } from "@/lib/view";
+import { toLite, names, protocolTiles } from "@/lib/view";
+import { Tiles, SplitBar } from "@/components/viz";
 import type { ProtocolView, Snapshot } from "@/lib/types";
 import { usd, pct } from "@/lib/format";
 import { AssetCoin, Change, Clouds, BANNER_CLOUDS, Pill, ProtocolCoin, UtilMeter, SERIES, assetColor } from "@/components/bits";
@@ -374,6 +375,8 @@ function Verification({ p }: { p: ProtocolView }) {
   return (
     <div className="grid gA">
       <div className="card">
+        <SplitBar label="Checks" parts={[{ key: "ok", label: `Read directly (${p.canVerify.length})`, color: "#199e70", share: p.canVerify.length }, { key: "pending", label: `Not verified yet (${p.cannotVerify.length})`, color: "#4A4270", share: p.cannotVerify.length }]} height={16} />
+        <div style={{ height: 18 }} />
         {p.canVerify.length > 0 && (
           <>
             <div className="c-head"><h3>What dawns reads directly</h3></div>
@@ -462,6 +465,10 @@ export default async function ProtocolPage({ params }: PageProps<"/protocols/[id
       </section>
       <div className="wrap">
         <div className="grid g5 lift"><Kpis p={p} /></div>
+        <div className="card" style={{ marginTop: 22 }}>
+          <div className="c-head"><h3>dawns&apos; reading</h3><Pill t={p.status}>{p.statusText}</Pill></div>
+          <Tiles tiles={protocolTiles(p)} />
+        </div>
         <SubNav tabs={tabs.map((t) => t[0])} />
         {tabs.map(([title, node], i) => (
           <section className="ps" id={`s-${i}`} key={title}>

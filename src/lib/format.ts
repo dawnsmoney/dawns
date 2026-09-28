@@ -4,6 +4,7 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 export function usd(v: number, dp?: number): string {
   const a = Math.abs(v);
   const s = v < 0 ? "−" : "";
+  if (a >= 1e9) return `${s}$${(a / 1e9).toFixed(dp ?? 2)}B`;
   if (a >= 1e6) return `${s}$${(a / 1e6).toFixed(dp ?? 2)}M`;
   if (a >= 1e3) return `${s}$${(a / 1e3).toFixed(dp ?? 1)}K`;
   return `${s}$${a.toFixed(0)}`;
