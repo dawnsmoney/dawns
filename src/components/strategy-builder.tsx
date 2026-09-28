@@ -39,9 +39,9 @@ function Slide({ value, max, onChange, color, cap, label }: { value: number; max
   );
 }
 
-export function StrategyBuilder({ opps, kasUsd }: { opps: Opportunity[]; kasUsd: number | null }) {
+export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportunity[]; kasUsd: number | null; from?: { id: string; version: number; doc: StrategyDoc } | null; start?: StrategyDoc | null }) {
   const router = useRouter();
-  const [doc, setDoc] = useState<StrategyDoc>({ ...DEFAULT_DOC, name: "", thesis: "" });
+  const [doc, setDoc] = useState<StrategyDoc>(from ? from.doc : start ?? { ...DEFAULT_DOC, name: "", thesis: "" });
   const [kind, setKind] = useState<"all" | "supply" | "lp">("all");
   const [account, setAccount] = useState<Account | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
@@ -88,7 +88,7 @@ export function StrategyBuilder({ opps, kasUsd }: { opps: Opportunity[]; kasUsd:
       let a = await ensureAccount();
       if (!a && walletKey) { a = await signInWith(walletKey); setAccount(a); window.dispatchEvent(new Event("dawns:auth")); }
       if (!a) { setMsg("Sign in with a wallet to publish: it becomes the strategist."); return; }
-      const r = await fetch("/api/strategies", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ doc: parsed.doc }) });
+      const r = await fetch("/api/strategies", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ doc: parsed.doc, parent: from?.id ?? null }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       router.push(`/strategies/${j.id}`);
@@ -99,6 +99,12 @@ export function StrategyBuilder({ opps, kasUsd }: { opps: Opportunity[]; kasUsd:
   return (
     <div className="st-build">
       <div className="st-form">
+        {from && (
+          <div className="card st-vcard scheduled">
+            <b>New version of v{from.version}</b>
+            <small className="muted">It takes effect {from.doc.noticeDays} days after you publish (the notice period of v{from.version}). Until then v{from.version} stays in force and the strategy page shows depositors every change. Changing the notice period itself also waits for the current notice.</small>
+          </div>
+        )}
         <div className="card">
           <div className="c-head"><h3>1 · Name and thesis</h3></div>
           <div style={{ display: "grid", gap: 10 }}>
@@ -181,6 +187,8 @@ export function StrategyBuilder({ opps, kasUsd }: { opps: Opportunity[]; kasUsd:
             </>}
             <span>Exit fee (to holders)</span>
             <Seg label="Exit fee" items={[[0, "0"], [25, "0.25%"], [50, "0.5%"], [100, "1%"]]} value={doc.vault.exitFeeBps} onPick={(v) => setVault({ exitFeeBps: v })} />
+            <span>Notice for new versions</span>
+            <Seg label="Notice period" items={[[3, "3 d"], [7, "7 d"], [14, "14 d"], [30, "30 d"]]} value={doc.noticeDays} onPick={(v) => set({ noticeDays: v })} />
             <span>Performance fee (on yield)</span>
             <Seg label="Performance fee" items={[[0, "0"], [500, "5%"], [1_000, "10%"], [1_500, "15%"], [2_000, "20%"]]} value={doc.fees.performanceBps} onPick={(v) => set({ fees: { ...doc.fees, performanceBps: v } })} />
           </div>
@@ -208,7 +216,7 @@ export function StrategyBuilder({ opps, kasUsd }: { opps: Opportunity[]; kasUsd:
           ) : <p className="muted" style={{ margin: 0 }}>Pick opportunities: the preview computes as you go, from live data.</p>}
         </div>
         <div className="card st-pub">
-          <small className="muted">{"error" in parsed ? parsed.error : <>Hash id <span className="mono">{id}</span>. Publishing freezes this version: any change is a new strategy.</>}</small>
+          <small className="muted">{"error" in parsed ? parsed.error : <>Hash id <span className="mono">{id}</span>. {from ? (from.id === id ? "Nothing has changed from the version in force yet." : `Publishing schedules v${from.version + 1} for ${from.doc.noticeDays} days from now.`) : "Publishing freezes this version: later changes are new versions, after notice."}</>}</small>
           {account ? (
             <button type="button" className="btn iris" disabled={!!busy || "error" in parsed} onClick={() => publish()}>{busy ? "Publishing…" : `Publish as ${shortAddr(account.wallets[0]?.address ?? "")}`}</button>
           ) : (

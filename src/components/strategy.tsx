@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pill } from "./bits";
 import { SplitBar, type Part } from "./viz";
 import type { Evaluation, StrategyDoc, Term, Enforcer } from "@/lib/strategies/model";
@@ -123,7 +123,7 @@ export function EnforcementMap({ terms }: { terms: Term[] }) {
 }
 
 /** Four roles, never the same key. */
-export function Roles({ strategist }: { strategist: string }) {
+export function Roles({ strategist, href }: { strategist: string; href?: string }) {
   const R = [
     ["Strategist", strategist, "Writes the strategy and earns the performance fee. Cannot touch capital or change a live vault's terms."],
     ["Curator · guardian", "Launches the vault from the strategy", "Holds the guardian key: can halt new allocations. Cannot move capital or stop redemptions."],
@@ -132,13 +132,13 @@ export function Roles({ strategist }: { strategist: string }) {
   ];
   return (
     <div className="flow">
-      {R.map(([h, who, p], i) => <div key={h} className="flow-step"><span>{i + 1}</span><b>{h}</b><small className="mono" style={{ color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis" }}>{who}</small><small>{p}</small></div>)}
+      {R.map(([h, who, p], i) => <div key={h} className="flow-step"><span>{i + 1}</span><b>{h}</b>{i === 0 && href ? <Link href={href} className="mono" style={{ fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis" }}>{who}</Link> : <small className="mono" style={{ color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis" }}>{who}</small>}<small>{p}</small></div>)}
     </div>
   );
 }
 
 /** A strategy on the marketplace. */
-export function StrategyCard({ id, doc, ev, strategist, by }: { id: string; doc: StrategyDoc; ev: Evaluation; strategist: string; by: "dawns" | "strategist" }) {
+export function StrategyCard({ id, doc, ev, strategist, by, version = 1, next = null }: { id: string; doc: StrategyDoc; ev: Evaluation; strategist: string; by: "dawns" | "strategist"; version?: number; next?: { version: number; at: string } | null }) {
   const tags = [doc.vault.type === "fixed" ? `${doc.vault.termDays}-day term` : doc.vault.redemptionDays ? `Redeem ≤ ${doc.vault.redemptionDays}d` : "Redeem from reserve", doc.vault.access === "permissionless" ? "Permissionless" : doc.vault.access === "whitelist" ? "Whitelist" : "Private", ...(doc.vault.exitFeeBps ? [`Exit fee ${bp(doc.vault.exitFeeBps)}`] : [])];
   return (
     <Link href={`/strategies/${id}`} className="card vcard st-card">
@@ -153,7 +153,7 @@ export function StrategyCard({ id, doc, ev, strategist, by }: { id: string; doc:
         <span><small>Legs</small><b>{doc.legs.length}</b></span>
         <span><small>Perf. fee</small><b>{bp(doc.fees.performanceBps)}</b></span>
       </span>
-      <span className="vc-foot"><span>By <b>{by === "dawns" ? "Dawns · reference" : `${strategist.slice(0, 14)}…${strategist.slice(-5)}`}</b></span><span className="muted mono">{id}</span></span>
+      <span className="vc-foot"><span>By <b>{by === "dawns" ? "Dawns · reference" : `${strategist.slice(0, 14)}…${strategist.slice(-5)}`}</b></span><span className="muted">{next ? <span className="st-vtag scheduled">v{next.version} from {next.at}</span> : <span className="mono">v{version} · {id}</span>}</span></span>
     </Link>
   );
 }
@@ -183,6 +183,102 @@ export function StrategyMap({ rows }: { rows: { id: string; name: string; net: n
         ))}
       </svg>
       <div className="split-tip">{hit ? <span><b>{hit.name}</b> · net {p1(hit.net!, 1)} · {p1(hit.exit, 0)} can leave now</span> : <span className="muted">Up is more yield, right is easier to leave. Colour is whether the strategy holds its own rules today.</span>}</div>
+    </div>
+  );
+}
+
+/* ---------------- versions ---------------- */
+export interface VersionNode { id: string; version: number; effectiveAt: string; createdAt: string; status: "current" | "scheduled" | "superseded" }
+const day = (iso: string) => iso.slice(0, 10);
+const inDays = (iso: string) => Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 86_400_000));
+
+/** Every version of a strategy on one track: when each took (or takes) effect. */
+export function VersionTrack({ versions, here }: { versions: VersionNode[]; here: string }) {
+  return (
+    <div className="st-vtrack" role="list" aria-label="Versions">
+      {versions.map((v) => (
+        <Link key={v.id} role="listitem" href={`/strategies/${v.id}`} className={`st-vnode ${v.status}${v.id === here ? " here" : ""}`} aria-current={v.id === here ? "page" : undefined}>
+          <i aria-hidden />
+          <b>v{v.version}</b>
+          <small>{v.status === "scheduled" ? `from ${day(v.effectiveAt)} · in ${inDays(v.effectiveAt)} d` : v.status === "current" ? `in force since ${day(v.effectiveAt)}` : `${day(v.effectiveAt)} · superseded`}</small>
+          <span className={`st-vtag ${v.status}`}>{v.status === "current" ? "In force" : v.status === "scheduled" ? "Scheduled" : "Superseded"}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+export interface ChangeRow { what: string; from: string; to: string; t: "up" | "down" | "neutral" }
+/** What changes from one version to the next, and whether it is safer or riskier for depositors. */
+export function ChangeList({ changes }: { changes: ChangeRow[] }) {
+  if (!changes.length) return <p className="muted" style={{ margin: 0 }}>No term changes.</p>;
+  const word = { up: "Safer", down: "Riskier", neutral: "Change" } as const;
+  return (
+    <div className="st-changes">
+      {changes.map((c) => (
+        <div key={c.what} className="st-change">
+          <span>{c.what}</span>
+          <span className="st-change-v"><s>{c.from}</s><i aria-hidden>→</i><b>{c.to}</b></span>
+          <span className={`st-vtag ${c.t === "up" ? "current" : c.t === "down" ? "warn" : "superseded"}`}>{word[c.t]}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** For the strategist only: publish a new version, withdraw a scheduled one, list or unlist. */
+export function OwnerActions({ id, family, next, listed }: { id: string; family: string; next: { id: string; version: number } | null; listed: boolean }) {
+  const [owner, setOwner] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => { fetch(`/api/strategies/manage?id=${id}`).then((r) => r.json()).then((j) => setOwner(!!j.owner)).catch(() => setOwner(false)); }, [id]);
+  if (!owner) return null;
+  const act = async (action: string, target: string) => {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch("/api/strategies/manage", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: target, action }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      window.location.href = action === "withdraw" ? `/strategies/${j.current}` : window.location.href;
+    } catch (e) { setMsg((e as Error).message); setBusy(false); }
+  };
+  return (
+    <div className="card st-owner">
+      <span><b>You are the strategist</b><small className="muted">A new version takes effect after this version&apos;s notice period. Depositors see every change before then.</small></span>
+      <span className="st-owner-b">
+        {next ? <button type="button" className="btn ghost sm" disabled={busy} onClick={() => act("withdraw", next.id)}>Withdraw scheduled v{next.version}</button>
+          : <Link className="btn iris sm" href={`/strategies/new?from=${id}`}>Publish a new version</Link>}
+        <button type="button" className="btn ghost sm" disabled={busy} onClick={() => act(listed ? "unlist" : "list", family)}>{listed ? "Unlist" : "List again"}</button>
+      </span>
+      {msg && <p className="navp-err" style={{ margin: 0 }}>{msg}</p>}
+    </div>
+  );
+}
+
+/** dawns' daily evaluation of each strategy's version in force: one line per strategy, gaps where it did not exist. */
+export function NetHistory({ days, lines }: { days: string[]; lines: { key: string; name: string; color: string; values: (number | null)[] }[] }) {
+  const [hi, setHi] = useState<number | null>(null);
+  const W = 720, H = 240, L = 46, R = 14, T = 12, B = 28;
+  const all = lines.flatMap((l) => l.values.filter((v): v is number => v != null));
+  const max = Math.max(0.05, ...all) * 1.1, min = Math.min(0, ...all);
+  const n = days.length;
+  const x = (i: number) => L + (n <= 1 ? (W - L - R) / 2 : (i / (n - 1)) * (W - L - R));
+  const y = (v: number) => T + (1 - (v - min) / (max - min)) * (H - T - B);
+  const path = (vs: (number | null)[]) => vs.map((v, i) => (v == null ? "" : `${i && vs[i - 1] != null ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`)).join("");
+  const ticks = [min, (min + max) / 2, max];
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Evaluated net APY by day for ${lines.map((l) => l.name).join(", ")}`}
+        onMouseLeave={() => setHi(null)}
+        onMouseMove={(e) => { const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect(); const px = ((e.clientX - r.left) / r.width) * W; setHi(Math.max(0, Math.min(n - 1, Math.round(((px - L) / (W - L - R)) * (n - 1))))); }}>
+        {ticks.map((t) => <g key={t}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="rgba(255,255,255,.08)" /><text x={L - 8} y={y(t)} textAnchor="end" dominantBaseline="central" fill="var(--ink-3)" fontSize="11">{p1(t, 0)}</text></g>)}
+        {[0, n - 1].filter((i, k, a) => a.indexOf(i) === k).map((i) => <text key={i} x={x(i)} y={H - 8} textAnchor={i ? "end" : "start"} fill="var(--ink-3)" fontSize="11">{days[i]}</text>)}
+        {hi != null && <line x1={x(hi)} x2={x(hi)} y1={T} y2={H - B} stroke="rgba(255,255,255,.25)" />}
+        {lines.map((l) => <path key={l.key} d={path(l.values)} fill="none" stroke={l.color} strokeWidth={2} strokeLinejoin="round" />)}
+        {lines.map((l) => l.values.map((v, i) => v != null && (n === 1 || hi === i) ? <circle key={l.key + i} cx={x(i)} cy={y(v)} r={4} fill={l.color} stroke="var(--card)" strokeWidth={2} /> : null))}
+      </svg>
+      <div className="split-tip">{hi != null ? <span><b>{days[hi]}</b>{lines.map((l) => l.values[hi] != null ? <span key={l.key} style={{ marginLeft: 12 }}><i style={{ background: l.color, display: "inline-block", width: 10, height: 10, borderRadius: 3, marginRight: 6 }} />{l.name} {p1(l.values[hi]!, 1)}</span> : null)}</span> : <span className="muted">Hover for a day&apos;s readings</span>}</div>
+      <div className="split-legend">{lines.map((l) => <span key={l.key}><i style={{ background: l.color }} />{l.name}</span>)}</div>
     </div>
   );
 }

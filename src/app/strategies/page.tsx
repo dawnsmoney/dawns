@@ -4,7 +4,7 @@ import { Banner } from "@/components/Banner";
 import { StrategyCard, StrategyMap } from "@/components/strategy";
 import { getSnapshot } from "@/lib/snapshot";
 import { evaluate } from "@/lib/strategies/model";
-import { listStrategies } from "@/lib/strategies/store";
+import { listFamilies, listStrategists } from "@/lib/strategies/store";
 
 export const metadata: Metadata = {
   title: "Strategies",
@@ -13,8 +13,8 @@ export const metadata: Metadata = {
 export const revalidate = 120;
 
 export default async function StrategiesPage() {
-  const [s, list] = await Promise.all([getSnapshot(), listStrategies()]);
-  const rows = list.map((x) => ({ ...x, ev: evaluate(x.doc, s.opportunities, s.kasUsd) }));
+  const [s, fams, strategists] = await Promise.all([getSnapshot(), listFamilies(), listStrategists()]);
+  const rows = fams.map((f) => ({ ...f.current, next: f.next, ev: evaluate(f.current.doc, s.opportunities, s.kasUsd) }));
   return (
     <>
       <Banner short crumb={[{ href: "/opportunities", label: "Opportunities" }, { label: "Strategies · Beta" }]} title="Strategies"
@@ -49,7 +49,19 @@ export default async function StrategiesPage() {
         </div>
 
         <div className="vcards st-cards">
-          {rows.map((r) => <StrategyCard key={r.id} id={r.id} doc={r.doc} ev={r.ev} strategist={r.strategist} by={r.by} />)}
+          {rows.map((r) => <StrategyCard key={r.id} id={r.id} doc={r.doc} ev={r.ev} strategist={r.strategist} by={r.by} version={r.version} next={r.next ? { version: r.next.version, at: r.next.effectiveAt.slice(0, 10) } : null} />)}
+        </div>
+
+        <div className="card">
+          <div className="c-head"><h3>Strategists</h3><span className="tag">judged on their record, not their pitch</span></div>
+          <div className="mgr-row">
+            {strategists.map((m) => (
+              <Link key={m.address} href={`/strategists/${m.address}`} className="mgr-chip">
+                <span className="mgr-av">{m.address === "dawns" ? "D" : m.address.slice(6, 7).toUpperCase()}</span>
+                <span><b className={m.address === "dawns" ? undefined : "mono"} style={{ fontSize: m.address === "dawns" ? undefined : 13.5 }}>{m.address === "dawns" ? "Dawns" : `${m.address.slice(0, 12)}…${m.address.slice(-5)}`}</b><small>{m.strategies} {m.strategies === 1 ? "strategy" : "strategies"} · {m.versions} {m.versions === 1 ? "version" : "versions"}</small></span>
+              </Link>
+            ))}
+          </div>
         </div>
 
         <p className="muted" style={{ fontSize: 13, margin: 0 }}>Expected yield is native only, from on-chain rates and swap volume right now; it is not a promise. Strategies are published by their strategists; dawns evaluates them, it does not endorse them.</p>

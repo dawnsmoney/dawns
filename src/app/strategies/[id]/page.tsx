@@ -4,25 +4,33 @@ import { notFound } from "next/navigation";
 import { Banner } from "@/components/Banner";
 import { Pill } from "@/components/bits";
 import { CopyId, SplitBar } from "@/components/viz";
-import { ApyWaterfall, EnforcementMap, ExitStack, LegList, Roles } from "@/components/strategy";
+import { ApyWaterfall, ChangeList, EnforcementMap, ExitStack, LegList, OwnerActions, Roles, VersionTrack } from "@/components/strategy";
 import { splitParts } from "@/lib/strategies/parts";
 import { getSnapshot } from "@/lib/snapshot";
-import { evaluate, enforcement, toMandate, PAUSE } from "@/lib/strategies/model";
+import { evaluate, enforcement, toMandate, diffDocs, PAUSE } from "@/lib/strategies/model";
 import { getStrategy } from "@/lib/strategies/store";
 import { usd, pct } from "@/lib/format";
 
 export const revalidate = 120;
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
-  const s = await getStrategy((await params).id).catch(() => null);
-  return s ? { title: s.doc.name, description: s.doc.thesis.slice(0, 160) } : { title: "Strategy" };
+  const g = await getStrategy((await params).id).catch(() => null);
+  return g ? { title: `${g.st.doc.name}${g.family.versions.length > 1 ? ` v${g.st.version}` : ""}`, description: g.st.doc.thesis.slice(0, 160) } : { title: "Strategy" };
 }
 
 export default async function StrategyPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [st, s] = await Promise.all([getStrategy(id), getSnapshot()]);
-  if (!st) notFound();
+  const [g, s] = await Promise.all([getStrategy(id), getSnapshot()]);
+  if (!g) notFound();
+  const { st, family } = g;
   const { doc } = st;
+  const oname = (opp: string) => s.opportunities.find((o) => o.id === opp)?.name ?? opp;
+  const cur = family.current, next = family.next;
+  // what this page should explain: the change to come, or how this version differs from the one in force
+  const cmp = st.status === "current" && next ? { a: st, b: next, head: `v${next.version} takes effect on ${next.effectiveAt.slice(0, 10)}` }
+    : st.status !== "current" ? { a: cur, b: st, head: st.status === "scheduled" ? `This version takes effect on ${st.effectiveAt.slice(0, 10)}. Until then v${cur.version} is in force.` : `Superseded. v${cur.version} is in force: here is what changed since this version.` } : null;
+  const changes = cmp ? (st.status === "superseded" ? diffDocs(st.doc, cur.doc, oname) : diffDocs(cmp.a.doc, cmp.b.doc, oname)) : [];
+  const who = st.by === "dawns" ? "dawns" : st.strategist;
   const ev = evaluate(doc, s.opportunities, s.kasUsd);
   const terms = enforcement(doc, ev);
   const mandate = toMandate(doc, st.hash);
@@ -34,8 +42,24 @@ export default async function StrategyPage({ params }: { params: Promise<{ id: s
   );
   return (
     <>
-      <Banner short crumb={[{ href: "/strategies", label: "Strategies" }, { label: st.by === "dawns" ? "Reference" : "Strategist" }]} title={doc.name} lede={doc.thesis} />
+      <Banner short crumb={[{ href: "/strategies", label: "Strategies" }, { href: `/strategists/${who}`, label: st.by === "dawns" ? "Dawns · reference" : `${st.strategist.slice(0, 12)}…${st.strategist.slice(-4)}` }, { label: `v${st.version}` }]} title={doc.name} lede={doc.thesis} />
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
+        <OwnerActions id={st.id} family={family.versions[0].id} next={next ? { id: next.id, version: next.version } : null} listed={st.listed} />
+        <div className={`card st-vcard ${st.status}`}>
+          <div className="c-head"><h3>Versions</h3><span className="tag">{doc.noticeDays}-day notice before any new version</span></div>
+          <VersionTrack here={st.id} versions={family.versions.map((v) => ({ id: v.id, version: v.version, effectiveAt: v.effectiveAt, createdAt: v.createdAt, status: v.status }))} />
+          {cmp && (
+            <div className="st-vdiff">
+              <p style={{ margin: 0 }}><b>{cmp.head}</b></p>
+              <div className="grid g2" style={{ gap: 18 }}>
+                <div><small className="muted">{st.status === "superseded" ? `v${st.version} (this page)` : `v${cmp.a.version} · in force`}</small><SplitBar label="Before" height={14} tip={false} legend={false} parts={splitParts(st.status === "superseded" ? st.doc : cmp.a.doc, evaluate(st.status === "superseded" ? st.doc : cmp.a.doc, s.opportunities, s.kasUsd))} /></div>
+                <div><small className="muted">{st.status === "superseded" ? `v${cur.version} · in force` : `v${cmp.b.version} · ${cmp.b.status}`}</small><SplitBar label="After" height={14} tip={false} legend={false} parts={splitParts(st.status === "superseded" ? cur.doc : cmp.b.doc, evaluate(st.status === "superseded" ? cur.doc : cmp.b.doc, s.opportunities, s.kasUsd))} /></div>
+              </div>
+              <ChangeList changes={changes} />
+              <small className="muted">A running vault never changes: its terms are its address. A new version applies to vaults launched after it takes effect; depositors of an older vault move only if they choose to.</small>
+            </div>
+          )}
+        </div>
         <div className="grid st-tiles">
           {tile("Expected net APY", ev.net != null ? pct(ev.net, 2) : "—", ev.gross != null ? `${pct(ev.gross, 2)} native − ${bp(doc.fees.performanceBps)} of yield to the strategist` : "Legs still measuring")}
           {tile("Can leave now", pct(ev.exitNow, 0), `of a full vault: reserve, withdrawable lending cash and pools`)}
@@ -105,7 +129,7 @@ export default async function StrategyPage({ params }: { params: Promise<{ id: s
 
         <div className="card">
           <div className="c-head"><h3>Roles</h3><span className="tag">no key does two jobs</span></div>
-          <Roles strategist={st.by === "dawns" ? "Dawns (reference)" : st.strategist} />
+          <Roles strategist={st.by === "dawns" ? "Dawns (reference)" : st.strategist} href={`/strategists/${who}`} />
         </div>
 
         <div className="grid gA">
@@ -119,8 +143,8 @@ export default async function StrategyPage({ params }: { params: Promise<{ id: s
             <CopyId text={st.hash} />
             <small className="muted">blake2b-256 of the canonical document. A vault launched from it commits this hash in its mandate, so a strategy cannot change under its depositors: a new version is a new strategy.</small>
             <span className="eyebrow muted" style={{ marginTop: 8 }}>Published</span>
-            <small>{st.createdAt} · by {st.by === "dawns" ? "Dawns" : st.strategist}</small>
-            <Link href="/strategies/new" className="btn ghost sm" style={{ justifySelf: "start", marginTop: 8 }}>Write your own</Link>
+            <small>{st.createdAt} · by <Link href={`/strategists/${who}`}>{st.by === "dawns" ? "Dawns" : st.strategist}</Link> · v{st.version} of {family.versions.length}</small>
+            <Link href={`/strategies/new?from=${st.id}`} className="btn ghost sm" style={{ justifySelf: "start", marginTop: 8 }}>Start a strategy from this one</Link>
           </div>
         </div>
       </div>

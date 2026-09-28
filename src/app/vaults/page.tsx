@@ -3,6 +3,10 @@ import Link from "next/link";
 import { Banner } from "@/components/Banner";
 import { Pill } from "@/components/bits";
 import { vaults, KIND, MANAGERS } from "@/lib/vaults/registry";
+import { getSnapshot } from "@/lib/snapshot";
+import { evaluate } from "@/lib/strategies/model";
+import { listFamilies } from "@/lib/strategies/store";
+import { pct } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Vaults", description: "Vaults whose rules the Kaspa network enforces: mandate, NAV, fixed-term and credit." };
 export const revalidate = 60;
@@ -10,7 +14,8 @@ export const revalidate = 60;
 const STATUS = { live: { t: "good" as const, w: "Live" }, ready: { t: "info" as const, w: "Launching" }, designed: { t: "info" as const, w: "Designed" } };
 
 export default async function VaultsHub() {
-  const vs = await vaults();
+  const [vs, fams, snap] = await Promise.all([vaults(), listFamilies(), getSnapshot()]);
+  const proposed = fams.map((f) => ({ st: f.current, ev: evaluate(f.current.doc, snap.opportunities, snap.kasUsd) }));
   const man = (id: string) => MANAGERS.find((m) => m.id === id);
   return (
     <>
@@ -45,6 +50,38 @@ export default async function VaultsHub() {
             );
             return v.href ? <Link key={v.id} href={v.href} className="card vcard">{body}</Link> : <div key={v.id} className="card vcard dim">{body}</div>;
           })}
+        </div>
+
+        <div className="card">
+          <div className="c-head"><h3>Proposed from strategies</h3><Link href="/strategies" className="tag">All strategies →</Link></div>
+          <p className="muted" style={{ marginTop: 0 }}>Every published strategy is a vault waiting for a curator. Its terms become the vault&apos;s mandate at launch; until then nothing is deposited.</p>
+          <div className="vcards st-cards">
+            {proposed.map(({ st, ev }) => {
+              const k = KIND[st.doc.vault.type === "fixed" ? "fixed" : "nav"];
+              const igra = ev.legs.some((l) => l.o?.chain === "igra" || l.o?.chain === "kasplex");
+              return (
+                <Link key={st.id} href={`/strategies/${st.id}`} className="card vcard">
+                  <span className="vc-top"><span className="vc-kind" style={{ ["--c" as string]: k.color }}><i />{k.label}</span><Pill t="info">Proposed</Pill></span>
+                  <b className="vc-name">{st.doc.name}</b>
+                  <span className="st-fill" title={`0 of ${st.doc.vault.capacityKas.toLocaleString("en-US")} KAS deposited`}>
+                    <span className="st-fill-t"><i style={{ width: "0%" }} /></span>
+                    <small className="muted"><b style={{ color: "var(--ink)" }}>0</b> / {st.doc.vault.capacityKas.toLocaleString("en-US")} KAS capacity</small>
+                  </span>
+                  <span className="vc-figs">
+                    <span><small>Expected net</small><b>{ev.net != null ? pct(ev.net, 1) : "—"}</b></span>
+                    <span><small>Out now</small><b>{pct(ev.exitNow, 0)}</b></span>
+                    <span><small>Terms</small><b>{st.doc.vault.type === "fixed" ? `${st.doc.vault.termDays}d` : "Open"}</b></span>
+                  </span>
+                  <ul className="vc-rules">
+                    <li>{st.doc.legs.length} destination slots with hard caps</li>
+                    <li>{st.doc.reserveBps / 100}% reserve floor</li>
+                    <li>{st.doc.noticeDays}-day notice before a new version</li>
+                  </ul>
+                  <span className="vc-foot"><span>Strategy by <b>{st.by === "dawns" ? "Dawns" : `${st.strategist.slice(0, 12)}…${st.strategist.slice(-4)}`}</b></span><span className="muted">{igra ? "Needs the Igra bridge rule" : "Needs a curator"}</span></span>
+                </Link>
+              );
+            })}
+          </div>
         </div>
 
         <div className="card">

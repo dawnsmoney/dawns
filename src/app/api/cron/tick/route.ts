@@ -5,6 +5,8 @@ import { recordSnapshot, diffSignals, deliver, maybeDailyReport, planAlerts } fr
 import { hasBot, ensureWebhook } from "@/lib/telegram";
 import { refreshAssets } from "@/lib/assets";
 import { maybeDailyCards } from "@/lib/cards";
+import { recordStrategyDaily } from "@/lib/strategies/store";
+import { evaluate } from "@/lib/strategies/model";
 import { indexEvents, indexBridgeExits, checkPayouts, indexKaskadAccounts, readKaskadPositions } from "@/lib/indexer";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +40,7 @@ export async function GET(req: Request) {
     await step("payouts", () => checkPayouts());
     await step("assets", async () => { const r = await refreshAssets(s); revalidateTag("assets", "max"); return r; });
     await step("cards", () => maybeDailyCards(s)); // drafts only: nothing is posted until approved in /admin/cards
+    await step("strategies", () => recordStrategyDaily((d) => { const e = evaluate(d, s.opportunities, s.kasUsd); return { net: e.net, gross: e.gross, exitNow: e.exitNow, status: e.status }; }));
     let events: Awaited<ReturnType<typeof diffSignals>> = [];
     await step("signals", async () => { events = await diffSignals(s); return events.map((e) => `${e.kind} ${e.key}`); });
     if (hasBot()) {

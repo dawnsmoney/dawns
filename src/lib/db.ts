@@ -120,6 +120,15 @@ const SCHEMA = [
   `create table if not exists strategies (
     id text primary key, hash text not null unique, doc jsonb not null, user_id text not null, strategist text not null,
     listed boolean not null default true, created_at timestamptz not null default now())`,
+  // versions: a family of strategy versions; a new version takes effect after the notice of the one in force
+  `alter table strategies add column if not exists family text`,
+  `alter table strategies add column if not exists version int`,
+  `alter table strategies add column if not exists parent text`,
+  `alter table strategies add column if not exists effective_at timestamptz`,
+  `update strategies set family = id, version = 1, effective_at = created_at where family is null`,
+  // dawns' daily evaluation of each strategy's version in force (not realized returns)
+  `create table if not exists strategy_daily (day date not null, family text not null, id text not null, net double precision, gross double precision,
+    exit_now double precision, status text, primary key (day, family))`,
 ];
 
 let ready: Promise<void> | null = null;

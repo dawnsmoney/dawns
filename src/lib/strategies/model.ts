@@ -30,6 +30,7 @@ export interface StrategyDoc {
   driftBps: number;                // rebalance when a leg is this far from target
   pause: PauseRule[];
   fees: { performanceBps: number; managementBps: number };
+  noticeDays: number;              // a new version takes effect this long after it is published
   vault: { type: VaultType; access: Access; capacityKas: number; exitFeeBps: number; termDays: number; depositDays: number; redemptionDays: number };
 }
 
@@ -40,10 +41,12 @@ export const PAUSE: Record<PauseRule, { label: string; why: string }> = {
   volume: { label: "Suspicious volume", why: "No new capital into a pool trading more than 3× its size a day." },
 };
 
+export const DEFAULT_NOTICE = 7;
 export const DEFAULT_DOC: StrategyDoc = {
   v: 1, name: "", thesis: "", legs: [], reserveBps: 2_000, maxProtocolBps: 6_000, exitCover: 2, driftBps: 500,
   pause: ["exit-blocked", "oracle", "frozen", "volume"],
   fees: { performanceBps: 1_000, managementBps: 0 },
+  noticeDays: 7,
   vault: { type: "nav", access: "permissionless", capacityKas: 100_000, exitFeeBps: 50, termDays: 0, depositDays: 0, redemptionDays: 0 },
 };
 
@@ -79,6 +82,8 @@ export function parseDoc(x: unknown): { doc: StrategyDoc } | { error: string } {
   const f = (o.fees ?? {}) as Record<string, unknown>;
   const performanceBps = int(f.performanceBps, 0, 3_000), managementBps = int(f.managementBps, 0, 300);
   if (performanceBps == null || managementBps == null) return { error: "Performance fee 0–30%, management fee 0–3%." };
+  const noticeDays = o.noticeDays == null ? DEFAULT_NOTICE : int(o.noticeDays, 3, 60);
+  if (noticeDays == null) return { error: "Notice period 3–60 days." };
   const v = (o.vault ?? {}) as Record<string, unknown>;
   const type: VaultType = v.type === "fixed" ? "fixed" : "nav";
   const access: Access = v.access === "whitelist" || v.access === "private" ? v.access : "permissionless";
@@ -88,7 +93,7 @@ export function parseDoc(x: unknown): { doc: StrategyDoc } | { error: string } {
   if (capacityKas == null || exitFeeBps == null || termDays == null || depositDays == null || redemptionDays == null) return { error: "Vault terms out of range (capacity ≤ 1M KAS, exit fee ≤ 5%, redemption window ≤ 7 days)." };
   if (type === "fixed" && depositDays >= termDays) return { error: "The deposit window must close before maturity." };
   return { doc: { v: 1, name, thesis, legs, reserveBps, maxProtocolBps, exitCover: Math.round(exitCover * 10) / 10, driftBps, pause: [...new Set(pause)].sort() as PauseRule[],
-    fees: { performanceBps, managementBps }, vault: { type, access, capacityKas, exitFeeBps, termDays, depositDays, redemptionDays } } };
+    fees: { performanceBps, managementBps }, noticeDays, vault: { type, access, capacityKas, exitFeeBps, termDays, depositDays, redemptionDays } } };
 }
 
 /** Canonical JSON: fixed key order, so the same strategy always hashes the same. */
@@ -97,6 +102,8 @@ export function canonical(d: StrategyDoc): string {
     v: d.v, name: d.name, thesis: d.thesis, legs: d.legs.map((l) => ({ opp: l.opp, target: l.target, cap: l.cap })),
     reserveBps: d.reserveBps, maxProtocolBps: d.maxProtocolBps, exitCover: d.exitCover, driftBps: d.driftBps, pause: d.pause,
     fees: { performanceBps: d.fees.performanceBps, managementBps: d.fees.managementBps },
+    // added after the first strategies were published: only in the hash when it differs from the default
+    ...(d.noticeDays !== DEFAULT_NOTICE ? { noticeDays: d.noticeDays } : {}),
     vault: { type: d.vault.type, access: d.vault.access, capacityKas: d.vault.capacityKas, exitFeeBps: d.vault.exitFeeBps, termDays: d.vault.termDays, depositDays: d.vault.depositDays, redemptionDays: d.vault.redemptionDays },
   });
 }
@@ -225,6 +232,8 @@ export function enforcement(d: StrategyDoc, ev: Evaluation): Term[] {
     { term: "Per-protocol limit", value: pctB(d.maxProtocolBps), by: "monitor", how: "dawns checks the split; the covenant sees slots, not protocols." },
     { term: "Exit cover", value: `${d.exitCover}×`, by: "monitor", how: "Checked against each market's withdrawable cash every snapshot." },
     { term: "Pause rules", value: d.pause.map((p) => PAUSE[p].label).join(", ") || "none", by: "monitor", how: "dawns flags the leg; the guardian can halt new allocations, which the covenant enforces." },
+    { term: "Live vault terms", value: "fixed at launch", by: "covenant", how: "A vault's mandate is compiled into its address: a new strategy version never changes a running vault. It applies to vaults launched after it takes effect." },
+    { term: "Notice before a new version", value: `${d.noticeDays} days`, by: "monitor", how: "dawns lists a new version as current only after the notice; until then the page shows what will change." },
     { term: "Rebalance drift", value: pctB(d.driftBps), by: "keeper", how: "The allocator rebalances when a leg drifts this far; per-move and per-epoch limits bound it." },
     { term: "Exit fee", value: pctB(d.vault.exitFeeBps), by: "covenant", how: "exitFeeBps in redeem; the fee stays with the remaining holders." },
     ...(d.vault.type === "fixed" ? [
@@ -251,4 +260,46 @@ export function toMandate(d: StrategyDoc, hash: string) {
     depositUntil: d.vault.type === "fixed" ? `launch + ${d.vault.depositDays} days` : "never closes",
     maxMarkStepBps: 1_000,
   };
+}
+
+// ---------------------------------------------------------------------------
+// what changes between two versions
+// ---------------------------------------------------------------------------
+export interface Change { what: string; from: string; to: string; t: "up" | "down" | "neutral" }
+export function diffDocs(a: StrategyDoc, b: StrategyDoc, name: (opp: string) => string = (x) => x): Change[] {
+  const pctB = (x: number) => `${(x / 100).toFixed(x % 100 ? 1 : 0)}%`;
+  const out: Change[] = [];
+  const num = (what: string, x: number, y: number, fmt: (n: number) => string, higherIsRiskier = false) => {
+    if (x !== y) out.push({ what, from: fmt(x), to: fmt(y), t: (y > x) === higherIsRiskier ? "down" : "up" });
+  };
+  if (a.name !== b.name) out.push({ what: "Name", from: a.name, to: b.name, t: "neutral" });
+  if (a.thesis !== b.thesis) out.push({ what: "Thesis", from: "previous text", to: "rewritten", t: "neutral" });
+  for (const l of a.legs) {
+    const m = b.legs.find((x) => x.opp === l.opp);
+    if (!m) out.push({ what: `Leg removed: ${name(l.opp)}`, from: `${pctB(l.target)} (cap ${pctB(l.cap)})`, to: "—", t: "neutral" });
+    else {
+      if (m.target !== l.target) out.push({ what: `${name(l.opp)} target`, from: pctB(l.target), to: pctB(m.target), t: "neutral" });
+      if (m.cap !== l.cap) out.push({ what: `${name(l.opp)} hard cap`, from: pctB(l.cap), to: pctB(m.cap), t: m.cap > l.cap ? "down" : "up" });
+    }
+  }
+  for (const m of b.legs) if (!a.legs.some((l) => l.opp === m.opp)) out.push({ what: `Leg added: ${name(m.opp)}`, from: "—", to: `${pctB(m.target)} (cap ${pctB(m.cap)})`, t: "neutral" });
+  num("Reserve", a.reserveBps, b.reserveBps, pctB);
+  num("Most in one protocol", a.maxProtocolBps, b.maxProtocolBps, pctB, true);
+  num("Lending cash cover", a.exitCover, b.exitCover, (x) => `${x}×`);
+  num("Rebalance drift", a.driftBps, b.driftBps, pctB, true);
+  for (const p of Object.keys(PAUSE) as PauseRule[]) {
+    const x = a.pause.includes(p), y = b.pause.includes(p);
+    if (x !== y) out.push({ what: `Pause on ${PAUSE[p].label.toLowerCase()}`, from: x ? "on" : "off", to: y ? "on" : "off", t: y ? "up" : "down" });
+  }
+  num("Performance fee", a.fees.performanceBps, b.fees.performanceBps, pctB, true);
+  num("Management fee", a.fees.managementBps, b.fees.managementBps, pctB, true);
+  num("Notice period", a.noticeDays, b.noticeDays, (x) => `${x} days`);
+  if (a.vault.type !== b.vault.type) out.push({ what: "Vault type", from: a.vault.type === "fixed" ? "fixed term" : "open term", to: b.vault.type === "fixed" ? "fixed term" : "open term", t: "neutral" });
+  if (a.vault.access !== b.vault.access) out.push({ what: "Access", from: a.vault.access, to: b.vault.access, t: "neutral" });
+  num("Capacity", a.vault.capacityKas, b.vault.capacityKas, (x) => `${x.toLocaleString("en-US")} KAS`, true);
+  num("Exit fee", a.vault.exitFeeBps, b.vault.exitFeeBps, pctB, true);
+  num("Term", a.vault.termDays, b.vault.termDays, (x) => (x ? `${x} days` : "open"), true);
+  num("Deposit window", a.vault.depositDays, b.vault.depositDays, (x) => (x ? `${x} days` : "—"));
+  num("Redemption window", a.vault.redemptionDays, b.vault.redemptionDays, (x) => (x ? `≤ ${x} days` : "from reserve"), true);
+  return out;
 }
