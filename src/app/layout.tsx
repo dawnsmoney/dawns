@@ -5,6 +5,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { AppProviders } from "@/components/providers";
 import { Header, Footer } from "@/components/layout";
+import { TableLabels } from "@/components/table-labels";
 
 const outfit = localFont({ src: "../fonts/Outfit-Variable.ttf", variable: "--font-outfit", weight: "100 900", display: "swap" });
 const dmSans = localFont({ src: "../fonts/DMSans-Variable.ttf", variable: "--font-dmsans", weight: "100 1000", display: "swap" });
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <AppProviders>
           <Header />
+          <TableLabels />
           <main>{children}</main>
           <Footer />
         </AppProviders>

@@ -22,7 +22,7 @@ export default async function NewStrategyPage({ searchParams }: { searchParams: 
     <>
       <Banner short crumb={[{ href: "/strategies", label: "Strategies" }, ...(base ? [{ href: `/strategies/${base.id}`, label: base.doc.name }] : []), { label: base ? `New version` : "New" }]}
         title={base ? `New version of ${base.doc.name}` : "Create a strategy"}
-        lede="Up to four opportunities, one per covenant slot. Every number on the right is computed from live on-chain data as you change the left." />
+        lede="Up to four opportunities, one per covenant slot. Every number in the preview is computed from live on-chain data as you change the terms." />
       <div className="wrap" style={{ paddingTop: 40 }}>
         <StrategyBuilder opps={s.opportunities} kasUsd={s.kasUsd} from={base ? { id: base.id, version: base.version, doc: base.doc } : null} start={copy} />
       </div>

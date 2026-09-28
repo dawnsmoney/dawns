@@ -40,7 +40,7 @@ export function ApyWaterfall({ ev }: { ev: Evaluation }) {
         </div>
       ))}
       {paused.length > 0 && <p className="muted" style={{ fontSize: 13, margin: "4px 0 0" }}>{paused.join(", ")} {paused.length > 1 ? "are" : "is"} paused by the strategy&apos;s rules: {paused.length > 1 ? "their" : "its"} share would wait in reserve and earn nothing until the market reopens.</p>}
-      <div className="split-tip">{on != null ? <span>{rows[on].sub}</span> : <span className="muted">Hover a step for how it is counted</span>}</div>
+      <div className="split-tip">{on != null ? <span>{rows[on].sub}</span> : <span className="muted hint">Hover a step for how it is counted</span>}</div>
     </div>
   );
 }
@@ -277,7 +277,7 @@ export function NetHistory({ days, lines }: { days: string[]; lines: { key: stri
         {lines.map((l) => <path key={l.key} d={path(l.values)} fill="none" stroke={l.color} strokeWidth={2} strokeLinejoin="round" />)}
         {lines.map((l) => l.values.map((v, i) => v != null && (n === 1 || hi === i) ? <circle key={l.key + i} cx={x(i)} cy={y(v)} r={4} fill={l.color} stroke="var(--card)" strokeWidth={2} /> : null))}
       </svg>
-      <div className="split-tip">{hi != null ? <span><b>{days[hi]}</b>{lines.map((l) => l.values[hi] != null ? <span key={l.key} style={{ marginLeft: 12 }}><i style={{ background: l.color, display: "inline-block", width: 10, height: 10, borderRadius: 3, marginRight: 6 }} />{l.name} {p1(l.values[hi]!, 1)}</span> : null)}</span> : <span className="muted">Hover for a day&apos;s readings</span>}</div>
+      <div className="split-tip">{hi != null ? <span><b>{days[hi]}</b>{lines.map((l) => l.values[hi] != null ? <span key={l.key} style={{ marginLeft: 12 }}><i style={{ background: l.color, display: "inline-block", width: 10, height: 10, borderRadius: 3, marginRight: 6 }} />{l.name} {p1(l.values[hi]!, 1)}</span> : null)}</span> : <span className="muted hint">Hover for a day&apos;s readings</span>}</div>
       <div className="split-legend">{lines.map((l) => <span key={l.key}><i style={{ background: l.color }} />{l.name}</span>)}</div>
     </div>
   );

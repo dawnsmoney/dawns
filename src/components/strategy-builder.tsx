@@ -195,7 +195,15 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
         </div>
       </div>
 
-      <aside className="st-preview">
+      {doc.legs.length > 0 && (
+        <a className="st-mbar" href="#st-preview" aria-label="Jump to the live preview">
+          <span><small>Net APY</small><b>{ev.net != null ? pct(ev.net, 1) : "—"}</b></span>
+          <span><small>Out now</small><b>{pct(ev.exitNow, 0)}</b></span>
+          <span><small>Reserve</small><b>{bp(doc.reserveBps)}</b></span>
+          <Pill t={ev.status}>{ev.statusText}</Pill>
+        </a>
+      )}
+      <aside className="st-preview" id="st-preview">
         <div className="card">
           <div className="c-head"><h3>{doc.name || "Your strategy"}</h3><Pill t={doc.legs.length ? ev.status : "info"}>{doc.legs.length ? ev.statusText : "Empty"}</Pill></div>
           {doc.legs.length > 0 ? (

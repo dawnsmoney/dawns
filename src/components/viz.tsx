@@ -24,7 +24,7 @@ export function SplitBar({ parts, height = 34, label, legend = true, tip = true 
             style={{ flexGrow: p.share / total, background: p.color, opacity: hover && hover !== p.key ? 0.45 : 1 }} aria-label={`${p.label} ${pctS(p.share / total, 1)}`} />
         ))}
       </div>
-      {tip && <div className="split-tip" aria-live="polite">{on ? <><i style={{ background: on.color }} /><b>{on.label}</b> {pctS(on.share / total, 1)}{on.note ? <span className="muted"> · {on.note}</span> : null}</> : <span className="muted">Hover a segment</span>}</div>}
+      {tip && <div className="split-tip" aria-live="polite">{on ? <><i style={{ background: on.color }} /><b>{on.label}</b> {pctS(on.share / total, 1)}{on.note ? <span className="muted"> · {on.note}</span> : null}</> : <span className="muted hint">Hover a segment</span>}</div>}
       {legend && (
         <div className="split-legend">
           {parts.map((p) => (
@@ -196,7 +196,7 @@ export function StackedCols({ cols, keys, label }: { cols: { key: string; label:
           );
         })}
       </div>
-      <div className="split-tip" aria-live="polite">{on ? <><b>{on.label}</b>{keys.filter((k) => (on.parts[k.key] ?? 0) > 0.0005).map((k) => <span key={k.key} style={{ marginLeft: 10 }}><i style={{ background: k.color }} />{k.label} {pctS(on.parts[k.key], 1)}</span>)}</> : <span className="muted">Hover a column</span>}</div>
+      <div className="split-tip" aria-live="polite">{on ? <><b>{on.label}</b>{keys.filter((k) => (on.parts[k.key] ?? 0) > 0.0005).map((k) => <span key={k.key} style={{ marginLeft: 10 }}><i style={{ background: k.color }} />{k.label} {pctS(on.parts[k.key], 1)}</span>)}</> : <span className="muted hint">Hover a column</span>}</div>
       <div className="split-legend">{keys.map((k) => <span key={k.key}><i style={{ background: k.color }} />{k.label}</span>)}</div>
     </div>
   );

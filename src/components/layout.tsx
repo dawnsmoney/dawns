@@ -49,9 +49,9 @@ export function Header() {
       <button type="button" className={`navbtn ${inExplore || open ? "on" : ""}`} aria-expanded={open} aria-controls="explore-menu" onClick={() => setOpen((v) => !v)}>
         <span className="dot" />Explore<Chevron className={`chev ${open ? "up" : ""}`} />
       </button>
-      <Link href="/allocate" className={active("/allocate") ? "on" : ""} aria-current={active("/allocate") ? "page" : undefined}>Allocate</Link>
+      <Link href="/allocate" className={`hide-sm ${active("/allocate") ? "on" : ""}`} aria-current={active("/allocate") ? "page" : undefined}>Allocate</Link>
       <Link href="/watchlist" className={active("/watchlist") ? "on" : ""}>
-        Watchlist
+        <span className="hide-xs">Watchlist</span>
         {count > 0 && <span className="cnt">{count}</span>}
         <span className="go"><Arrow /></span>
       </Link>
@@ -71,8 +71,8 @@ export function Header() {
             <div className="navcard" id="explore-menu">
               <nav className="pillnav bare" aria-label="Main">{row}</nav>
               <ul>
-                {EXPLORE.map((n) => (
-                  <li key={n.href}>
+                {[...EXPLORE, { href: "/allocate", label: "Allocate", badge: undefined as string | undefined, sm: true }].map((n) => (
+                  <li key={n.href} className={"sm" in n ? "only-sm" : undefined}>
                     <Link href={n.href} className={active(n.href) ? "on" : ""} aria-current={active(n.href) ? "page" : undefined}>
                       <span>{n.label}{n.badge && <span className={`badge ${n.badge === "New" ? "new" : ""}`}>{n.badge}</span>}</span>
                       <Arrow className="arr" />

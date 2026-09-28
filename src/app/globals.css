@@ -931,3 +931,83 @@ textarea.st-ta:focus{outline:none;border-color:rgba(123,108,255,.8)}
 .olog-what{display:grid;gap:2px}
 .olog-what small{color:var(--ink-3);font-size:12.5px}
 @media (max-width:560px){.olog-row{grid-template-columns:14px minmax(0,1fr)}.olog-when{grid-column:2;grid-row:1}.olog-dot{grid-row:1/3}.olog-what{grid-column:2}}
+
+/* =====================================================================
+   Phones. Grid children never force their track wider than the screen;
+   wide tables become stacked cards; the league table becomes cards.
+   ===================================================================== */
+.grid > *, .wrap > *, .vcards > *, .flow > *, .st-tiles > *{min-width:0}
+.only-sm{display:none}
+@media (max-width:760px){
+  .g2,.g3,.gA{grid-template-columns:minmax(0,1fr)}
+  .card{padding:18px}
+  .card.flush{padding:0}
+  .c-head{flex-wrap:wrap;gap:8px}
+  .c-head .tag{white-space:normal}
+  h1{overflow-wrap:anywhere}
+  svg{max-width:100%}
+}
+@media (max-width:520px){
+  .hide-sm{display:none!important}
+  .only-sm{display:list-item}
+  .pillnav{overflow:visible}
+  .pillnav a,.pillnav .navbtn{padding:8px 10px}
+}
+@media (max-width:380px){.hide-xs{display:none}}
+
+/* tables on phones: one card per row, each cell labelled with its column */
+@media (max-width:640px){
+  .tbl-wrap{overflow:visible}
+  .tbl-wrap table,.tbl-wrap tbody,.tbl-wrap tr,.tbl-wrap td{display:block;width:100%}
+  .tbl-wrap thead{display:none}
+  .tbl-wrap tr{padding:14px 16px;border-bottom:1px solid var(--line)}
+  .tbl-wrap tr:last-child{border-bottom:0}
+  .tbl-wrap td{display:grid;grid-template-columns:minmax(84px,38%) minmax(0,1fr);column-gap:14px;row-gap:2px;align-items:start;padding:5px 0;border:0;text-align:right;white-space:normal;max-width:none!important}
+  .tbl-wrap td > *{grid-column:2;justify-self:end}
+  .tbl-wrap td::before{content:attr(data-label);grid-column:1;grid-row:1 / span 6;text-align:left;font:500 12.5px var(--display);color:var(--ink-3);padding-top:2px}
+  .tbl-wrap td[data-label=""]::before,.tbl-wrap td:not([data-label])::before{display:none}
+  .tbl-wrap td:first-child{display:block;text-align:left;padding:0 0 8px}
+  .tbl-wrap td:first-child::before{display:none}
+  .tbl-wrap td > *{min-width:0}
+  .tbl-wrap td small{white-space:normal!important}
+  table.opps-tbl td:first-child,table.opps-tbl th:first-child,table.opps-tbl td:last-child{padding-left:0;padding-right:0}
+  table.opps-tbl .opp-name{max-width:none}
+  .tbl-wrap td[colspan]{display:block;text-align:left}
+}
+
+/* the protocol league table on phones */
+@media (max-width:760px){
+  .lt-wrap{overflow:visible}
+  .lt{min-width:0}
+  .lt .hd{display:none}
+  .lt .rw{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:"p p w" "tvl d24 d7" "u u h";gap:10px 12px;padding:16px;min-height:0}
+  .lt .rw > :nth-child(1){grid-area:p}
+  .lt .rw > :nth-child(2){grid-area:tvl;justify-self:start;text-align:left}
+  .lt .rw > :nth-child(3){grid-area:d24}
+  .lt .rw > :nth-child(4){grid-area:d7}
+  .lt .rw > :nth-child(5),.lt .rw > :nth-child(7){display:none}
+  .lt .rw > :nth-child(6){grid-area:u;justify-self:start;text-align:left}
+  .lt .rw > :nth-child(8){grid-area:h}
+  .lt .rw > :nth-child(9){grid-area:w;align-self:start}
+  .lt .rw > :nth-child(2)::before{content:"TVL";display:block;font:500 11.5px var(--display);color:var(--ink-3)}
+  .lt .rw > :nth-child(3)::before{content:"24h";display:block;font:500 11.5px var(--display);color:var(--ink-3)}
+  .lt .rw > :nth-child(4)::before{content:"7d";display:block;font:500 11.5px var(--display);color:var(--ink-3)}
+}
+/* touch screens: no hover, so no "hover a segment" hints; tapping a mark still shows its detail */
+@media (hover:none){.split-tip:has(> .hint:only-child){display:none}}
+@media (max-width:560px){
+  .st-term small{display:none}
+  .st-pre{max-height:220px}
+  .st-tile b{font-size:24px}
+  .eyebrow{letter-spacing:.06em}
+}
+/* builder on phones: the preview sits below the form, so a bar keeps its key numbers in view */
+.st-mbar{display:none}
+@media (max-width:1000px){
+  .st-mbar{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:25;display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:10px;align-items:center;padding:10px 14px;border-radius:16px;background:rgba(36,29,85,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 12px 30px rgba(0,0,0,.45),inset 0 0 0 1px rgba(160,145,255,.35);color:var(--ink);text-decoration:none}
+  .st-mbar span{display:grid}
+  .st-mbar small{color:var(--ink-3);font-size:11px}
+  .st-mbar b{font:600 16px var(--display)}
+  .st-build{padding-bottom:84px}
+  .st-preview{scroll-margin-top:90px}
+}
