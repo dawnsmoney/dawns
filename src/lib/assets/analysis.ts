@@ -1,6 +1,7 @@
 import type { Status } from "../types";
 import { CHAIN_NAME, STANDARD_NAME, valueCredible, type Asset } from "./types";
 import { CURATED, BRIDGED } from "./profiles";
+import { holderCat } from "./holders";
 
 const pct = (x: number, d = 0) => `${(x * 100).toFixed(d)}%`;
 const usd = (x: number) => (x >= 1e9 ? `$${(x / 1e9).toFixed(2)}B` : x >= 1e6 ? `$${(x / 1e6).toFixed(2)}M` : x >= 1e3 ? `$${(x / 1e3).toFixed(1)}K` : `$${x.toFixed(0)}`);
@@ -40,16 +41,20 @@ export function analyse(a: Asset): Analysis {
 
   // distribution
   if (a.top10 != null) {
-    // contracts (pools, markets, bridges) and exchanges hold on behalf of many; burned supply is gone
-    const sum = (f: (h: NonNullable<Asset["topHolders"]>[number]) => boolean) => (a.topHolders ?? []).filter(f).reduce((s, h) => s + h.share, 0);
-    const inContracts = sum((h) => h.contract);
-    const onExchanges = sum((h) => !h.contract && h.kind === "exchange");
-    const burned = sum((h) => h.kind === "burn");
-    const wallets = Math.max(0, a.top10 - inContracts - onExchanges - burned);
-    const parts = [inContracts >= 0.01 && `${pct(inContracts)} in contracts (pools, markets, bridges)`, onExchanges >= 0.01 && `${pct(onExchanges)} on exchanges`, burned >= 0.01 && `${pct(burned)} burned`, `${pct(wallets)} in other wallets`].filter(Boolean);
+    // who holds it, by kind: pools/markets/staking and exchanges hold for many; vesting and
+    // treasuries are supply that can come to market later; burned supply is gone
+    const by = (keys: string[]) => (a.topHolders ?? []).filter((h) => keys.includes(holderCat(h))).reduce((s, h) => s + h.share, 0);
+    const forMany = by(["pool", "staking", "exchange"]);
+    const locked = by(["vesting", "multisig", "contract"]);
+    const burned = by(["burn"]);
+    const wallets = by(["wallet"]);
     const t: Status = wallets >= 0.8 ? "crit" : wallets >= 0.5 ? "warn" : "good";
-    flags.push([t, `The 10 largest addresses hold ${pct(a.top10)} of supply${parts.length > 1 ? `: ${parts.join(", ")}` : ""}.`]);
-    if (onExchanges >= 0.1) questions.push("How much of the supply on exchanges is liquid, and how quickly could it be sold?");
+    flags.push([t, `The 10 largest addresses hold ${pct(a.top10)} of supply: ${[forMany >= 0.01 && `${pct(forMany)} in pools, markets, staking and exchanges`, locked >= 0.01 && `${pct(locked)} in vesting, treasuries and other contracts`, burned >= 0.01 && `${pct(burned)} burned`, `${pct(wallets)} in large wallets`].filter(Boolean).join(", ")}.`]);
+    if (locked >= 0.3) {
+      flags.push(["warn", `${pct(locked)} of supply sits in vesting contracts and treasuries: it can reach the market as it unlocks.`]);
+      questions.push("What is the unlock schedule of the vesting and treasury holdings?");
+    }
+    if (forMany >= 0.1 && by(["exchange"]) >= 0.1) questions.push("How much of the supply on exchanges is liquid, and how quickly could it be sold?");
     if (wallets >= 0.5) questions.push("Who are the largest holders: the team, a fund, or individuals? Can they exit into the available liquidity?");
   }
   if (a.holders != null && a.holders < 100 && a.standard !== "native") flags.push(["warn", `Only ${n(a.holders)} holders.`]);
@@ -108,4 +113,42 @@ function generated(a: Asset): string {
   else if (a.price != null && a.mcap != null) parts.push("It has a last trade price, but too little trading to put a meaningful value on its supply.");
   if (a.pools.length) parts.push(`It is in ${a.pools.length} DeFi venue${a.pools.length > 1 ? "s" : ""} dawns watches.`);
   return parts.join(" ");
+}
+
+/**
+ * The reading as a scorecard: one tile per dimension, each with a status, a headline number
+ * and a few words. Built from the same measured fields as the flags.
+ */
+export function dimensions(a: Asset, r: Analysis): { key: string; title: string; t: Status; big: string; small: string }[] {
+  const tiles: { key: string; title: string; t: Status; big: string; small: string }[] = [];
+  const find = (re: RegExp) => r.flags.find(([, f]) => re.test(f));
+  // market
+  const credible = valueCredible(a);
+  const otc = !!a.priceSrc?.startsWith("OTC");
+  tiles.push(a.price == null
+    ? { key: "market", title: "Market", t: "warn", big: "No price", small: "nothing dawns can read" }
+    : !credible && a.mcap != null
+      ? { key: "market", title: "Market", t: "warn", big: usd(Math.max(a.vol7 ?? 0, a.vol24 ?? 0)), small: "traded in 7 days: too thin to value it" }
+      : { key: "market", title: "Market", t: otc ? "warn" : "good", big: a.vol24 != null ? usd(a.vol24) : a.liquidity ? usd(a.liquidity) : "—", small: otc ? "OTC quotes only" : a.vol24 != null ? "traded in 24h" : "in DEX pools" });
+  // exit capacity
+  tiles.push(r.capacity
+    ? { key: "exit", title: "Exit in a day", t: r.capacity.usd >= 50_000 ? "good" : r.capacity.usd >= 5_000 ? "info" : "warn", big: `≈ ${usd(r.capacity.usd)}`, small: r.capacity.basis.startsWith("about") ? "at a 2% price move" : "10% of daily volume" }
+    : { key: "exit", title: "Exit in a day", t: "warn", big: "—", small: "no measured market" });
+  // holders
+  const conc = find(/largest addresses hold/);
+  if (a.top10 != null && conc) tiles.push({ key: "holders", title: "Top 10 holders", t: conc[0], big: pct(a.top10), small: conc[0] === "good" ? "mostly pools, markets or exchanges" : "held by few wallets" });
+  else if (a.chain === "zkas") tiles.push({ key: "holders", title: "Holders", t: "info", big: "Private", small: "shielded by design" });
+  // supply
+  const locked = find(/vesting contracts and treasuries/);
+  if (a.net?.inflation != null) tiles.push({ key: "supply", title: "New supply, 12 months", t: a.net.inflation >= 0.2 ? "warn" : "good", big: `+${pct(a.net.inflation, a.net.inflation >= 1 ? 0 : 1)}`, small: "on its emission schedule" });
+  else if (locked) tiles.push({ key: "supply", title: "Locked supply", t: "warn", big: locked[1].match(/^[\d.]+%/)?.[0] ?? "—", small: "vesting and treasuries" });
+  else if (a.state === "minting" && a.mintedShare != null) tiles.push({ key: "supply", title: "Minted", t: "info", big: pct(a.mintedShare), small: "still minting" });
+  else if (a.premineShare != null) tiles.push({ key: "supply", title: "Pre-minted", t: a.premineShare >= 0.1 ? "warn" : "good", big: pct(a.premineShare), small: a.premineShare === 0 ? "fair mint" : "to the deployer" });
+  // security (native)
+  const pr = a.net?.producers;
+  if (pr) tiles.push({ key: "security", title: "Block producers for 50%", t: pr.toMajority <= 1 ? "crit" : pr.toMajority <= 2 ? "warn" : "good", big: String(pr.toMajority), small: `largest makes ${pct(pr.top[0]?.share ?? 0)}` });
+  else if (a.net?.mergedShare != null) tiles.push({ key: "security", title: "Of Kaspa's hashrate", t: "info", big: pct(a.net.mergedShare, 1), small: "merge-mined" });
+  // DeFi
+  tiles.push({ key: "defi", title: "DeFi venues", t: a.pools.length ? "good" : "info", big: String(a.pools.length), small: a.pools.length ? "pools and markets dawns reads" : "only holding" });
+  return tiles.slice(0, 6);
 }

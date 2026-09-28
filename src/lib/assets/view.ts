@@ -1,6 +1,7 @@
 import type { AssetLite } from "@/components/assets";
 import type { Snapshot } from "../types";
 import { analyse } from "./analysis";
+import { supplyParts } from "./holders";
 import { CHAIN_NAME, STANDARD_NAME, assetPath, valueCredible, type Asset } from "./types";
 
 /** An asset is listed by default once something real happens with it. */
@@ -13,6 +14,7 @@ export function toAssetLite(a: Asset): AssetLite {
     id: a.id, path: assetPath(a.id), symbol: a.symbol, name: a.name, chain: a.chain, chainName: CHAIN_NAME[a.chain],
     standard: a.standard, standardName: STANDARD_NAME[a.standard],
     price: a.price, mcap: a.mcap, credible: valueCredible(a), vol24: a.vol24, holders: a.holders, liquidity: a.liquidity, top10: a.top10,
+    split: supplyParts(a.topHolders, a.top10).map((p) => ({ key: p.key, label: p.label, color: p.color, share: p.share })),
     venues: a.pools.length, grade: r.grade.t, gradeLabel: r.grade.label, significant: significant(a),
   };
 }

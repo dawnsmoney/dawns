@@ -4,6 +4,7 @@ import { track } from "@/lib/track";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AssetCoin, Pill } from "./bits";
+import { SplitBar } from "./viz";
 import { allocate, checkPlan, project, usdPolicy, defaultPerProtocol, parsePolicy, DEFAULT_POLICY, type Avoid, type ExitNeed, type Policy, type Risk, type Unit } from "@/lib/allocator";
 import { usd, pct } from "@/lib/format";
 import type { Opportunity } from "@/lib/types";
@@ -155,16 +156,15 @@ export function Allocator({ opps, kasUsd }: { opps: Opportunity[]; kasUsd: numbe
             <div className="eyebrow muted" style={{ marginBottom: 10 }}>When you may need the money back</div>
             <Choice items={EXITS} value={policy.exit} onPick={(v) => set({ exit: v })} />
           </div>
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-end" }}>
-            <div style={{ display: "grid", gap: 8 }}>
-              <span className="eyebrow muted">Amount</span>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div className="fields">
+            <div className="field">
+              <div className="field-h"><span className="eyebrow muted">Amount</span>{kasUsd && <small className="muted">{inKas ? `≈ ${usd(up.amount)}` : `≈ ${Math.round(policy.amount / kasUsd).toLocaleString("en-US")} KAS`}</small>}</div>
+              <div className="inp">
                 <input inputMode="decimal" value={amountText} aria-label={`Amount in ${policy.unit ?? "USD"}`}
-                  onChange={(e) => { setAmountText(e.target.value); const n = Number(e.target.value.replace(/[^0-9.]/g, "")); if (n >= 100 && n <= 1e10) set({ amount: Math.round(n) }); }}
-                  style={{ font: "600 22px var(--display)", background: "rgba(0,0,0,.2)", border: "1px solid var(--line-2)", borderRadius: 12, padding: "10px 14px", color: "#fff", width: 170 }} />
+                  onChange={(e) => { setAmountText(e.target.value); const n = Number(e.target.value.replace(/[^0-9.]/g, "")); if (n >= 100 && n <= 1e10) set({ amount: Math.round(n) }); }} />
                 <div className="seg" role="group" aria-label="Unit">
                   {(["USD", "KAS"] as Unit[]).map((u) => (
-                    <button key={u} type="button" className={(policy.unit ?? "USD") === u ? "on" : ""} disabled={u === "KAS" && !kasUsd}
+                    <button key={u} type="button" className={(policy.unit ?? "USD") === u ? "on" : ""} disabled={u === "KAS" && !kasUsd} aria-pressed={(policy.unit ?? "USD") === u}
                       onClick={() => {
                         const cur = policy.unit ?? "USD";
                         if (u === cur || !kasUsd) return;
@@ -175,30 +175,34 @@ export function Allocator({ opps, kasUsd }: { opps: Opportunity[]; kasUsd: numbe
                   ))}
                 </div>
               </div>
-              {kasUsd && <small className="muted">{inKas ? `≈ ${usd(up.amount)} at $${kasUsd.toPrecision(3)} per KAS` : `≈ ${Math.round(policy.amount / kasUsd).toLocaleString("en-US")} KAS`}</small>}
             </div>
-            <label style={{ display: "grid", gap: 8 }}>
-              <span className="eyebrow muted">Horizon</span>
-              <select value={policy.horizon ?? 6} onChange={(e) => set({ horizon: Number(e.target.value) })} aria-label="Horizon in months" className="sel">
-                {[1, 3, 6, 12, 24].map((m) => <option key={m} value={m}>{m} month{m > 1 ? "s" : ""}</option>)}
-              </select>
-            </label>
-            <label style={{ display: "grid", gap: 8, minWidth: 200 }}>
-              <span className="eyebrow muted">Most in one protocol: {pct(policy.maxProtocol ?? defaultPerProtocol(policy.risk), 0)}</span>
-              <input type="range" min={10} max={100} step={5} value={Math.round((policy.maxProtocol ?? defaultPerProtocol(policy.risk)) * 100)}
-                onChange={(e) => set({ maxProtocol: Number(e.target.value) / 100 })} aria-label="Most in one protocol, percent" />
-            </label>
-            <label style={{ display: "grid", gap: 8 }}>
-              <span className="eyebrow muted">Target yield (optional)</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <input inputMode="decimal" placeholder="e.g. 8" defaultValue={policy.target != null ? String(Math.round(policy.target * 1000) / 10) : ""} aria-label="Target yield in percent"
-                  onChange={(e) => { const t = e.target.value.trim(); if (!t) { const { target: _t, ...rest } = policy; void _t; setPolicy(rest); return; } const n = Number(t.replace(",", ".")); if (Number.isFinite(n) && n >= 0 && n <= 500) set({ target: n / 100 }); }}
-                  style={{ font: "500 17px var(--display)", background: "rgba(0,0,0,.2)", border: "1px solid var(--line-2)", borderRadius: 12, padding: "10px 12px", color: "#fff", width: 90 }} />
-                <span className="muted">% a year</span>
-              </span>
-            </label>
-            <div style={{ display: "grid", gap: 8 }}>
-              <span className="eyebrow muted">Leave out</span>
+            <div className="field">
+              <div className="field-h"><span className="eyebrow muted">Horizon</span><small className="muted">for the projection</small></div>
+              <div className="seg fill" role="group" aria-label="Horizon">
+                {([[1, "1 mo"], [3, "3 mo"], [6, "6 mo"], [12, "1 yr"], [24, "2 yr"]] as [number, string][]).map(([m, l]) => (
+                  <button key={m} type="button" className={(policy.horizon ?? 6) === m ? "on" : ""} aria-pressed={(policy.horizon ?? 6) === m} onClick={() => set({ horizon: m })}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div className="field">
+              <div className="field-h"><span className="eyebrow muted">Most in one protocol</span><b className="field-v">{pct((policy.maxProtocol ?? defaultPerProtocol(policy.risk)), 0)}</b></div>
+              <div className="rng">
+                <input type="range" min={10} max={100} step={5} value={Math.round((policy.maxProtocol ?? defaultPerProtocol(policy.risk)) * 100)} aria-label="Most in one protocol, percent"
+                  style={{ ["--fill" as string]: `${((Math.round((policy.maxProtocol ?? defaultPerProtocol(policy.risk)) * 100) - 10) / 90) * 100}%` }}
+                  onChange={(e) => set({ maxProtocol: Number(e.target.value) / 100 })} />
+                <div className="rng-ticks" aria-hidden="true"><span>10%</span><span>100%</span></div>
+              </div>
+            </div>
+            <div className="field">
+              <div className="field-h"><span className="eyebrow muted">Target yield</span><small className="muted">optional</small></div>
+              <div className="inp">
+                <input inputMode="decimal" placeholder="e.g. 8" defaultValue={policy.target != null ? String(Math.round(policy.target * 1000) / 10) : ""} aria-label="Target yield in percent a year"
+                  onChange={(e) => { const t = e.target.value.trim(); if (!t) { const { target: _t, ...rest } = policy; void _t; setPolicy(rest); return; } const n = Number(t.replace(",", ".")); if (Number.isFinite(n) && n >= 0 && n <= 500) set({ target: n / 100 }); }} />
+                <span className="inp-suffix">% a year</span>
+              </div>
+            </div>
+            <div className="field wide">
+              <div className="field-h"><span className="eyebrow muted">Leave out</span></div>
               <div className="filters">
                 {AVOIDS.map(([k, label]) => (
                   <button key={k} type="button" className={policy.avoid.includes(k) ? "on" : ""} aria-pressed={policy.avoid.includes(k)}
@@ -239,6 +243,17 @@ export function Allocator({ opps, kasUsd }: { opps: Opportunity[]; kasUsd: numbe
           <p className="foot" style={{ margin: 0 }}>dawns never moves funds. This is not financial advice: rates and liquidity change every block.</p>
         </div>
       </div>
+
+      {/* ---- plan at a glance ---- */}
+      {plan.lines.length > 0 && (
+        <div className="card">
+          <div className="c-head"><h3>Where the {money(up.amount)} goes</h3><span className="tag">{pct(plan.blended, 1)} a year</span></div>
+          <SplitBar label="Suggested split" parts={[
+            ...plan.lines.map((l, i) => ({ key: l.id, label: l.name.replace(/ liquidity$/, ""), color: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"][i % 8], share: l.share, note: `${l.pname} · ${pct(l.apy, 1)} a year` })),
+            ...(plan.cash ? [{ key: "cash", label: "Kept in your wallet", color: "#4A4270", share: plan.cash.share, note: "the reserve" }] : []),
+          ]} />
+        </div>
+      )}
 
       {/* ---- plan ---- */}
       <div className="card flush"><div className="tbl-wrap"><table>

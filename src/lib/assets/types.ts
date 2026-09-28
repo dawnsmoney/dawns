@@ -65,6 +65,7 @@ export interface NetworkStats {
   emissionPerYear: number | null;   // coins minted over the next 12 months, following the chain's schedule
   inflation: number | null;         // emissionPerYear ÷ circulating supply
   emissionBasis?: string;           // how the projection was made
+  path?: { t: number; supply: number }[]; // projected supply, monthly, next 24 months
   mergedShare?: number | null;      // ZKAS: its hashrate ÷ Kaspa's
   producers?: Producers | null;     // ZKAS: who produces the blocks (sampled)
   shielded?: { notes: number; nullifiers: number; turnstileIn: number; turnstileOut: number } | null;

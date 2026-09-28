@@ -22,15 +22,19 @@ export function axisUsd(v: number) {
   return usd(v, v >= 1e6 ? 1 : 0);
 }
 
-export type ValueFormat = "usd" | "usdFull" | "pct";
+export type ValueFormat = "usd" | "usdFull" | "pct" | "num";
+/** Plain quantities (supply, holders): 697M, 12.4K. */
+export const num = (v: number) => (Math.abs(v) >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(Math.abs(v) >= 1e8 ? 0 : 1)}M` : Math.abs(v) >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : v.toFixed(0));
 
 export function formatValue(v: number, f: ValueFormat) {
+  if (f === "num") return num(v);
   if (f === "pct") return pct(v);
   if (f === "usdFull") return usdFull(v);
   return usd(v);
 }
 
 export function formatAxis(v: number, f: ValueFormat) {
+  if (f === "num") return num(v);
   if (f === "pct") return Math.round(v * 100) + "%";
   return axisUsd(v);
 }

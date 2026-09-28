@@ -39,16 +39,24 @@ const units = (v: unknown, dec: number): number | null => {
  * factor at a fixed interval (Kaspa: monthly, ZKas: every ~7.6 days), optionally to a floor.
  * Using today's reward for a whole year overstates a front-loaded schedule several times over.
  */
-export function forwardEmission(o: { reward: number; bps: number; firstStepInS: number; stepS: number; factor: number; floor?: number; floorUntilS?: number; after?: number }) {
+export interface Schedule { reward: number; bps: number; firstStepInS: number; stepS: number; factor: number; floor?: number; floorUntilS?: number; after?: number }
+/** Coins minted from now until `untilS` seconds ahead, following the schedule. */
+export function emissionUntil(o: Schedule, untilS: number) {
   let t = 0, r = o.reward, total = 0, next = Math.max(0, o.firstStepInS);
   const floorAt = (tt: number) => (o.floorUntilS != null && tt >= o.floorUntilS ? o.after ?? o.floor ?? 0 : o.floor ?? 0);
-  while (t < YEAR_S) {
-    const end = Math.min(YEAR_S, next);
+  while (t < untilS) {
+    const end = Math.min(untilS, next, o.floorUntilS != null && o.floorUntilS > t ? o.floorUntilS : Infinity);
     total += Math.max(r, floorAt(t)) * o.bps * (end - t);
     t = end;
     if (t >= next) { r *= o.factor; next += o.stepS; }
   }
   return total;
+}
+export const forwardEmission = (o: Schedule) => emissionUntil(o, YEAR_S);
+/** Supply month by month for the next two years. */
+export function supplyPath(o: Schedule, circ: number) {
+  const M = YEAR_S / 12, now = Date.now();
+  return Array.from({ length: 25 }, (_, m) => ({ t: now + m * M * 1000, supply: circ + emissionUntil(o, m * M) }));
 }
 
 const blank = (a: Pick<Asset, "id" | "chain" | "standard" | "ref" | "symbol" | "name">): Asset => ({
@@ -74,7 +82,8 @@ export async function readKas(s: Snapshot): Promise<Asset> {
   const r = num(reward.blockreward);
   // Kaspa's reward falls every month by 2^(-1/12): it halves every year
   const firstStep = halving?.nextHalvingTimestamp ? halving.nextHalvingTimestamp - Date.now() / 1000 : 30.44 * 86400;
-  const perYear = r != null ? forwardEmission({ reward: r, bps, firstStepInS: firstStep, stepS: 30.44 * 86400, factor: Math.pow(2, -1 / 12) }) : null;
+  const kasSched: Schedule | null = r != null ? { reward: r, bps, firstStepInS: firstStep, stepS: 30.44 * 86400, factor: Math.pow(2, -1 / 12) } : null;
+  const perYear = kasSched ? forwardEmission(kasSched) : null;
   Object.assign(a, {
     decimals: 8, supply: circ, maxSupply: units(supply.maxSupply, 8), launched: Date.UTC(2021, 10, 7),
     price: s.kasUsd, priceSrc: "CoinGecko via DefiLlama", mcap: s.kasUsd != null && circ != null ? s.kasUsd * circ : null,
@@ -85,6 +94,7 @@ export async function readKas(s: Snapshot): Promise<Asset> {
     nextReduction: halving && num(halving.nextHalvingAmount) != null ? { at: halving.nextHalvingTimestamp * 1000, amount: halving.nextHalvingAmount } : null,
     emissionPerYear: perYear, inflation: perYear != null && circ ? perYear / circ : null, daa: null,
     emissionBasis: "next 12 months: the reward falls every month and halves each year",
+    path: kasSched && circ ? supplyPath(kasSched, circ) : undefined,
   };
   a.net = net;
   return a;
@@ -114,9 +124,10 @@ export async function readZkas(kasHashrate: number | null): Promise<Asset> {
   // to a 6 ZKAS tail at ~month 10, then 0.6 ZKAS forever from month 24 after launch.
   const launch = Date.UTC(2026, 6, 26) / 1000;
   const factor = halving && r ? halving.nextHalvingAmount / r : null;
-  const perYear = r != null && halving && factor && factor > 0 && factor < 1
-    ? forwardEmission({ reward: r, bps: 1, firstStepInS: halving.nextHalvingTimestamp - Date.now() / 1000, stepS: 7.6 * 86400, factor, floor: 6, floorUntilS: launch + 2 * YEAR_S - Date.now() / 1000, after: 0.6 })
+  const zkSched: Schedule | null = r != null && halving && factor && factor > 0 && factor < 1
+    ? { reward: r, bps: 1, firstStepInS: halving.nextHalvingTimestamp - Date.now() / 1000, stepS: 7.6 * 86400, factor, floor: 6, floorUntilS: launch + 2 * YEAR_S - Date.now() / 1000, after: 0.6 }
     : null;
+  const perYear = zkSched ? forwardEmission(zkSched) : null;
   const venues = otc?.sources ? Object.keys(otc.sources) : [];
   const px = otc && !otc.stale ? num(otc.zkasUsd) : null;
   Object.assign(a, {
@@ -129,6 +140,7 @@ export async function readZkas(kasHashrate: number | null): Promise<Asset> {
     nextReduction: halving && !halving.atTailFloor && num(halving.nextHalvingAmount) != null ? { at: halving.nextHalvingTimestamp * 1000, amount: halving.nextHalvingAmount } : null,
     emissionPerYear: perYear, inflation: perYear != null && circ ? perYear / circ : null,
     emissionBasis: "next 12 months on its published schedule: a step down every ~7.6 days to a 6 ZKAS tail",
+    path: zkSched && circ ? supplyPath(zkSched, circ) : undefined,
     mergedShare: hashrate != null && kasHashrate ? hashrate / kasHashrate : null,
     shielded: shielded ? { notes: shielded.noteCount, nullifiers: shielded.nullifierCount, turnstileIn: units(shielded.turnstileIn, 8) ?? 0, turnstileOut: units(shielded.turnstileOut, 8) ?? 0 } : null,
     daa: num(dag.virtualDaaScore),

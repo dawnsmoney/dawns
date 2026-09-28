@@ -3,11 +3,13 @@ import Link from "next/link";
 import { Fragment } from "react";
 import { notFound } from "next/navigation";
 import { Banner } from "@/components/Banner";
-import { Pill, ProtocolCoin } from "@/components/bits";
-import { RangeChart } from "@/components/charts";
+import { Pill } from "@/components/bits";
+import { RangeChart, AreaChart } from "@/components/charts";
 import { OpportunityTable } from "@/components/opportunities";
 import { getAssets, getAssetHistory } from "@/lib/assets";
-import { analyse } from "@/lib/assets/analysis";
+import { analyse, dimensions } from "@/lib/assets/analysis";
+import { supplyParts, holderCat, catOf } from "@/lib/assets/holders";
+import { SplitBar, Ring, Tiles, Bars, Compare } from "@/components/viz";
 import { CURATED } from "@/lib/assets/profiles";
 import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, valueCredible, type Asset, type AssetChain, type AssetStandard } from "@/lib/assets/types";
 import { getSnapshot } from "@/lib/snapshot";
@@ -53,6 +55,9 @@ export default async function AssetPage({ params }: P) {
   if (!a) notFound();
   const [s, hist] = await Promise.all([getSnapshot(), getAssetHistory(a.id)]);
   const r = analyse(a);
+  const tiles = dimensions(a, r);
+  const parts = supplyParts(a.topHolders, a.top10);
+  const gap = a.poolPrice != null && a.price != null && Math.abs(a.price / a.poolPrice - 1) >= 0.05;
   const cur = CURATED[a.id];
   const opps = s.opportunities.filter((o) => a.pools.includes(o.id));
   const held = holdingsOf(a, s);
@@ -70,77 +75,80 @@ export default async function AssetPage({ params }: P) {
         lede={r.what} />
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
         <div className="grid g3">
-          <Stat label="Price" value={price(a.price)} sub={a.poolPrice != null && a.price != null && Math.abs(a.price / a.poolPrice - 1) >= 0.05
-            ? `${a.priceSrc} · ${price(a.poolPrice)} in its ${CHAIN_NAME[a.chain]} pools (${a.price > a.poolPrice ? `${(a.price / a.poolPrice).toFixed(1)}× lower` : `${(a.poolPrice / a.price).toFixed(1)}× higher`})`
-            : a.priceSrc} />
-          <Stat label={a.standard === "native" ? "Market value" : "Value on chain"} value={a.mcap != null ? usd(a.mcap) : "—"} sub={a.mcap == null ? "no price to value it" : valueCredible(a) ? "price × circulating supply" : "not realizable: too little trading behind the price"} />
-          <Stat label="Traded 24h" value={a.vol24 != null ? usd(a.vol24) : "—"} sub={a.volSrc ?? "not measured"} />
-          <Stat label="Holders" value={a.holders != null ? a.holders.toLocaleString("en-US") : a.chain === "zkas" ? "Shielded" : "—"} sub={a.top10 != null ? `10 largest hold ${pct(a.top10, 0)}` : a.chain === "zkas" ? "balances are private by design" : null} />
-          <Stat label="In DeFi" value={a.liquidity ? usd(a.liquidity) : `${opps.length} venues`} sub={a.liquidity ? `in ${a.pools.length} pools and markets dawns reads` : opps.length ? "lending and pools dawns reads" : "no DeFi venue dawns reads"} />
-          <Stat label="Could leave in a day" value={r.capacity ? `≈ ${usd(r.capacity.usd)}` : "—"} sub={r.capacity ? `rough guide: ${r.capacity.basis}` : "no measured market"} />
+          <Stat label="Price" value={price(a.price)} sub={a.priceSrc} />
+          <Stat label={a.standard === "native" ? "Market value" : "Value on chain"} value={a.mcap != null ? usd(a.mcap) : "—"} sub={a.mcap == null ? "no price to value it" : valueCredible(a) ? "price × circulating supply" : "not realizable: too little trading"} />
+          <Stat label="Holders" value={a.holders != null ? a.holders.toLocaleString("en-US") : a.chain === "zkas" ? "Shielded" : "—"} sub={a.chain === "zkas" ? "balances are private by design" : a.holdersAt ? `top holders read ${when(a.holdersAt)}` : null} />
         </div>
 
-        <div className="grid gA">
-          <div className="card">
-            <div className="c-head"><h3>dawns&apos; reading</h3><Pill t={r.grade.t}>{r.grade.label}</Pill></div>
-            <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 10, color: "var(--ink-2)" }}>
-              {r.flags.map(([t, f]) => <li key={f}><Pill t={t}>{t === "crit" ? "High" : t === "warn" ? "Watch" : t === "good" ? "OK" : "Note"}</Pill> {f}</li>)}
-              {!r.flags.length && <li>Nothing stands out in the data dawns reads.</li>}
-            </ul>
-            <p className="muted" style={{ fontSize: 13, marginTop: 16, marginBottom: 0 }}>Research, not advice: dawns states what the data shows and what it cannot show. It never says buy or sell.</p>
-          </div>
-          <div className="card">
-            <div className="c-head"><h3>Questions to investigate</h3></div>
-            <ol style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 10, color: "var(--ink-2)" }}>
-              {r.questions.map((q) => <li key={q}>{q}</li>)}
-              {!r.questions.length && <li>Who holds it, and why? What is it used for beyond trading?</li>}
-            </ol>
-          </div>
+        <div className="card">
+          <div className="c-head"><h3>dawns&apos; reading</h3><Pill t={r.grade.t}>{r.grade.label}</Pill></div>
+          <Tiles tiles={tiles} />
+          <details className="more">
+            <summary>All findings ({r.flags.length}) and questions to investigate ({r.questions.length})</summary>
+            <div className="grid gA" style={{ marginTop: 16 }}>
+              <ul className="findings">{r.flags.map(([t, f]) => <li key={f}><Pill t={t}>{t === "crit" ? "High" : t === "warn" ? "Watch" : t === "good" ? "OK" : "Note"}</Pill> {f}</li>)}</ul>
+              <ol className="findings">{r.questions.map((q) => <li key={q}>{q}</li>)}</ol>
+            </div>
+          </details>
+          <p className="muted" style={{ fontSize: 13, marginTop: 14, marginBottom: 0 }}>Research, not advice: dawns shows what the data says and what it cannot show. It never says buy or sell.</p>
         </div>
 
-        <div className="grid gA">
+        {gap && a.price != null && a.poolPrice != null && (
           <div className="card">
-            <div className="c-head"><h3>Supply</h3></div>
-            <dl className="kv">
-              <dt>Circulating</dt><dd>{whole(a.supply, a.symbol)}</dd>
-              <dt>Maximum</dt><dd>{a.maxSupply != null ? whole(a.maxSupply, a.symbol) : a.standard === "native" && a.chain === "zkas" ? "No cap: perpetual tail emission" : "—"}</dd>
-              {a.mintedShare != null && <><dt>Minted</dt><dd>{pct(a.mintedShare, 1)}{a.state === "finished" ? " · minting finished" : " · still minting"}</dd></>}
-              {a.premineShare != null && <><dt>Pre-minted</dt><dd>{pct(a.premineShare, 1)} of maximum</dd></>}
-              {a.net?.blockReward != null && <><dt>Block reward</dt><dd>{a.net.blockReward.toFixed(4)} {a.symbol} × {a.net.bps != null ? a.net.bps.toFixed(a.net.bps < 2 ? 2 : 0) : "?"} blocks/s</dd></>}
-              {a.net?.emissionPerYear != null && <><dt>Next 12 months</dt><dd>+{whole(a.net.emissionPerYear, a.symbol)}{a.net.inflation != null ? ` · +${pct(a.net.inflation, a.net.inflation >= 1 ? 0 : 1)} of circulating` : ""}{a.net.emissionBasis ? <small className="muted" style={{ display: "block" }}>{a.net.emissionBasis}</small> : null}</dd></>}
+            <div className="c-head"><h3>Two prices</h3><span className="tag">{a.price > a.poolPrice ? `${(a.price / a.poolPrice).toFixed(1)}× apart` : `${(a.poolPrice / a.price).toFixed(1)}× apart`}</span></div>
+            <Compare a={{ label: "Headline (CoinGecko)", value: a.price, display: price(a.price) }} b={{ label: `Its ${CHAIN_NAME[a.chain]} pools`, value: a.poolPrice, display: price(a.poolPrice) }} />
+            <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>What you could sell for on {CHAIN_NAME[a.chain]} is the pool price.</p>
+          </div>
+        )}
+
+        <div className="grid gA">
+          {parts.length > 0 ? (
+            <div className="card">
+              <div className="c-head"><h3>Who holds it</h3>{a.top10 != null && <span className="tag">top 10: {pct(a.top10, 0)}</span>}</div>
+              <SplitBar parts={parts.map((p) => ({ key: p.key, label: p.label, color: p.color, share: p.share }))} label={`${a.symbol} supply by holder kind`} />
+              <div style={{ marginTop: 20 }}>
+                <Bars rows={(a.topHolders ?? []).map((h, i) => ({ key: h.address, label: h.label ?? short(h.address), sub: `#${i + 1} · ${catOf(holderCat(h))?.label ?? ""}`, value: h.share, display: pct(h.share, 1), color: catOf(holderCat(h))?.color }))} />
+              </div>
+              {a.standard === "krc20" && <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>Names from the list the Kaspa REST API publishes. An unnamed address may still be an exchange or a marketplace escrow.</p>}
+            </div>
+          ) : a.net ? null : (
+            <div className="card"><div className="c-head"><h3>Who holds it</h3></div><p className="muted" style={{ margin: 0 }}>Not read yet. dawns reads the holder lists of the most significant assets first.</p></div>
+          )}
+
+          <div className="card">
+            <div className="c-head"><h3>Supply</h3><span className="tag">{whole(a.supply, a.symbol)}</span></div>
+            {a.net?.path?.length ? (
+              <AreaChart label={`${a.symbol} supply, next 24 months`} dates={a.net.path.map((x) => x.t)} series={[{ name: "Supply", color: "#9085e9", values: a.net.path.map((x) => x.supply) }]} fmt="num" zero={false} height={200} />
+            ) : null}
+            <div className="rings">
+              {a.maxSupply != null && a.supply != null && a.maxSupply > 0 && <Ring value={a.supply / a.maxSupply} label={a.standard === "krc20" ? "Minted" : "Of max supply"} sub={`of ${whole(a.maxSupply, a.symbol)}`} color="#9085e9" />}
+              {a.premineShare != null && a.premineShare > 0 && <Ring value={a.premineShare} label="Pre-minted" sub="to the deployer" color="#c98500" />}
+              {a.net?.inflation != null && <Ring value={Math.min(1, a.net.inflation)} display={`+${pct(a.net.inflation, a.net.inflation >= 1 ? 0 : 1)}`} label="New supply, 12 months" sub="on its emission schedule" color="#d95926" />}
+            </div>
+            <dl className="kv" style={{ marginTop: 14 }}>
               {a.net?.nextReduction && <><dt>Next reduction</dt><dd>{when(a.net.nextReduction.at)} to {a.net.nextReduction.amount.toFixed(4)} {a.symbol}/block</dd></>}
+              {a.maxSupply == null && a.chain === "zkas" && <><dt>Maximum</dt><dd>No cap: perpetual tail emission</dd></>}
               <dt>Launched</dt><dd>{when(a.launched)}</dd>
-              <dt>Identifier</dt><dd className="mono" style={{ wordBreak: "break-all" }}>{a.id}</dd>
+              <dt>Identifier</dt><dd className="mono" style={{ wordBreak: "break-all", fontSize: 13 }}>{a.id}</dd>
             </dl>
           </div>
-          {a.net ? (
+
+          {a.net && (
             <div className="card">
-              <div className="c-head"><h3>Network</h3></div>
-              <dl className="kv">
-                <dt>Hashrate</dt><dd>{hash(a.net.hashrate)}{a.chain === "zkas" ? " · from consensus difficulty" : ""}</dd>
-                {a.net.mergedShare != null && <><dt>Share of Kaspa</dt><dd>{pct(a.net.mergedShare, 1)} of Kaspa&apos;s hashrate</dd></>}
-                {a.net.difficulty != null && <><dt>Difficulty</dt><dd>{a.net.difficulty.toExponential(3)}</dd></>}
-                {a.net.daa != null && <><dt>DAA score</dt><dd>{a.net.daa.toLocaleString("en-US")}</dd></>}
-                {a.net.producers && <><dt>Block producers</dt><dd>{a.net.producers.toMajority} made over half of {a.net.producers.sampled.toLocaleString("en-US")} sampled blocks · {a.net.producers.distinct} seen in {a.net.producers.days} day{a.net.producers.days > 1 ? "s" : ""}
-                  <small className="muted" style={{ display: "block" }}>{a.net.producers.top.slice(0, 4).map((t) => `${t.id.slice(0, 8)}… ${pct(t.share, 0)}`).join(" · ")}</small>
-                  <small className="muted" style={{ display: "block" }}>Read from each block&apos;s payout address. One operator can use several addresses, so real concentration can only be higher.</small></dd></>}
-                {a.net.shielded && <><dt>Shielded pool</dt><dd>{a.net.shielded.notes.toLocaleString("en-US")} notes · {a.net.shielded.nullifiers.toLocaleString("en-US")} spent · {a.net.shielded.turnstileOut > 0 ? `${whole(a.net.shielded.turnstileOut, a.symbol)} ever left` : "nothing has ever left"}</dd></>}
-              </dl>
-              {cur && <dl className="kv" style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--line)" }}>{cur.facts.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>}
-            </div>
-          ) : (
-            <div className="card">
-              <div className="c-head"><h3>Largest holders</h3>{a.holdersAt && <span className="muted" style={{ fontSize: 13 }}>read {when(a.holdersAt)}</span>}</div>
-              {a.topHolders?.length ? (
-                <div className="vlist">
-                  {a.topHolders.map((h, i) => (
-                    <div className="vrow" key={h.address}><span className="muted">{i + 1}</span>
-                      <div className="mono" style={{ fontSize: 13.5 }}>{short(h.address)}<small>{h.label ? `${h.label}${h.kind === "exchange" ? " · exchange" : ""}` : h.contract ? "Contract" : "Address"}</small></div>
-                      <b>{pct(h.share, 1)}</b></div>
-                  ))}
+              <div className="c-head"><h3>Network</h3><span className="tag">{hash(a.net.hashrate)}</span></div>
+              <div className="rings">
+                {a.net.mergedShare != null && <Ring value={a.net.mergedShare} label="Of Kaspa's hashrate" sub="merge-mined work" color="#3987e5" />}
+                {a.net.shielded && <Ring value={0} label="Left the shielded pool" sub={`${a.net.shielded.notes.toLocaleString("en-US")} notes`} color="#199e70" />}
+              </div>
+              {a.net.producers && (
+                <div style={{ marginTop: 18 }}>
+                  <div className="eyebrow muted" style={{ marginBottom: 10 }}>Who produces the blocks · {a.net.producers.sampled.toLocaleString("en-US")} sampled</div>
+                  <SplitBar label="Block producers" parts={[...a.net.producers.top.slice(0, 5).map((t, i) => ({ key: t.id, label: `Producer ${t.id.slice(0, 6)}`, color: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"][i], share: t.share })),
+                    { key: "rest", label: "Everyone else", color: "#4A4270", share: Math.max(0, 1 - a.net.producers.top.slice(0, 5).reduce((x, t) => x + t.share, 0)) }]} />
+                  <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>From each block&apos;s payout address. One operator can use several, so real concentration can only be higher.</p>
                 </div>
-              ) : <p className="muted" style={{ margin: 0 }}>Not read yet. dawns reads the holder lists of the most significant assets first.</p>}
-              {a.standard === "krc20" && a.topHolders?.length ? <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>Names from the address list the Kaspa REST API publishes (exchanges, burn address, funds). An unnamed address may still be an exchange or marketplace escrow.</p> : null}
+              )}
+              {cur && <dl className="kv" style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--line)" }}>{cur.facts.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>}
             </div>
           )}
         </div>
@@ -155,16 +163,8 @@ export default async function AssetPage({ params }: P) {
         {held.length > 0 && (
           <div className="card">
             <div className="c-head"><h3>Held in protocols</h3><span className="tag">{usd(heldTotal)}</span></div>
-            <div className="vlist">
-              {held.map((h) => (
-                <div className="vrow" key={h.protocol}>
-                  <ProtocolCoin p={{ id: h.protocol, letter: h.letter }} size={30} />
-                  <div><Link href={`/protocols/${h.protocol}`}>{h.name}</Link><small>{h.where.slice(0, 4).join(" · ")}{h.where.length > 4 ? ` · +${h.where.length - 4} more` : ""}</small></div>
-                  <b>{usd(h.usd)}<small className="muted" style={{ display: "block", fontWeight: 400, textAlign: "right" }}>{pct(h.usd / heldTotal, 0)}</small></b>
-                </div>
-              ))}
-            </div>
-            <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>From dawns&apos; own reads: half of each pool&apos;s value per token, and what was supplied to each lending market.{a.id === "kaspa:native:KAS" ? " KAS includes its wrapped forms on the L2s (WiKAS, iKAS, WKAS)." : ""}</p>
+            <Bars rows={held.map((h) => ({ key: h.protocol, label: h.name, href: `/protocols/${h.protocol}`, sub: h.where.slice(0, 3).join(" · ") + (h.where.length > 3 ? ` +${h.where.length - 3}` : ""), value: h.usd, display: usd(h.usd), color: "#3987e5" }))} />
+            <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>Half of each pool&apos;s value per token, and what was supplied to each lending market.{a.id === "kaspa:native:KAS" ? " KAS includes WiKAS, iKAS and WKAS." : ""}</p>
           </div>
         )}
 

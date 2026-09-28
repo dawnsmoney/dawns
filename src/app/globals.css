@@ -426,6 +426,67 @@ th button.sort:focus-visible{outline:2px solid rgba(123,108,255,.8);outline-offs
 .navcard .badge.new{border-color:#4ADE9B;color:#fff;background:rgba(74,222,155,.18)}
 @media (prefers-reduced-motion:reduce){.navcard{animation:none}.pillnav .chev{transition:none}}
 @media (max-width:760px){.pillnav .navbtn{padding:8px 11px;font-size:14px}.navcard{width:calc(100vw - 32px)}}
-select.sel{font:500 16px var(--display);background:rgba(0,0,0,.2);border:1px solid var(--line-2);border-radius:12px;padding:10px 12px;color:#fff}
-select.sel option{background:#1C1642}
-input[type=range]{accent-color:#7B6CFF;width:100%}
+/* form fields: one grid, every control the same height */
+.fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px 24px}
+.field{display:grid;gap:10px;align-content:start;min-width:0}
+.field.wide{grid-column:1/-1}
+.field-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px;min-height:18px}
+.field-v{font:600 15px var(--display);color:#fff}
+.inp{display:flex;align-items:center;gap:8px;height:56px;background:rgba(0,0,0,.2);border:1px solid var(--line-2);border-radius:14px;padding:0 6px 0 16px;transition:border-color .15s}
+.inp:focus-within{border-color:rgba(123,108,255,.8);box-shadow:0 0 0 3px rgba(123,108,255,.18)}
+.inp input{flex:1;min-width:0;width:0;background:none;border:0;outline:0;color:#fff;font:600 22px var(--display);padding:0}
+.inp input::placeholder{color:var(--ink-3);font-weight:500}
+.inp .seg{flex-shrink:0}
+.inp-suffix{color:var(--ink-3);font-size:14.5px;padding-right:10px;white-space:nowrap}
+.seg.fill{display:flex;width:100%;height:56px;border-radius:14px;padding:5px;align-items:stretch}
+.seg.fill button{flex:1;border-radius:10px;font-size:15px;padding:0 6px;cursor:pointer}
+.seg button:focus-visible{outline:2px solid rgba(255,255,255,.8);outline-offset:1px}
+.seg button:disabled{opacity:.4;cursor:not-allowed}
+.rng{height:56px;display:grid;align-content:center;gap:6px}
+.rng input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:8px;border-radius:999px;margin:0;cursor:pointer;
+  background:linear-gradient(90deg,#7B6CFF 0,#7B6CFF var(--fill,50%),rgba(255,255,255,.1) var(--fill,50%))}
+.rng input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:#fff;border:5px solid #7B6CFF;box-shadow:0 0 0 4px rgba(123,108,255,.25)}
+.rng input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:5px solid #7B6CFF;box-shadow:0 0 0 4px rgba(123,108,255,.25)}
+.rng input[type=range]:focus-visible{outline:2px solid rgba(255,255,255,.8);outline-offset:6px}
+.rng-ticks{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-3)}
+@media (max-width:760px){.fields{grid-template-columns:minmax(0,1fr)}}
+
+/* viz */
+.split-bar{display:flex;gap:2px;width:100%;border-radius:6px;overflow:hidden}
+.split-bar span{display:block;min-width:3px;transition:opacity .15s;outline:none}
+.split-bar span:first-child{border-radius:4px 0 0 4px}.split-bar span:last-child{border-radius:0 4px 4px 0}
+.split-bar span:focus-visible{box-shadow:inset 0 0 0 2px #fff}
+.split-tip{min-height:22px;margin-top:10px;font-size:14px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+.split-tip i,.split-legend i{display:inline-block;width:10px;height:10px;border-radius:3px}
+.split-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;font-size:13.5px;color:var(--ink-2)}
+.split-legend span{display:inline-flex;align-items:center;gap:7px;cursor:default}
+.split-legend b{color:var(--ink);font-weight:600}
+.rings{display:flex;flex-wrap:wrap;gap:22px;justify-content:space-around;margin-top:14px}
+.gauge{display:grid;justify-items:center;text-align:center;gap:4px;align-content:start;flex:1 1 100px;max-width:170px}
+.gauge b{font:500 14px var(--display);color:var(--ink)}
+.gauge small{font-size:12.5px;max-width:150px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.tile{border-radius:16px;padding:14px 16px 16px;border:1px solid var(--line-2);background:rgba(255,255,255,.03);display:grid;gap:4px;position:relative;overflow:hidden}
+.tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
+.tile.t-good::before{background:#4ADE9B}.tile.t-warn::before{background:#FFC061}.tile.t-crit::before{background:#FF6B7A}.tile.t-info::before{background:#8C7CF0}
+.tile-h{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em}
+.tile-h em{font-style:normal;font-weight:600;letter-spacing:.04em}
+.tile.t-good .tile-h em{color:#4ADE9B}.tile.t-warn .tile-h em{color:#FFC061}.tile.t-crit .tile-h em{color:#FF6B7A}.tile.t-info .tile-h em{color:#B7ACFF}
+.tile b{font:600 26px var(--display);color:#fff;margin-top:4px}
+.tile small{color:var(--ink-3);font-size:13px}
+.hbars{display:grid;gap:10px}
+.hbar{display:grid;grid-template-columns:minmax(120px,1.1fr) 2fr minmax(56px,auto);gap:14px;align-items:center}
+.hbar-l{min-width:0;display:grid}
+.hbar-l > span,.hbar-l > a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14.5px}
+.hbar-l small{color:var(--ink-3);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbar-t{height:12px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden}
+.hbar-t i{display:block;height:100%;border-radius:0 4px 4px 0}
+.hbar > b{text-align:right;font:600 14.5px var(--display)}
+.minisplit{display:inline-flex;gap:2px;height:8px;border-radius:3px;overflow:hidden;vertical-align:middle}
+.minisplit i{display:block;min-width:2px}
+details.more{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+details.more summary{cursor:pointer;color:var(--ink-2);font-size:14px}
+.findings{margin:0;padding-left:18px;display:grid;gap:10px;color:var(--ink-2);font-size:14.5px}
+@media (max-width:760px){.hbar{grid-template-columns:minmax(90px,1fr) 1.4fr auto;gap:10px}}
+.gauge svg{width:min(132px,26vw);height:auto}
+@media (max-width:760px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.tile b{font-size:22px}.rings{gap:8px}}
