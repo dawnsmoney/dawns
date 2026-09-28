@@ -42,7 +42,7 @@ export default async function AssetsPage() {
               <div className="card"><span className="eyebrow muted">In DeFi</span><b style={{ display: "block", font: "600 30px var(--display)", margin: "8px 0 4px" }}>{inDefi}</b><span className="muted">assets in a pool or lending market dawns reads on-chain</span></div>
               <div className="card"><span className="eyebrow muted">Tokens traded, 24h</span><b style={{ display: "block", font: "600 30px var(--display)", margin: "8px 0 4px" }}>{usd(traded)}</b><span className="muted">KRC-20 marketplace volume; native coins excluded</span></div>
             </div>
-            <div className="grid g3" style={{ marginBottom: 28, alignItems: "start" }}>
+            <div className="grid g3" style={{ marginBottom: 28 }}>
               <div className="card">
                 <div className="c-head"><h3>Holders growing fastest</h3><span className="tag">7 days</span></div>
                 {growth.length ? <Bars rows={growth.map(({ a, v }) => ({ key: a.id, label: a.symbol, sub: STANDARD_NAME[a.standard], href: assetPath(a.id), value: Math.max(0, v), display: sign(v), color: "#199e70" }))} />
