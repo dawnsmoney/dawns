@@ -50,3 +50,13 @@ export function niceTicks(min: number, max: number, n: number): number[] {
   for (let v = lo, i = 0; v <= hi + step * 1e-6 && i < 50; v += step, i++) t.push(+v.toFixed(10));
   return t;
 }
+
+/** Prices span $70,000 to $0.00000001: keep 3 significant digits whatever the size. */
+export function price(v: number | null) {
+  if (v == null) return "—";
+  if (v >= 1000) return "$" + Math.round(v).toLocaleString("en-US");
+  if (v >= 1) return "$" + v.toFixed(2);
+  if (v === 0) return "$0";
+  const d = Math.min(12, Math.max(2, 2 - Math.floor(Math.log10(v))));
+  return "$" + v.toFixed(d);
+}

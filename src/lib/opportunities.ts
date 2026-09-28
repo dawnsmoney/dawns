@@ -35,7 +35,7 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
         out.push({
           id: `${p.id}:${m.symbol}`, kind: "supply", protocol: p.id, pname: p.name, chain: "igra",
           name: `Supply ${m.symbol}`, assets: [m.symbol],
-          apy: m.supplyApy, apyBasis: "Paid by borrowers · current rate",
+          apy: m.supplyApy, apyBasis: "Paid by borrowers · current rate", apyShort: "Paid by borrowers",
           apyRange: rng && rng.hours >= 1 ? [rng.apyMin, rng.apyMax] : null, rangeHours: rng?.hours ?? 0,
           size: m.suppliedUsd, exitNow: m.cashUsd, exitShare,
           vol24: null, swaps24: null, turnover: null, priceMove: null, ilAtMove: null,
@@ -55,12 +55,14 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
         const feeSrc = pool.kind === "v3" ? "fee tier on-chain" : p.dex.feeSource === "on-chain" ? `median fee of ${p.dex.feeSamples} swaps` : "fee rate from DefiLlama";
         let apy: number | null = null;
         let basis = "Measuring: dawns needs 24 hours of swaps";
-        if (feeRate == null) basis = "Fee rate unknown";
+        let short = "Measuring (24 h)";
+        if (feeRate == null) { basis = "Fee rate unknown"; short = basis; }
         else if (covered >= DAY) {
           const full = covered >= 6.9 * DAY;
           const daily = full ? (pr?.vol7 ?? 0) / 7 : (pr?.vol24 ?? 0);
           apy = (daily * feeRate * lpShare * 365) / pool.usd;
           basis = `${pct(feeRate * lpShare, 2)} to LPs (${feeSrc}) on ${full ? "7-day average" : "last 24h"} swap volume`;
+          short = `${pct(feeRate * lpShare, 2)} fees · ${full ? "7-day" : "24h"} volume`;
         }
         // price range: current reserves plus every hourly reading of the last 7 days
         const cur = pool.reserves[0] > 0 ? pool.reserves[1] / pool.reserves[0] : null;
@@ -72,7 +74,7 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
           ilAtMove = 1 - (2 * Math.sqrt(r)) / (1 + r);
         }
         const turnover = pr && covered >= DAY ? pr.vol24 / pool.usd : null;
-        const notes: string[] = [`Exposed to the price of both ${pool.symbols.join(" and ")}.`];
+        const notes: string[] = [...(apy != null ? [`Yield: ${basis}.`] : []), `Exposed to the price of both ${pool.symbols.join(" and ")}.`];
         if (ilAtMove != null && ilAtMove >= 0.005) notes.push(`The price moved ${pct(priceMove!, 0)} within ${Math.round(rg!.hours)} h; at that move an LP trails simply holding by ${pct(ilAtMove, 1)}.`);
         if (turnover != null && turnover >= 3) notes.push(`Volume is ${turnover.toFixed(0)}× the pool per day. High turnover can be one wallet trading back and forth; check before trusting the yield.`);
         if (pool.kind === "v3") notes.push("Concentrated liquidity: you earn only while the price is in your range. The yield shown is for the pool as a whole.");
@@ -82,7 +84,7 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
         out.push({
           id: `${p.id}:${key}`, kind: "lp", protocol: p.id, pname: p.name, chain: pool.chain,
           name: `${pool.symbols.join(" / ")} liquidity`, assets: [...pool.symbols],
-          apy, apyBasis: basis, apyRange: null, rangeHours: rg?.hours ?? 0,
+          apy, apyBasis: basis, apyShort: short, apyRange: null, rangeHours: rg?.hours ?? 0,
           size: pool.usd, exitNow: pool.usd, exitShare: null,
           vol24: pr && covered >= DAY ? pr.vol24 : null, swaps24: pr && covered >= DAY ? pr.swaps24 : null, turnover, priceMove, ilAtMove,
           status, statusText, notes, pair: pool.pair, feeTier: feeRate,

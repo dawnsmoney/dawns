@@ -64,7 +64,7 @@ export function OpportunityTable({ rows }: { rows: Opportunity[] }) {
                 </td>
                 <td>
                   <b style={{ font: "600 18px var(--display)" }}>{o.apy != null ? pct(o.apy, o.apy < 0.1 ? 2 : 1) : "—"}</b>
-                  <small className="muted" style={{ display: "block", maxWidth: 220, whiteSpace: "normal", marginLeft: "auto" }}>{o.apyBasis}</small>
+                  <small className="muted" style={{ display: "block", whiteSpace: "nowrap" }} title={o.apyBasis}>{o.apyShort}</small>
                 </td>
                 <td>{usd(o.size)}{o.vol24 != null && <small className="muted" style={{ display: "block" }}>{usd(o.vol24)} traded 24h</small>}</td>
                 <td><Exit o={o} /></td>

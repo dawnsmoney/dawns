@@ -9,6 +9,7 @@ import { useWatchMap } from "./providers";
 
 const NAV = [
   { href: "/", label: "Kaspa DeFi", dot: true },
+  { href: "/assets", label: "Assets", soon: "Beta" },
   { href: "/protocols", label: "Protocols" },
   { href: "/bridge", label: "Bridge" },
   { href: "/opportunities", label: "Opportunities", soon: "Beta" },
@@ -59,6 +60,7 @@ export function Footer() {
       <div className="wrap">
         <Link href="/" aria-label="dawns.money home"><Logo id="ftr" height={26} /></Link>
         <nav>
+          <Link href="/assets">Assets</Link>
           <Link href="/protocols">Protocols</Link>
           <Link href="/bridge">Igra bridge</Link>
           <Link href="/watchlist">Watchlist</Link>

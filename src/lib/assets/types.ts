@@ -1,0 +1,70 @@
+/* Dawns asset index: one normalized record per asset, whatever chain or standard issued it. */
+
+export type AssetChain = "kaspa" | "igra" | "kasplex" | "zkas";
+export type AssetStandard = "native" | "krc20" | "erc20";
+
+export const CHAIN_NAME: Record<AssetChain, string> = { kaspa: "Kaspa", igra: "Igra", kasplex: "Kasplex L2", zkas: "ZKas" };
+export const STANDARD_NAME: Record<AssetStandard, string> = { native: "Native coin", krc20: "KRC-20", erc20: "ERC-20" };
+
+/**
+ * The canonical id is `chain:standard:ref`, never a ticker: NACHO on Kaspa L1 (KRC-20)
+ * and NACHO on Igra (ERC-20) are different assets with different holders, supply and risks.
+ * ref: the ticker for native coins and KRC-20 (Kasplex ticks are unique), the lower-case
+ * contract address for ERC-20.
+ */
+export const assetId = (chain: AssetChain, standard: AssetStandard, ref: string) => `${chain}:${standard}:${standard === "erc20" ? ref.toLowerCase() : ref.toUpperCase()}`;
+export const assetPath = (id: string) => `/assets/${id.split(":").map(encodeURIComponent).join("/")}`;
+
+export interface Holder { address: string; share: number; label: string | null; contract: boolean }
+
+export interface Asset {
+  id: string;
+  chain: AssetChain;
+  standard: AssetStandard;
+  ref: string;
+  symbol: string;
+  name: string;
+  decimals: number | null;
+  logo: string | null;
+
+  price: number | null;          // USD
+  priceSrc: string | null;       // where the price comes from, in words
+  mcap: number | null;           // price × circulating supply
+  vol24: number | null;          // USD traded in 24h
+  volSrc: string | null;
+
+  supply: number | null;         // circulating / minted, in whole tokens
+  maxSupply: number | null;      // null: no cap (or unknown — see note)
+  mintedShare: number | null;    // KRC-20 fair mints: minted ÷ max
+  premineShare: number | null;   // share of max supply pre-minted to the deployer
+  state: string | null;          // KRC-20: "minting" | "finished"
+  launched: number | null;       // ms
+
+  holders: number | null;
+  top10: number | null;          // share of supply held by the 10 largest addresses
+  topHolders: Holder[] | null;   // up to 10, with contract/label where known
+  holdersAt: number | null;      // ms: when the holder list was read
+
+  liquidity: number | null;      // USD in DEX pools dawns reads on-chain
+  pools: string[];               // opportunity ids (pools / markets) that hold this asset
+
+  rank: number | null;           // source rank (KaspaCom for KRC-20)
+  net?: NetworkStats;            // native coins
+  updatedAt: number;
+}
+
+export interface NetworkStats {
+  hashrate: number | null;       // H/s
+  difficulty: number | null;
+  bps: number | null;            // blocks per second, measured
+  blockReward: number | null;    // coins per block (gross)
+  nextReduction: { at: number; amount: number } | null;
+  emissionPerYear: number | null;   // coins minted over the next 12 months, following the chain's schedule
+  inflation: number | null;         // emissionPerYear ÷ circulating supply
+  emissionBasis?: string;           // how the projection was made
+  mergedShare?: number | null;      // ZKAS: its hashrate ÷ Kaspa's
+  shielded?: { notes: number; nullifiers: number; turnstileIn: number; turnstileOut: number } | null;
+  daa: number | null;
+}
+
+export interface AssetDay { day: string; price: number | null; holders: number | null; mcap: number | null; vol24: number | null; supply: number | null }

@@ -121,7 +121,8 @@ export interface Opportunity {
   protocol: string; pname: string; chain: "igra" | "kasplex";
   name: string; assets: string[];
   apy: number | null;              // native yield only
-  apyBasis: string;                // how the yield was measured
+  apyBasis: string;                // how the yield was measured (full sentence)
+  apyShort: string;                // the same, short enough for a table cell
   apyRange: [number, number] | null; rangeHours: number;  // own history
   size: number;                    // USD in the market or pool
   exitNow: number | null;          // USD that can leave right now

@@ -95,6 +95,13 @@ const SCHEMA = [
   `create table if not exists user_signals (
     user_id text not null, key text not null, severity text not null, strong text not null, rest text,
     first_seen timestamptz not null, last_seen timestamptz not null, resolved_at timestamptz, primary key (user_id, key))`,
+  // asset index: one normalized record per asset (chain:standard:ref), and a daily series
+  `create table if not exists assets (
+    id text primary key, chain text not null, standard text not null, symbol text not null, data jsonb not null,
+    updated_at timestamptz not null default now())`,
+  `create table if not exists asset_daily (
+    id text not null, day date not null, price double precision, holders double precision, mcap double precision,
+    vol24 double precision, supply double precision, primary key (id, day))`,
 ];
 
 let ready: Promise<void> | null = null;
