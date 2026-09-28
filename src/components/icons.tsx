@@ -14,3 +14,4 @@ export const Copy = (p: P) => (<svg {...base} strokeWidth={1.7} {...p}><rect x="
 export const TrendDown = (p: P) => (<svg {...base} strokeWidth={1.8} {...p}><path d="M2 5l4.5 4.5 3-3L14 11" /><path d="M10 11h4V7" /></svg>);
 export const TrendUp = (p: P) => (<svg {...base} strokeWidth={1.8} {...p}><path d="M2 11l4.5-4.5 3 3L14 5" /><path d="M10 5h4v4" /></svg>);
 export const Arrow = (p: P) => (<svg {...base} strokeWidth={2} {...p}><path d="M3 8h10M9 4l4 4-4 4" /></svg>);
+export const Chevron = (p: P) => (<svg {...base} strokeWidth={2} {...p}><path d="M4 6l4 4 4-4" /></svg>);
