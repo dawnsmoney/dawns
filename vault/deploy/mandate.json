@@ -1,0 +1,34 @@
+{
+  "destinations": [
+    {
+      "address": "kaspatest:qr3f4lp26q4h6f3p0m3930a8fe7ra20225wjh07nuxdmg4e2sfmrxrhnzmn2s",
+      "capBps": 4000,
+      "label": "Strategy A (test wallet)"
+    },
+    {
+      "address": "kaspatest:qqnq8qsqz22gjzgvjtdaztfn26r298ymlgwdlqw9nvrcyhv5edw4ylscpzf4g",
+      "capBps": 3000,
+      "label": "Strategy B (test wallet)"
+    },
+    {
+      "address": "kaspatest:qzxdcca8mq948nxw8rspygtsm09p8qqnauw3r5aphszratr06gzp6keuye0he",
+      "capBps": 2000,
+      "label": "Strategy C (test wallet)"
+    }
+  ],
+  "epochLengthDaa": 36000,
+  "epochLimitSompi": 10000000000,
+  "maxFeeSompi": 5000000,
+  "maxPerMoveSompi": 5000000000,
+  "name": "Dawns TN10 test mandate",
+  "network": "testnet-10",
+  "notBeforeDaa": 582618200,
+  "objective": "Exercise every covenant path on testnet-10 with small amounts. Destinations are Dawns-held strategy wallets standing in for real strategies.",
+  "reserveFloorBps": 1000,
+  "roles": {
+    "allocator": "kaspatest:qpgcqgcv689g740pfeefrdmkedv63prz8gx7h850qfrcxk7hz0yzs6p7dn7jl",
+    "depositor": "kaspatest:qqg5hkjzee5vrmf778qu9dpalqrdj28prccslajaxemevmwpl0s2k8kcz70gv",
+    "guardian": "kaspatest:qpeyuz7mycyy9qm56ywt0dq2xd62xrdpgwekwxhsreg4kqy5lqhu7uzd03h43"
+  },
+  "standard": "dawns-mandate/0"
+}

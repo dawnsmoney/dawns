@@ -201,3 +201,23 @@ export function StackedCols({ cols, keys, label }: { cols: { key: string; label:
     </div>
   );
 }
+
+export interface CapRow { key: string; label: string; sub?: string; share: number; cap: number; display: string; color: string }
+/** Share used against a hard cap: the bar is what is used, the tick is the cap (a vault's destinations). */
+export function CapBars({ rows }: { rows: CapRow[] }) {
+  return (
+    <div className="hbars">
+      {rows.map((r) => (
+        <div key={r.key} className="hbar" title={`${r.label}: ${pctS(r.share, 1)} of a ${pctS(r.cap)} cap`}>
+          <div className="hbar-l"><span>{r.label}</span>{r.sub && <small>{r.sub}</small>}</div>
+          <div className="hbar-t capbar">
+            <i style={{ width: `${Math.min(100, r.share * 100)}%`, background: r.color }} />
+            <em style={{ left: `${Math.min(100, r.cap * 100)}%` }} aria-hidden />
+            <span className="capbar-room" style={{ left: `${Math.min(100, r.share * 100)}%`, width: `${Math.max(0, (r.cap - r.share) * 100)}%`, ["--c" as string]: r.color }} aria-hidden />
+          </div>
+          <b>{r.display}</b>
+        </div>
+      ))}
+    </div>
+  );
+}

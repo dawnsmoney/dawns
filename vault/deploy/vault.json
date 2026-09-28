@@ -1,0 +1,121 @@
+{
+  "address": "kaspatest:pqvqlqg0pfyjj63tp3qw3j8kdzknuhd5j7cguf09hegvla5kdw6zxz6jshhzx",
+  "covenantId": "7ee6dfa17c531bc78a297600c127da943ce9cc6a20a13f853874e126ad029123",
+  "createdAt": 1790592603,
+  "genesisTx": "26f351c70087230eadab1972b9cde5646a78e73041770e4f92778c90f501f4f8",
+  "mandateHash": "203894bca9dd224cc8cc7ad0af9cea4d2978753f0e7c21d4a99abfdff616b3b5",
+  "moves": [
+    {
+      "amount": 5000000000,
+      "at": 1790592746,
+      "claimedDaa": 582619691,
+      "kind": "allocate",
+      "slot": 0,
+      "stateAfter": {
+        "deployed": [
+          5000000000,
+          0,
+          0,
+          0
+        ],
+        "epochIndex": 0,
+        "epochSpent": 5000000000,
+        "principal": 50000000000
+      },
+      "txid": "caae283b70c9eaa9ecb5543c00a0f930883178b097523c1ab65ed8f397ae8bdb",
+      "valueAfter": 44999000000
+    },
+    {
+      "amount": 4000000000,
+      "at": 1790592751,
+      "claimedDaa": 582619745,
+      "kind": "allocate",
+      "slot": 1,
+      "stateAfter": {
+        "deployed": [
+          5000000000,
+          4000000000,
+          0,
+          0
+        ],
+        "epochIndex": 0,
+        "epochSpent": 9000000000,
+        "principal": 50000000000
+      },
+      "txid": "42a846cb0cb7cd81d4b7ae8ffc9f331a752009ccd0d10c382d3eb245bc9ee0a7",
+      "valueAfter": 40998000000
+    },
+    {
+      "amount": 2000000000,
+      "at": 1790592796,
+      "claimedDaa": null,
+      "kind": "recall",
+      "slot": 0,
+      "stateAfter": {
+        "deployed": [
+          3000000000,
+          4000000000,
+          0,
+          0
+        ],
+        "epochIndex": 0,
+        "epochSpent": 9000000000,
+        "principal": 50000000000
+      },
+      "txid": "fb0a6b81230eb6acf9b38e767f431ff8e7c2a363e97dcb27373d7ad5cc2d8975",
+      "valueAfter": 42997000000
+    },
+    {
+      "amount": 1000000000,
+      "at": 1790592815,
+      "claimedDaa": null,
+      "kind": "withdraw",
+      "slot": null,
+      "stateAfter": {
+        "deployed": [
+          3000000000,
+          4000000000,
+          0,
+          0
+        ],
+        "epochIndex": 0,
+        "epochSpent": 9000000000,
+        "principal": 49000000000
+      },
+      "txid": "55b204b0673e5b8b737cd64a69dffdc889087f40c7b3414078d94bec85341ebf",
+      "valueAfter": 41996000000
+    }
+  ],
+  "network": "testnet-10",
+  "pending": null,
+  "refusals": [
+    {
+      "amount": 100000000,
+      "at": 1790592800,
+      "error": "RPC Server (remote error) -> Rejected transaction 355253a8170297643163b10739ecb81e0af6f54bee6fb9524797f27c78e5f407: failed to verify the signature script: script ran, but verification failed",
+      "kind": "breach-dest",
+      "slot": 0,
+      "txid": "355253a8170297643163b10739ecb81e0af6f54bee6fb9524797f27c78e5f407"
+    },
+    {
+      "amount": 17098800000,
+      "at": 1790592807,
+      "error": "RPC Server (remote error) -> Rejected transaction dfb4854a9501d34d5b55de708ec4e292fcf203f3d7347f32836fd82fed8e73e5: failed to verify the signature script: script ran, but verification failed",
+      "kind": "breach-cap",
+      "slot": 0,
+      "txid": "dfb4854a9501d34d5b55de708ec4e292fcf203f3d7347f32836fd82fed8e73e5"
+    }
+  ],
+  "state": {
+    "deployed": [
+      3000000000,
+      4000000000,
+      0,
+      0
+    ],
+    "epochIndex": 0,
+    "epochSpent": 9000000000,
+    "principal": 49000000000
+  },
+  "value": 41996000000
+}
