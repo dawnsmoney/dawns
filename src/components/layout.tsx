@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Logo } from "./Logo";
+import { BackToMobile } from "./m/shell";
 import { Arrow, Chevron } from "./icons";
 import { useWatchMap } from "./providers";
 
@@ -100,6 +101,7 @@ export function Footer() {
           <Link href="/watchlist">Watchlist</Link>
           <Link href="/brand">Brand</Link>
           <span className="mono" style={{ fontSize: 12.5 }}>Sources: Igra RPC · Kaspa L1 indexer · DefiLlama</span>
+          <span className="only-sm-flex"><BackToMobile /></span>
         </nav>
       </div>
     </footer>
