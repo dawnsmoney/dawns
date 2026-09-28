@@ -490,10 +490,6 @@ details.more summary{cursor:pointer;color:var(--ink-2);font-size:14px}
 @media (max-width:760px){.hbar{grid-template-columns:minmax(90px,1fr) 1.4fr auto;gap:10px}}
 .gauge svg{width:min(132px,26vw);height:auto}
 @media (max-width:760px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.tile b{font-size:22px}.rings{gap:8px}}
-.scatter svg{width:100%;height:auto;display:block}
-.scatter svg g:focus-visible circle:last-of-type{stroke:#fff}
-.scatter-tip{min-height:24px;margin-top:6px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:14px;color:var(--ink-2)}
-.scatter-tip i{width:10px;height:10px;border-radius:50%;display:inline-block}
 .cols{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:10px;align-items:end;height:220px}
 .col{display:grid;grid-template-rows:auto 1fr auto;gap:6px;height:100%;text-align:center}
 .col b{font:600 14px var(--display)}
@@ -513,3 +509,20 @@ table.opps-tbl td.soft{white-space:normal;max-width:190px}
 table.opps-tbl td.soft small{white-space:normal}
 .bridge-feat{grid-column:1/-1}
 .bridge-feat{min-height:0}
+.ladder{display:grid;gap:4px}
+.ladder-row{display:grid;grid-template-columns:28px minmax(150px,1.3fr) minmax(120px,2fr) 60px minmax(150px,1fr);gap:14px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--line)}
+.ladder-row:last-child{border-bottom:0}
+.ladder-n{color:var(--ink-3);font:500 13px var(--display);text-align:center}
+.ladder-name{display:grid;min-width:0}
+.ladder-name b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ladder-name small{color:var(--ink-3);font-size:12.5px}
+.ladder-bar{height:12px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden}
+.ladder-bar i{display:block;height:100%;border-radius:0 4px 4px 0}
+.ladder-y{font:600 17px var(--display);text-align:right}
+.ladder-exit{display:grid;gap:2px;padding-left:12px;border-left:3px solid}
+.ladder-exit em{font-style:normal;font-weight:600;font-size:14px}
+.ladder-exit small{color:var(--ink-3);font-size:12.5px;white-space:nowrap}
+.ladder-exit.x-good{border-color:#4ADE9B}.ladder-exit.x-good em{color:#4ADE9B}
+.ladder-exit.x-warn{border-color:#FFC061}.ladder-exit.x-warn em{color:#FFC061}
+.ladder-exit.x-crit{border-color:#FF6B7A}.ladder-exit.x-crit em{color:#FF6B7A}
+@media (max-width:760px){.ladder-row{grid-template-columns:22px 1fr 54px;gap:8px 10px}.ladder-bar{grid-column:2/4;grid-row:2}.ladder-exit{grid-column:2/4;grid-row:3}}

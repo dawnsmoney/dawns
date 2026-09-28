@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Banner } from "@/components/Banner";
 import { DataBridge } from "@/components/providers";
-import { OpportunityTable } from "@/components/opportunities";
-import { Scatter } from "@/components/viz";
+import { OpportunityTable, YieldLadder } from "@/components/opportunities";
 import { getSnapshot } from "@/lib/snapshot";
 import { getAssets } from "@/lib/assets";
 import { knownOf } from "@/lib/assets/view";
@@ -51,16 +50,10 @@ export default async function OpportunitiesPage() {
         </div>
 
         <div className="card" style={{ marginBottom: 28 }}>
-          <div className="c-head"><h3>Yield against the room to leave</h3>
-            <div className="split-legend" style={{ marginTop: 0 }}><span><i style={{ background: "#3987e5" }} />Lending</span><span><i style={{ background: "#d95926" }} />Liquidity</span><span><i style={{ background: "transparent", boxShadow: "inset 0 0 0 2px #FF6B7A" }} />Exit blocked</span></div>
+          <div className="c-head"><h3>Highest native yields, and whether you can get out</h3>
+            <div className="split-legend" style={{ marginTop: 0 }}><span><i style={{ background: "#3987e5" }} />Lending</span><span><i style={{ background: "#d95926" }} />Liquidity</span></div>
           </div>
-          <Scatter xLabel="Can leave now" yLabel="Native yield" xFmt="usd" good={{ x: 50_000, y: 0.1, label: "High yield, room to leave" }}
-            points={rows.filter((o) => o.apy != null).map((o) => ({
-              key: o.id, label: o.name.replace(/ liquidity$/, "").replace(/^Supply /, ""), sub: `${o.pname} · ${o.statusText}`,
-              x: Math.max(1, o.exitNow ?? 0), y: o.apy!, size: o.size, color: o.kind === "supply" ? "#3987e5" : "#d95926", alert: o.status === "crit",
-              href: `/protocols/${o.protocol}`,
-            }))} />
-          <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>Lending: the cash suppliers can withdraw now. Liquidity: the pool&apos;s size, at the pool&apos;s price. Top right is where a high yield comes with room to get out.</p>
+          <YieldLadder rows={rows} />
         </div>
 
         <OpportunityTable rows={rows} known={known} />

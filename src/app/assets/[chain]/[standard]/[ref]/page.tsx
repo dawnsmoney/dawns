@@ -9,7 +9,7 @@ import { OpportunityTable } from "@/components/opportunities";
 import { getAssets, getAssetHistory } from "@/lib/assets";
 import { analyse, dimensions } from "@/lib/assets/analysis";
 import { supplyParts, holderCat, catOf } from "@/lib/assets/holders";
-import { SplitBar, Ring, Tiles, Bars, Compare } from "@/components/viz";
+import { SplitBar, Ring, Tiles, Bars, Compare, Columns } from "@/components/viz";
 import { CURATED } from "@/lib/assets/profiles";
 import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, valueCredible, type Asset, type AssetChain, type AssetStandard } from "@/lib/assets/types";
 import { getSnapshot } from "@/lib/snapshot";
@@ -67,6 +67,7 @@ export default async function AssetPage({ params }: P) {
   const sameTicker = all.filter((x) => x.symbol.toUpperCase() === a.symbol.toUpperCase() && x.id !== a.id);
   const dates = hist.map((d) => Date.parse(d.day));
   const priced = hist.filter((d) => d.price != null).length >= 2;
+  const holdersHist = hist.filter((d) => d.holders != null).length >= 3;
   const explorer = a.standard === "kcc20" || a.standard === "kron" ? `https://kcc20.info/v1/tokens/${a.ref}` : a.chain === "igra" ? `https://explorer.igralabs.com/token/${a.ref}` : a.standard === "krc20" ? `https://kaspa.com/tokens/marketplace/token/${a.ref}` : a.chain === "kasplex" ? `https://explorer.kasplex.org/token/${a.ref}` : a.chain === "zkas" ? "https://explorer.zkas.info/analytics" : "https://explorer.kaspa.org";
 
   return (
@@ -152,6 +153,38 @@ export default async function AssetPage({ params }: P) {
             </div>
           )}
         </div>
+
+        {a.cov && (
+          <div className="grid gA" style={{ alignItems: "start" }}>
+            <div className="card">
+              <div className="c-head"><h3>Activity, last 30 days</h3><span className="tag">{a.cov.days.reduce((x, d) => x + d.transfers + d.other, 0)}{a.cov.capped ? "+" : ""} actions</span></div>
+              <Columns label={`${a.symbol} actions per day`} cols={a.cov.days.map((d, i) => ({ key: d.day, label: i === 0 || i === 29 || i === 15 ? d.day.slice(5) : "", value: d.transfers + d.other, color: "#9085e9", display: d.transfers + d.other ? String(d.transfers + d.other) : "" }))} />
+              {Object.keys(a.cov.kinds).length > 0 && <div className="split-legend">{Object.entries(a.cov.kinds).sort((x, y) => y[1] - x[1]).map(([k, v]) => <span key={k}>{k}<b>{v}</b></span>)}</div>}
+            </div>
+            <div className="card">
+              <div className="c-head"><h3>How the covenant behaves</h3><Pill t={a.validation === "verified" ? "good" : a.validation === "template_verified" ? "info" : "warn"}>{a.validation === "verified" ? "Verified" : a.validation === "template_verified" ? "Template verified" : "Unconfirmed"}</Pill></div>
+              <div className="rings">
+                {a.cov.deployerShare != null && <Ring value={a.cov.deployerShare} label="Creator still holds" sub="the genesis key" color="#c98500" />}
+                {a.cov.genesisSupply != null && a.supply != null && <Ring value={a.cov.minted > 0 ? Math.min(1, a.cov.minted / a.supply) : 0} display={a.cov.minted > 0 ? `+${pct(a.cov.minted / Math.max(1, a.cov.genesisSupply), 0)}` : "0%"} label="Created beyond launch" sub={a.cov.minted > 0 ? "supply is above what launched" : "supply never grew"} color="#d95926" />}
+              </div>
+              <dl className="kv" style={{ marginTop: 16 }}>
+                <dt>Created by</dt><dd>{a.cov.ownerType === "covenant" ? "A program (covenant)" : a.cov.ownerType === "public_key" ? "A single key" : "—"}</dd>
+                <dt>Supply at launch</dt><dd>{whole(a.cov.genesisSupply, a.symbol)}</dd>
+                {a.cov.burned > 0 && <><dt>Burned</dt><dd>{whole(a.cov.burned, a.symbol)}</dd></>}
+                {a.cov.reserveShare != null && a.cov.reserveShare > 0 && <><dt>Protocol reserve</dt><dd>{pct(a.cov.reserveShare, 1)} of supply</dd></>}
+                <dt>Balances reconcile</dt><dd>{a.cov.reconciled === false || a.cov.unresolved > 0 ? `No · ${a.cov.unresolved} unresolved outputs` : a.cov.reconciled ? "Yes · every output attributed" : "—"}</dd>
+                <dt>Actions, all time</dt><dd>{a.cov.actions.toLocaleString("en-US")}{a.cov.lastActive ? ` · last ${when(a.cov.lastActive)}` : ""}</dd>
+              </dl>
+            </div>
+          </div>
+        )}
+
+        {holdersHist && (
+          <div className="card">
+            <RangeChart title="Holders, daily" label={`${a.symbol} holders`} dates={hist.filter((d) => d.holders != null).map((d) => Date.parse(d.day))}
+              series={[{ name: "Holders", color: "#199e70", values: hist.filter((d) => d.holders != null).map((d) => d.holders!) }]} fmt="num" area="first" zero={false} />
+          </div>
+        )}
 
         {priced && (
           <div className="card">

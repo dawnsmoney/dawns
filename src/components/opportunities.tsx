@@ -97,3 +97,34 @@ export function OpportunityTable({ rows, known: knownIds = [] }: { rows: Opportu
     </>
   );
 }
+
+/**
+ * The best native yields, ranked, each next to how much of it you could take out today.
+ * One bar to compare yields, one word and one number for the exit. No axes to decode.
+ */
+export function YieldLadder({ rows, limit = 8 }: { rows: Opportunity[]; limit?: number }) {
+  const top = rows.filter((o) => o.apy != null && o.apy >= 0.005).sort((a, b) => b.apy! - a.apy!).slice(0, limit);
+  const max = Math.max(...top.map((o) => o.apy!), 0.01);
+  const exit = (o: Opportunity): { t: "good" | "warn" | "crit"; word: string; amount: string } => {
+    if (o.status === "crit") return { t: "crit", word: "Blocked", amount: `${usd(o.exitNow ?? 0)} withdrawable` };
+    const room = o.exitNow ?? 0;
+    if (o.kind === "lp") return { t: room >= 50_000 ? "good" : room >= 10_000 ? "warn" : "crit", word: room >= 50_000 ? "Room" : room >= 10_000 ? "Shallow" : "Thin", amount: `${usd(room)} pool, at its price` };
+    return { t: room >= 50_000 && (o.exitShare ?? 0) >= 0.2 ? "good" : room >= 5_000 ? "warn" : "crit", word: room >= 50_000 && (o.exitShare ?? 0) >= 0.2 ? "Room" : room >= 5_000 ? "Tight" : "Thin", amount: `${usd(room)} withdrawable` };
+  };
+  return (
+    <div className="ladder">
+      {top.map((o, i) => {
+        const e = exit(o);
+        return (
+          <div key={o.id} className="ladder-row">
+            <span className="ladder-n">{i + 1}</span>
+            <span className="ladder-name"><b>{o.name.replace(/ liquidity$/, "")}</b><small>{o.pname} · {o.kind === "supply" ? "lending" : "liquidity"}</small></span>
+            <span className="ladder-bar"><i style={{ width: `${Math.max(2, (o.apy! / max) * 100)}%`, background: o.kind === "supply" ? "#3987e5" : "#d95926" }} /></span>
+            <b className="ladder-y">{pct(o.apy!, o.apy! < 0.1 ? 1 : 0)}</b>
+            <span className={`ladder-exit x-${e.t}`}><em>{e.word}</em><small>{e.amount}</small></span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

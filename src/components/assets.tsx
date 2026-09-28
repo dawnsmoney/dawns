@@ -10,7 +10,7 @@ import type { Status } from "@/lib/types";
 export interface AssetLite {
   id: string; path: string; symbol: string; name: string; chain: string; chainName: string; standard: string; standardName: string;
   price: number | null; mcap: number | null; credible: boolean; vol24: number | null; holders: number | null; liquidity: number | null;
-  top10: number | null; split: { key: string; label: string; color: string; share: number }[]; venues: number; grade: Status; gradeLabel: string; significant: boolean;
+  top10: number | null; holders7: number | null; split: { key: string; label: string; color: string; share: number }[]; venues: number; grade: Status; gradeLabel: string; significant: boolean;
 }
 
 const count = (v: number | null) => (v == null ? "—" : v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e4 ? `${(v / 1e3).toFixed(1)}K` : Math.round(v).toLocaleString("en-US"));
@@ -66,7 +66,7 @@ export function AssetTable({ rows }: { rows: AssetLite[] }) {
               <td>{price(a.price)}</td>
               <td>{a.mcap == null ? "—" : a.credible ? usd(a.mcap) : <span className="muted" title="Priced by too little trading: no market could realize this value">{usd(a.mcap)}<small style={{ display: "block" }}>not realizable</small></span>}</td>
               <td>{a.vol24 != null ? usd(a.vol24) : "—"}</td>
-              <td>{count(a.holders)}</td>
+              <td>{count(a.holders)}{a.holders != null && a.holders7 ? <small className={a.holders >= a.holders7 ? "up" : "down"} style={{ display: "block", fontSize: 12 }}>{a.holders >= a.holders7 ? "+" : ""}{pct(a.holders / a.holders7 - 1, 1)} 7d</small> : null}</td>
               <td>{a.top10 != null ? <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><MiniSplit parts={a.split} width={48} />{pct(a.top10, 0)}</span> : <span className="muted">—</span>}</td>
               <td>{a.liquidity ? usd(a.liquidity) : a.venues ? `${a.venues} venues` : <span className="muted">—</span>}</td>
               <td title={a.gradeLabel}><Pill t={a.grade}>{a.grade === "crit" ? "High" : a.grade === "warn" ? "Watch" : "OK"}</Pill></td>

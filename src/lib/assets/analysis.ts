@@ -32,7 +32,15 @@ export function analyse(a: Asset): Analysis {
     if (v === "verified") flags.push(["good", "Every transfer checked against chain data by the KCC20 indexer: the token behaves by its declared rules."]);
     else if (v === "template_verified") flags.push(["info", "Its covenant matches a known, verified template; individual transfers are not all re-checked."]);
     else flags.push(["warn", `The indexer could not confirm this token against its rules (status: ${v}).`]);
-    questions.push("Who can still mint or change it: is the covenant's authority fixed, or held by a key?");
+    const c = a.cov;
+    if (c) {
+      if (c.minted > 0) flags.push(["warn", `Supply is ${c.genesisSupply ? pct(c.minted / c.genesisSupply, 1) : n(c.minted)} above what launched: ${n(c.minted)} ${a.symbol} were created outside the genesis.`]);
+      else flags.push(["good", "Supply equals what launched: nothing created since genesis."]);
+      if (c.burned > 0) flags.push(["info", `${n(c.burned)} ${a.symbol} burned since genesis.`]);
+      if (c.deployerShare != null && c.deployerShare >= 0.3) flags.push(["warn", `The key that created it still holds ${pct(c.deployerShare)} of supply.`]);
+      if (c.reconciled === false || c.unresolved > 0) flags.push(["warn", `The indexer cannot fully reconcile its balances (${c.unresolved} unresolved outputs).`]);
+      if (c.ownerType === "covenant") flags.push(["info", "Created by a program (a covenant), not by a person's key."]);
+    } else questions.push("Who can still mint or change it: is the covenant's authority fixed, or held by a key?");
   }
   // price and market
   if (a.price == null) flags.push(["warn", "No market price dawns can read. Any value put on it is a guess."]);
@@ -158,8 +166,14 @@ export function dimensions(a: Asset, r: Analysis): { key: string; title: string;
   const pr = a.net?.producers;
   if (pr) tiles.push({ key: "security", title: "Block producers for 50%", t: pr.toMajority <= 1 ? "crit" : pr.toMajority <= 2 ? "warn" : "good", big: String(pr.toMajority), small: `largest makes ${pct(pr.top[0]?.share ?? 0)}` });
   else if (a.net?.mergedShare != null) tiles.push({ key: "security", title: "Of Kaspa's hashrate", t: "info", big: pct(a.net.mergedShare, 1), small: "merge-mined" });
+  if (a.cov?.deployerShare != null) tiles.push({ key: "deployer", title: "Creator holds", t: a.cov.deployerShare >= 0.5 ? "crit" : a.cov.deployerShare >= 0.3 ? "warn" : "good", big: pct(a.cov.deployerShare), small: "of supply, the genesis key" });
+  if (a.cov) tiles.push({ key: "mint", title: "Supply since launch", t: a.cov.minted > 0 ? "warn" : "good", big: a.cov.minted > 0 ? `+${a.cov.genesisSupply ? pct(a.cov.minted / a.cov.genesisSupply, 0) : n(a.cov.minted)}` : "Fixed", small: a.cov.minted > 0 ? "created beyond the genesis" : "never grew since genesis" });
   if (isCovenant(a.standard)) tiles.push({ key: "rules", title: "Rules check", t: a.validation === "verified" ? "good" : a.validation === "template_verified" ? "info" : "warn", big: a.validation === "verified" ? "Verified" : a.validation === "template_verified" ? "Template" : "Unconfirmed", small: "against chain data" });
   // DeFi
   tiles.push({ key: "defi", title: "DeFi venues", t: a.pools.length ? "good" : "info", big: String(a.pools.length), small: a.pools.length ? "pools and markets dawns reads" : "only holding" });
+  if (isCovenant(a.standard)) {
+    const order = ["rules", "deployer", "mint", "holders", "market", "exit", "defi"];
+    tiles.sort((x, y) => (order.indexOf(x.key) + 99 * +(order.indexOf(x.key) < 0)) - (order.indexOf(y.key) + 99 * +(order.indexOf(y.key) < 0)));
+  }
   return tiles.slice(0, 6);
 }

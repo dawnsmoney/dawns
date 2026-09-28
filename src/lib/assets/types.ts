@@ -55,6 +55,9 @@ export interface Asset {
 
   rank: number | null;           // source rank (KaspaCom for KRC-20)
   validation?: string | null;    // covenant tokens: the indexer's check of the token against chain data
+  cov?: CovenantInfo;            // covenant tokens: authority, supply since genesis, activity
+  holders7?: number | null;      // holders 7 days ago (dawns' own daily record)
+  price7?: number | null;        // price 7 days ago (dawns' own daily record)
   net?: NetworkStats;            // native coins
   updatedAt: number;
 }
@@ -94,4 +97,20 @@ export function valueCredible(a: Pick<Asset, "standard" | "mcap" | "vol24" | "vo
   if (a.standard === "native") return true;
   const flow = Math.max(a.vol7 ?? 0, (a.vol24 ?? 0) * 7);
   return Math.max(flow, a.liquidity ?? 0) >= a.mcap * 0.0005;
+}
+
+/** A covenant token as the chain enforces it. */
+export interface CovenantInfo {
+  ownerType: string | null;        // who created it: "public_key" (a person's key) or "covenant" (a program)
+  deployerShare: number | null;    // share of supply the genesis key still holds
+  genesisSupply: number | null;
+  minted: number; burned: number;  // since genesis: supply created beyond the launch amount, and burned
+  capped?: boolean;                // 30-day activity hit the 500-action read limit
+  reserveShare: number | null;     // held by the protocol itself
+  reconciled: boolean | null;      // balances add up to supply
+  unresolved: number;              // outputs the indexer could not attribute
+  actions: number;                 // all-time token actions
+  lastActive: number | null;       // ms
+  days: { day: string; transfers: number; other: number }[]; // last 30 days of activity
+  kinds: Record<string, number>;   // actions by kind, last 30 days
 }

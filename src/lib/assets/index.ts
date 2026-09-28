@@ -5,7 +5,7 @@ import type { Snapshot } from "../types";
 import { assetId, type Asset, type AssetDay } from "./types";
 import { sampleProducers } from "../chain/zkas";
 import type { Producers } from "./types";
-import { readKas, readZkas, readKrc20, readKrc20Holders, readIgraTokens, readIgraHolders, venuesFromSnapshot, readKaspaNames, nameHolders, readCovenantTokens, readCovenantHolders } from "./sources";
+import { readKas, readZkas, readKrc20, readKrc20Holders, readIgraTokens, readIgraHolders, venuesFromSnapshot, readKaspaNames, nameHolders, readCovenantTokens, readCovenantDepth } from "./sources";
 
 const LIST_EVERY = 55 * 60_000;      // full token lists: hourly
 const HOLDERS_EVERY = 24 * 3600_000; // a holder list is refreshed daily
@@ -28,7 +28,7 @@ export async function refreshAssets(s: Snapshot) {
   const next = new Map<string, Asset>();
   const keepHolders = (a: Asset) => {
     const p = prev.get(a.id);
-    if (p) { a.top10 = p.top10; a.topHolders = p.topHolders; a.holdersAt = p.holdersAt; if (a.holders == null) a.holders = p.holders; }
+    if (p) { a.top10 = p.top10; a.topHolders = p.topHolders; a.holdersAt = p.holdersAt; if (a.holders == null) a.holders = p.holders; if (p.cov) a.cov = p.cov; }
     return a;
   };
 
@@ -110,10 +110,11 @@ export async function refreshAssets(s: Snapshot) {
     await Promise.all(due.slice(i, i + 6).map(async (a) => {
       try {
         const h = a.standard === "krc20" ? await readKrc20Holders(a.ref)
-          : a.standard === "kcc20" || a.standard === "kron" ? await readCovenantHolders(a.ref, a.supply, a.decimals ?? 0)
+          : a.standard === "kcc20" || a.standard === "kron" ? await readCovenantDepth(a.ref, a.decimals ?? 0)
           : a.chain === "igra" ? await readIgraHolders(a.ref, a.supply, a.decimals ?? 18) : null;
         a.holdersAt = Date.now();
         if (h) { a.top10 = h.top10; a.topHolders = h.top; read++; }
+        if (h && "cov" in h) a.cov = h.cov as Asset["cov"];
         const n = h && "holders" in h ? (h.holders as number | null) : null;
         if (n != null) a.holders = n;
       } catch { /* try again next tick */ }
@@ -127,6 +128,11 @@ export async function refreshAssets(s: Snapshot) {
     for (const a of next.values()) if ((a.standard === "krc20" || a.standard === "kcc20" || a.standard === "kron") && a.topHolders) a.topHolders = nameHolders(a.topHolders, names);
     report.names = names.size;
   }
+
+  // a week ago, from dawns' own daily record: the nearest day at least 7 days back (within 10)
+  const week = (await sql().query("select distinct on (id) id, holders, price from asset_daily where day <= now() - interval '7 days' and day > now() - interval '10 days' order by id, day desc")) as { id: string; holders: number | null; price: number | null }[];
+  const ago = new Map(week.map((w) => [w.id, w]));
+  for (const a of next.values()) { const w = ago.get(a.id); a.holders7 = w?.holders ?? null; a.price7 = w?.price ?? null; }
 
   const rows = [...next.values()];
   await insertJson("assets", [["id", "text"], ["chain", "text"], ["standard", "text"], ["symbol", "text"], ["data", "jsonb"]],

@@ -15,6 +15,7 @@ export function toAssetLite(a: Asset): AssetLite {
     standard: a.standard, standardName: STANDARD_NAME[a.standard],
     price: a.price, mcap: a.mcap, credible: valueCredible(a), vol24: a.vol24, holders: a.holders, liquidity: a.liquidity, top10: a.top10,
     split: supplyParts(a.topHolders, a.top10).map((p) => ({ key: p.key, label: p.label, color: p.color, share: p.share })),
+    holders7: a.holders7 ?? null,
     venues: a.pools.length, grade: r.grade.t, gradeLabel: r.grade.label, significant: significant(a),
   };
 }

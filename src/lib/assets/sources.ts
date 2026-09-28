@@ -1,6 +1,6 @@
 import "server-only";
 import type { Snapshot } from "../types";
-import { assetId, type Asset, type Holder, type HolderKind, type NetworkStats } from "./types";
+import { assetId, type Asset, type CovenantInfo, type Holder, type HolderKind, type NetworkStats } from "./types";
 
 /**
  * Asset sources. Read-only public APIs; every number is checked before it is used
@@ -298,8 +298,15 @@ interface KccToken {
   supply?: string; circulating_supply?: string; holders?: number; genesis_daa?: number; validation_status?: string;
   price_kas?: number | string | null; organic_rank?: number;
 }
+/** The network's DAA score, as the indexer sees it: turns DAA scores into dates (10 per second). */
+export async function kccNetworkDaa(): Promise<number | null> {
+  const s = await get<{ network_daa?: number; max_daa?: number }>(`${KCC20}/status`).catch(() => null);
+  return num(s?.network_daa ?? s?.max_daa);
+}
+const daaTime = (daa: number, now: number) => Date.now() - ((now - daa) / 10) * 1000;
+
 export async function readCovenantTokens(kasUsd: number | null): Promise<Asset[]> {
-  const r = await get<{ tokens: KccToken[] }>(`${KCC20}/tokens?limit=1000`, 20_000);
+  const [r, networkDaa] = await Promise.all([get<{ tokens: KccToken[] }>(`${KCC20}/tokens?limit=1000`, 20_000), kccNetworkDaa()]);
   const out: Asset[] = [];
   for (const t of r.tokens ?? []) {
     if (!/^[0-9a-f]{64}$/.test(t.token_id)) continue;
@@ -310,8 +317,10 @@ export async function readCovenantTokens(kasUsd: number | null): Promise<Asset[]
     const supply = units(t.circulating_supply ?? t.supply ?? "", dec);
     const pk = num(t.price_kas);
     const px = pk && kasUsd ? pk * kasUsd : null;
+    const gd = num(t.genesis_daa), nd = networkDaa;
     Object.assign(a, {
       decimals: dec, logo: t.image || null, supply, holders: num(t.holders), rank: num(t.organic_rank),
+      launched: gd != null && nd ? Date.now() - ((nd - gd) / 10) * 1000 : null,
       validation: t.validation_status ?? null,
       price: px, priceSrc: px != null ? "KCC20 indexer, in KAS" : null, mcap: px != null && supply != null ? px * supply : null,
     });
@@ -319,9 +328,47 @@ export async function readCovenantTokens(kasUsd: number | null): Promise<Asset[]
   }
   return out;
 }
-export async function readCovenantHolders(id: string, supply: number | null, dec: number): Promise<{ top10: number | null; top: Holder[] } | null> {
+/**
+ * One covenant token in depth: distribution (holders, deployer share, reserve, reconciliation),
+ * supply since genesis, and the last 30 days of actions.
+ */
+export async function readCovenantDepth(id: string, dec: number): Promise<{ top10: number | null; top: Holder[]; holders: number | null; cov: CovenantInfo } | null> {
+  const nd = await kccNetworkDaa();
+  const since = nd ? nd - 30 * 86_400 * 10 : null;
+  const [d, dist, acts] = await Promise.all([
+    get<{ genesis_owner?: string; genesis_owner_type?: string; genesis_supply?: string; minted?: string; burned?: string; unresolved_cells?: number; action_count?: number; last_daa?: number; supply?: string }>(`${KCC20}/tokens/${id}`),
+    get<{ supply?: string; holder_count?: number; protocol_reserve?: string; reconciled?: boolean; top_holders?: { owner: string; address?: string; balance: string; share_percent?: string }[] }>(`${KCC20}/tokens/${id}/distribution`),
+    get<{ actions?: { kind: string; accepting_daa: number }[] }>(`${KCC20}/tokens/${id}/actions?order=desc&limit=500${since ? `&after_daa=${since}` : ""}`).catch(() => ({ actions: [] })),
+  ]);
+  const supply = units(dist.supply ?? d.supply ?? "", dec);
   if (!supply) return null;
-  const r = await get<{ holders: { address?: string; owner: string; balance: string }[] }>(`${KCC20}/tokens/${id}/holders?limit=10`);
-  const top = (r.holders ?? []).slice(0, 10).map((h) => ({ address: h.address ?? h.owner, share: (units(h.balance, dec) ?? 0) / supply, contract: !h.address, label: null }));
-  return { top10: top.reduce((x, h) => x + h.share, 0), top };
+  const top: Holder[] = (dist.top_holders ?? []).slice(0, 10).map((h) => ({
+    address: h.address ?? h.owner, share: (units(h.balance, dec) ?? 0) / supply, contract: !h.address,
+    label: d.genesis_owner && h.owner === d.genesis_owner ? "Deployer (genesis key)" : null, kind: d.genesis_owner && h.owner === d.genesis_owner ? "project" : null,
+  }));
+  const deployer = top.find((h) => h.label?.startsWith("Deployer"));
+  const byDay = new Map<string, { transfers: number; other: number }>();
+  const kinds: Record<string, number> = {};
+  for (const x of acts.actions ?? []) {
+    if (!nd) break;
+    const day = new Date(daaTime(x.accepting_daa, nd)).toISOString().slice(0, 10);
+    const e = byDay.get(day) ?? { transfers: 0, other: 0 };
+    if (x.kind === "transfer" || x.kind === "split" || x.kind === "merge") e.transfers++; else e.other++;
+    byDay.set(day, e);
+    kinds[x.kind] = (kinds[x.kind] ?? 0) + 1;
+  }
+  const days = Array.from({ length: 30 }, (_, i) => { const day = new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10); return { day, ...(byDay.get(day) ?? { transfers: 0, other: 0 }) }; });
+  const gen = units(d.genesis_supply ?? "", dec);
+  const burned = units(d.burned ?? "0", dec) ?? 0;
+  const cov: CovenantInfo = {
+    ownerType: d.genesis_owner_type ?? null, deployerShare: deployer ? deployer.share : top.length ? 0 : null,
+    // "minted" in the indexer counts the genesis too (Kron tokens): what matters is how far
+    // supply moved from what launched. Supply now + burned − supply at launch.
+    genesisSupply: gen, minted: gen != null ? Math.max(0, supply + burned - gen) < gen * 0.001 ? 0 : Math.max(0, supply + burned - gen) : 0, burned,
+    capped: (acts.actions ?? []).length >= 500,
+    reserveShare: dist.protocol_reserve ? (units(dist.protocol_reserve, dec) ?? 0) / supply : null,
+    reconciled: dist.reconciled ?? null, unresolved: num(d.unresolved_cells) ?? 0, actions: num(d.action_count) ?? 0,
+    lastActive: d.last_daa && nd ? daaTime(d.last_daa, nd) : null, days, kinds,
+  };
+  return { top10: top.reduce((x, h) => x + h.share, 0), top, holders: num(dist.holder_count), cov };
 }
