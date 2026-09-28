@@ -4,6 +4,7 @@ import { hasDb, ensureSchema } from "@/lib/db";
 import { recordSnapshot, diffSignals, deliver, maybeDailyReport, planAlerts } from "@/lib/alerts";
 import { hasBot, ensureWebhook } from "@/lib/telegram";
 import { refreshAssets } from "@/lib/assets";
+import { maybeDailyCards } from "@/lib/cards";
 import { indexEvents, indexBridgeExits, checkPayouts, indexKaskadAccounts, readKaskadPositions } from "@/lib/indexer";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,8 @@ export const maxDuration = 300;
 
 /**
  * Every 10 minutes (GitHub Actions) and once a day (Vercel cron):
- * fresh snapshot → store history → diff signals → Telegram alerts → morning report.
+ * fresh snapshot → store history → diff signals → Telegram alerts → morning report,
+ * and once a day the share-card drafts for /admin/cards.
  */
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
@@ -35,6 +37,7 @@ export async function GET(req: Request) {
     await step("exits", () => indexBridgeExits(s));
     await step("payouts", () => checkPayouts());
     await step("assets", async () => { const r = await refreshAssets(s); revalidateTag("assets", "max"); return r; });
+    await step("cards", () => maybeDailyCards(s)); // drafts only: nothing is posted until approved in /admin/cards
     let events: Awaited<ReturnType<typeof diffSignals>> = [];
     await step("signals", async () => { events = await diffSignals(s); return events.map((e) => `${e.kind} ${e.key}`); });
     if (hasBot()) {

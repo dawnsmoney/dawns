@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Banner } from "@/components/Banner";
-import { currentUser, accountOf } from "@/lib/auth/session";
+import { isAdmin } from "@/lib/admin";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Admin", robots: { index: false, follow: false } };
 
-/** Wallets allowed in (ADMIN_WALLETS, comma separated, any case). */
-const ADMINS = (process.env.ADMIN_WALLETS ?? "").split(",").map((a) => a.trim().toLowerCase()).filter(Boolean);
 
 type R = Record<string, unknown>;
 const num = (x: unknown) => Number(x ?? 0).toLocaleString("en-US");
@@ -21,11 +20,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 }
 
 export default async function AdminPage() {
-  if (!hasDb() || !ADMINS.length) notFound();
-  const u = await currentUser().catch(() => null);
-  if (!u) notFound();
-  const acct = await accountOf(u.id);
-  if (!acct.wallets.some((w) => ADMINS.includes(w.address.toLowerCase()))) notFound();
+  if (!hasDb() || !(await isAdmin())) notFound();
   await ensureSchema();
   const q = sql();
   const one = async (text: string) => ((await q.query(text)) as R[])[0] ?? {};
@@ -64,6 +59,10 @@ export default async function AdminPage() {
     <>
       <Banner short crumb={[{ label: "Admin" }]} title="dawns in numbers" lede="Visitors and product use from dawns' own database. No cookies: a visitor is counted once per day from a hashed IP and browser, never stored." />
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 24 }}>
+        <Link href="/admin/cards" className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, textDecoration: "none", color: "inherit" }}>
+          <div><b style={{ font: "600 18px var(--display)" }}>Share cards</b><span className="muted" style={{ display: "block", fontSize: 13.5, marginTop: 4 }}>Today&apos;s drafts for X and Telegram: review, edit, approve, download.</span></div>
+          <span className="btn iris sm">Open</span>
+        </Link>
         <div className="grid g2">
           <Stat label="Visitors today" value={num(vis.today)} sub={`${num(vis.today_pv)} page views · ${num(vis.yesterday)} yesterday`} />
           <Stat label="Visitors, last 7 days" value={num(vis.week)} sub={`${num(vis.week_pv)} page views · ${num(vis.month)} in 30 days${vis.since ? ` · counting since ${new Date(String(vis.since)).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}`} />

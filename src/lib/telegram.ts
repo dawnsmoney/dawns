@@ -23,6 +23,19 @@ export function send(chatId: number | string, html: string, extra: Record<string
   return tg("sendMessage", { chat_id: chatId, text: html, parse_mode: "HTML", link_preview_options: { is_disabled: true }, ...extra });
 }
 
+/** Post an image (PNG) with an HTML caption (at most 1024 characters). */
+export async function sendPhoto(chatId: number | string, png: Blob, caption: string) {
+  if (!TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is not set");
+  const fd = new FormData();
+  fd.set("chat_id", String(chatId));
+  fd.set("photo", png, "dawns.png");
+  fd.set("caption", caption.slice(0, 1024));
+  fd.set("parse_mode", "HTML");
+  const r = await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, { method: "POST", body: fd, cache: "no-store", signal: AbortSignal.timeout(20_000) });
+  const j = (await r.json()) as { ok: boolean; description?: string };
+  if (!j.ok) throw new Error(`Telegram sendPhoto: ${j.description}`);
+}
+
 export const COMMANDS = [
   { command: "status", description: "Kaspa DeFi health right now" },
   { command: "watch", description: "Get alerts for a protocol (or all)" },

@@ -106,6 +106,12 @@ const SCHEMA = [
   `alter table asset_daily add column if not exists top jsonb`,
   // ZKas block producers: blocks sampled per payout address per day
   `create table if not exists zkas_producers (day date not null, producer text not null, blocks int not null, primary key (day, producer))`,
+  // share cards: drafts picked daily (or made on demand) with their numbers frozen, reviewed in /admin/cards
+  `create table if not exists card_drafts (
+    id text primary key, day date not null, kind text not null, ref text not null, data jsonb not null, reading text not null,
+    status text not null default 'draft', origin text not null default 'daily',
+    created_at timestamptz not null default now(), updated_at timestamptz not null default now(), sent_at timestamptz,
+    unique (day, kind, ref))`,
 ];
 
 let ready: Promise<void> | null = null;
