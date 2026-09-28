@@ -10,21 +10,29 @@ type Eip6963Detail = { info: { uuid: string; name: string; icon: string; rdns: s
 declare global { interface Window { kasware?: Kasware; kastle?: Kastle; ethereum?: Eip1193 } }
 
 export type Account = { id: string; wallets: { address: string; kind: "kaspa" | "evm" }[]; policy: unknown; plan: { at: string; lines: { id: string; name: string; usd: number }[] } | null; telegram: boolean; updatedAt: string | null } | null;
-export type WalletOption = { key: string; label: string; icon?: string; kind: "kaspa" | "evm"; installed: boolean; install?: string };
+/** `open`: on a phone without an injected wallet, a link that opens this page inside the wallet app's own browser, where sign-in works as on desktop. */
+export type WalletOption = { key: string; label: string; icon?: string; kind: "kaspa" | "evm"; installed: boolean; install?: string; open?: string };
+
+/** MetaMask's universal link: opens the given page in the MetaMask app's browser (installs the app first if needed). */
+export const metamaskLink = () => `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`;
 
 /** EIP-6963: every injected EVM wallet announces itself (MetaMask, KasWare EVM, Kastle EVM, Rabby…). */
 export function useWalletOptions(): WalletOption[] {
   const [evm, setEvm] = useState<Eip6963Detail[]>([]);
-  const [kaspa, setKaspa] = useState({ kasware: false, kastle: false, eth: false });
+  const [kaspa, setKaspa] = useState({ kasware: false, kastle: false, eth: false, mobile: false, link: "" });
   useEffect(() => {
     const seen = new Map<string, Eip6963Detail>();
     const on = (e: Event) => { const d = (e as CustomEvent<Eip6963Detail>).detail; if (d?.info?.uuid && !seen.has(d.info.uuid)) { seen.set(d.info.uuid, d); setEvm([...seen.values()]); } };
     window.addEventListener("eip6963:announceProvider", on);
     window.dispatchEvent(new Event("eip6963:requestProvider"));
     // extensions inject a moment after load
-    const t = setTimeout(() => setKaspa({ kasware: !!window.kasware, kastle: !!window.kastle, eth: !!window.ethereum }), 400);
+    const t = setTimeout(() => setKaspa({ kasware: !!window.kasware, kastle: !!window.kastle, eth: !!window.ethereum,
+      mobile: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)), link: metamaskLink() }), 400);
     return () => { window.removeEventListener("eip6963:announceProvider", on); clearTimeout(t); };
   }, []);
+  // a phone's own browser has no wallet: offer to open this page inside the wallet app instead
+  if (kaspa.mobile && !evm.length && !kaspa.eth && !kaspa.kasware && !kaspa.kastle)
+    return [{ key: "metamask-app", label: "MetaMask", kind: "evm", installed: false, open: kaspa.link, install: "https://metamask.io/download/" }];
   const opts: WalletOption[] = [
     { key: "kasware", label: "KasWare", kind: "kaspa", installed: kaspa.kasware, install: "https://www.kasware.xyz" },
     { key: "kastle", label: "Kastle", kind: "kaspa", installed: kaspa.kastle, install: "https://kastle.cc" },
