@@ -136,7 +136,7 @@ export function Allocator({ opps, kasUsd }: { opps: Opportunity[]; kasUsd: numbe
                   {busy === w.key ? "Check your wallet…" : w.label}
                 </button>
               ) : (
-                w.open ? <a key={w.key} className="btn glass sm" href={w.open}>Open in {w.label} app</a>
+                w.open ? <a key={w.key} className="btn ghost sm" href={w.open}>Or open in the {w.label} app&apos;s browser</a>
                   : <a key={w.key} className="btn ghost sm" href={w.install} target="_blank" rel="noopener noreferrer">Get {w.label}</a>
               ))}
             </div>

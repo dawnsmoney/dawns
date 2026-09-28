@@ -230,7 +230,7 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
           ) : (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {wallets.filter((w) => w.installed).map((w) => <button key={w.key} type="button" className="btn iris sm" disabled={!!busy || "error" in parsed} onClick={() => publish(w.key)}>{busy === w.key ? "Check your wallet…" : `Sign in with ${w.label} and publish`}</button>)}
-              {wallets.filter((w) => w.open).map((w) => <a key={w.key} className="btn iris sm" href={w.open}>Open in {w.label} app to publish</a>)}
+              {wallets.filter((w) => w.open).map((w) => <a key={w.key} className="btn ghost sm" href={w.open}>Or open in the {w.label} app&apos;s browser</a>)}
               {!wallets.some((w) => w.installed || w.open) && <small className="muted">Install a Kaspa or EVM wallet to publish. The preview works without one.</small>}
             </div>
           )}

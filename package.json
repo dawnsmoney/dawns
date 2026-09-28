@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@metamask/sdk": "^0.34.0",
     "@neondatabase/serverless": "^1.1.0",
     "@noble/curves": "^1.9.1",
     "@noble/hashes": "^1.8.0",

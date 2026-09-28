@@ -32,7 +32,11 @@ export function useWalletOptions(): WalletOption[] {
   }, []);
   // a phone's own browser has no wallet: offer to open this page inside the wallet app instead
   if (kaspa.mobile && !evm.length && !kaspa.eth && !kaspa.kasware && !kaspa.kastle)
-    return [{ key: "metamask-app", label: "MetaMask", kind: "evm", installed: false, open: kaspa.link, install: "https://metamask.io/download/" }];
+    return [
+      // MetaMask SDK: from Safari or Chrome, hands the request to the MetaMask app and comes back
+      { key: "metamask-sdk", label: "MetaMask", kind: "evm", installed: true },
+      { key: "metamask-app", label: "MetaMask", kind: "evm", installed: false, open: kaspa.link, install: "https://metamask.io/download/" },
+    ];
   const opts: WalletOption[] = [
     { key: "kasware", label: "KasWare", kind: "kaspa", installed: kaspa.kasware, install: "https://www.kasware.xyz" },
     { key: "kastle", label: "Kastle", kind: "kaspa", installed: kaspa.kastle, install: "https://kastle.cc" },
@@ -54,6 +58,19 @@ async function post<T>(url: string, body: unknown): Promise<T> {
   return j as T;
 }
 
+/** The MetaMask SDK, loaded only when someone signs in with it (it is large). */
+let sdkProvider: Eip1193 | null = null;
+async function metamaskSdk(): Promise<Eip1193> {
+  if (sdkProvider) return sdkProvider;
+  const { MetaMaskSDK } = await import("@metamask/sdk");
+  const sdk = new MetaMaskSDK({ dappMetadata: { name: "dawns.money", url: window.location.origin }, checkInstallationImmediately: false, useDeeplink: true, enableAnalytics: false });
+  await sdk.connect();
+  const p = sdk.getProvider();
+  if (!p) throw new Error("MetaMask did not connect.");
+  sdkProvider = p as unknown as Eip1193;
+  return sdkProvider;
+}
+
 /** Connect a wallet, sign dawns' one-time message, and start a session. */
 export async function signInWith(key: string): Promise<Account> {
   let kind: "kaspa" | "evm", address: string, sign: (m: string) => Promise<string>;
@@ -66,6 +83,10 @@ export async function signInWith(key: string): Promise<Account> {
     kind = "kaspa"; if (!(await w.connect())) throw new Error("Kastle did not connect.");
     address = (await w.getAccount()).address;
     sign = (m) => w.signMessage(m);
+  } else if (key === "metamask-sdk") {
+    const prov = await metamaskSdk();
+    kind = "evm"; address = ((await prov.request({ method: "eth_requestAccounts" })) as string[])[0];
+    sign = (m) => prov.request({ method: "personal_sign", params: [toHex(m), address] }) as Promise<string>;
   } else {
     const prov = key.startsWith("6963:") ? providers.find((p) => `6963:${p.info.uuid}` === key)?.provider : window.ethereum;
     if (!prov) throw new Error("No EVM wallet found in this browser.");
