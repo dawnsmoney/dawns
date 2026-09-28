@@ -15,7 +15,8 @@ export const STANDARD_NAME: Record<AssetStandard, string> = { native: "Native co
 export const assetId = (chain: AssetChain, standard: AssetStandard, ref: string) => `${chain}:${standard}:${standard === "erc20" ? ref.toLowerCase() : ref.toUpperCase()}`;
 export const assetPath = (id: string) => `/assets/${id.split(":").map(encodeURIComponent).join("/")}`;
 
-export interface Holder { address: string; share: number; label: string | null; contract: boolean }
+export type HolderKind = "exchange" | "burn" | "project" | null;
+export interface Holder { address: string; share: number; label: string | null; contract: boolean; kind?: HolderKind }
 
 export interface Asset {
   id: string;
@@ -64,8 +65,16 @@ export interface NetworkStats {
   inflation: number | null;         // emissionPerYear ÷ circulating supply
   emissionBasis?: string;           // how the projection was made
   mergedShare?: number | null;      // ZKAS: its hashrate ÷ Kaspa's
+  producers?: Producers | null;     // ZKAS: who produces the blocks (sampled)
   shielded?: { notes: number; nullifiers: number; turnstileIn: number; turnstileOut: number } | null;
   daa: number | null;
+}
+
+export interface Producers {
+  days: number; sampled: number; distinct: number;
+  top: { id: string; share: number }[];   // largest payout addresses, share of sampled blocks
+  toMajority: number;                     // fewest producers that together made > 50% of blocks
+  unknown: number;                        // blocks whose payout could not be read
 }
 
 export interface AssetDay { day: string; price: number | null; holders: number | null; mcap: number | null; vol24: number | null; supply: number | null }

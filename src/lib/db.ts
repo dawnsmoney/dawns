@@ -102,6 +102,8 @@ const SCHEMA = [
   `create table if not exists asset_daily (
     id text not null, day date not null, price double precision, holders double precision, mcap double precision,
     vol24 double precision, supply double precision, primary key (id, day))`,
+  // ZKas block producers: blocks sampled per payout address per day
+  `create table if not exists zkas_producers (day date not null, producer text not null, blocks int not null, primary key (day, producer))`,
 ];
 
 let ready: Promise<void> | null = null;

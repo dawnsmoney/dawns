@@ -1,6 +1,6 @@
 import "server-only";
 import type { Snapshot } from "../types";
-import { assetId, type Asset, type Holder, type NetworkStats } from "./types";
+import { assetId, type Asset, type Holder, type HolderKind, type NetworkStats } from "./types";
 
 /**
  * Asset sources. Read-only public APIs; every number is checked before it is used
@@ -258,4 +258,20 @@ export function venuesFromSnapshot(s: Snapshot): Map<string, Venue> {
     }
   }
   return m;
+}
+
+// ---------------------------------------------------------------------------
+// Kaspa address names: the list the Kaspa REST API publishes (exchanges, burn, funds)
+// ---------------------------------------------------------------------------
+const EXCHANGES = /\b(gate|kucoin|bybit|bitget|coinex|mexc|biconomy|xeggex|bitmart|htx|huobi|okx|binance|kraken|bitvavo|uphold|tradeogre|nonkyc|lbank|ascendex|probit|bitpanda|coinstore|bingx|toobit|weex|safetrade|exbitron|chainex|bitfinex|coinbase|crypto\.com|poloniex|hotcoin|digifinex|bitunix|xt\.com|pionex|bitrue|hitbtc|bitkub|indodax)\b/i;
+export async function readKaspaNames(): Promise<Map<string, string>> {
+  const r = await get<{ address: string; name: string }[]>(`${KASPA_API}/addresses/names`);
+  return new Map((Array.isArray(r) ? r : []).filter((x) => typeof x.address === "string" && typeof x.name === "string").map((x) => [x.address, x.name.slice(0, 60)]));
+}
+export const holderKind = (name: string | null): HolderKind =>
+  !name ? null : EXCHANGES.test(name) ? "exchange" : /burn/i.test(name) ? "burn" : /fund|treasury|dev|team|launchpad|marketing/i.test(name) ? "project" : null;
+/** Name KRC-20 holders from the published list; keep a deployer label if there is one. */
+export function nameHolders(top: Holder[] | null, names: Map<string, string>): Holder[] | null {
+  if (!top) return top;
+  return top.map((h) => { const n = names.get(h.address) ?? null; const label = n ?? h.label; return { ...h, label, kind: n ? holderKind(n) : h.label?.startsWith("Deployer") ? "project" : h.kind ?? null }; });
 }

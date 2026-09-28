@@ -119,6 +119,9 @@ export default async function AssetPage({ params }: P) {
                 {a.net.mergedShare != null && <><dt>Share of Kaspa</dt><dd>{pct(a.net.mergedShare, 1)} of Kaspa&apos;s hashrate</dd></>}
                 {a.net.difficulty != null && <><dt>Difficulty</dt><dd>{a.net.difficulty.toExponential(3)}</dd></>}
                 {a.net.daa != null && <><dt>DAA score</dt><dd>{a.net.daa.toLocaleString("en-US")}</dd></>}
+                {a.net.producers && <><dt>Block producers</dt><dd>{a.net.producers.toMajority} made over half of {a.net.producers.sampled.toLocaleString("en-US")} sampled blocks · {a.net.producers.distinct} seen in {a.net.producers.days} day{a.net.producers.days > 1 ? "s" : ""}
+                  <small className="muted" style={{ display: "block" }}>{a.net.producers.top.slice(0, 4).map((t) => `${t.id.slice(0, 8)}… ${pct(t.share, 0)}`).join(" · ")}</small>
+                  <small className="muted" style={{ display: "block" }}>Read from each block&apos;s payout address. One operator can use several addresses, so real concentration can only be higher.</small></dd></>}
                 {a.net.shielded && <><dt>Shielded pool</dt><dd>{a.net.shielded.notes.toLocaleString("en-US")} notes · {a.net.shielded.nullifiers.toLocaleString("en-US")} spent · {a.net.shielded.turnstileOut > 0 ? `${whole(a.net.shielded.turnstileOut, a.symbol)} ever left` : "nothing has ever left"}</dd></>}
               </dl>
               {cur && <dl className="kv" style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--line)" }}>{cur.facts.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>}
@@ -130,12 +133,12 @@ export default async function AssetPage({ params }: P) {
                 <div className="vlist">
                   {a.topHolders.map((h, i) => (
                     <div className="vrow" key={h.address}><span className="muted">{i + 1}</span>
-                      <div className="mono" style={{ fontSize: 13.5 }}>{short(h.address)}<small>{h.label ?? (h.contract ? "Contract" : "Address")}</small></div>
+                      <div className="mono" style={{ fontSize: 13.5 }}>{short(h.address)}<small>{h.label ? `${h.label}${h.kind === "exchange" ? " · exchange" : ""}` : h.contract ? "Contract" : "Address"}</small></div>
                       <b>{pct(h.share, 1)}</b></div>
                   ))}
                 </div>
               ) : <p className="muted" style={{ margin: 0 }}>Not read yet. dawns reads the holder lists of the most significant assets first.</p>}
-              {a.standard === "krc20" && a.topHolders?.length ? <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>Addresses are not labelled yet: a large holder may be an exchange or a marketplace escrow rather than one owner.</p> : null}
+              {a.standard === "krc20" && a.topHolders?.length ? <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>Names from the address list the Kaspa REST API publishes (exchanges, burn address, funds). An unnamed address may still be an exchange or marketplace escrow.</p> : null}
             </div>
           )}
         </div>

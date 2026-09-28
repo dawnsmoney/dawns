@@ -3,7 +3,9 @@ import { unstable_cache } from "next/cache";
 import { sql, insertJson, getMeta, setMeta, hasDb, ensureSchema } from "../db";
 import type { Snapshot } from "../types";
 import { assetId, type Asset, type AssetDay } from "./types";
-import { readKas, readZkas, readKrc20, readKrc20Holders, readIgraTokens, readIgraHolders, venuesFromSnapshot } from "./sources";
+import { sampleProducers } from "../chain/zkas";
+import type { Producers } from "./types";
+import { readKas, readZkas, readKrc20, readKrc20Holders, readIgraTokens, readIgraHolders, venuesFromSnapshot, readKaspaNames, nameHolders } from "./sources";
 
 const LIST_EVERY = 55 * 60_000;      // full token lists: hourly
 const HOLDERS_EVERY = 24 * 3600_000; // a holder list is refreshed daily
@@ -34,7 +36,17 @@ export async function refreshAssets(s: Snapshot) {
   const kas = await readKas(s).catch((e) => { report.kas = (e as Error).message; return prev.get("kaspa:native:KAS") ?? null; });
   if (kas) next.set(kas.id, kas);
   const zk = await readZkas(kas?.net?.hashrate ?? null).catch((e) => { report.zkas = (e as Error).message; return prev.get("zkas:native:ZKAS") ?? null; });
-  if (zk) next.set(zk.id, zk);
+  if (zk) {
+    next.set(zk.id, zk);
+    try {
+      const got = await sampleProducers(40);
+      const day = new Date().toISOString().slice(0, 10);
+      await insertJson("zkas_producers", [["day", "date"], ["producer", "text"], ["blocks", "int"]], got.map((g) => ({ day, ...g })),
+        "on conflict (day, producer) do update set blocks = zkas_producers.blocks + excluded.blocks");
+      report.zkasSample = got.reduce((x, g) => x + g.blocks, 0);
+    } catch (e) { report.zkasSample = (e as Error).message.slice(0, 120); }
+    if (zk.net) zk.net.producers = await producerStats(7).catch(() => null);
+  }
 
   // token lists
   const lastList = Number((await getMeta("assets_list_at")) ?? 0);
@@ -97,6 +109,13 @@ export async function refreshAssets(s: Snapshot) {
   }
   report.holders = `${read}/${due.length}`;
 
+  // name KRC-20 holders (exchanges, burn, funds) from the Kaspa REST API's published list
+  const names = await readKaspaNames().catch(() => null);
+  if (names) {
+    for (const a of next.values()) if (a.standard === "krc20" && a.topHolders) a.topHolders = nameHolders(a.topHolders, names);
+    report.names = names.size;
+  }
+
   const rows = [...next.values()];
   await insertJson("assets", [["id", "text"], ["chain", "text"], ["standard", "text"], ["symbol", "text"], ["data", "jsonb"]],
     rows.map((a) => ({ id: a.id, chain: a.chain, standard: a.standard, symbol: a.symbol, data: a })),
@@ -107,6 +126,22 @@ export async function refreshAssets(s: Snapshot) {
     "on conflict (id, day) do update set price = excluded.price, holders = excluded.holders, mcap = excluded.mcap, vol24 = excluded.vol24, supply = excluded.supply");
   report.assets = rows.length;
   return report;
+}
+
+/** Block producers over the last `days` days of dawns' samples. */
+async function producerStats(days: number): Promise<Producers | null> {
+  const r = (await sql().query("select producer, sum(blocks)::int as blocks, count(distinct day)::int as d from zkas_producers where day > now() - make_interval(days => $1) group by producer order by 2 desc", [days])) as { producer: string; blocks: number; d: number }[];
+  const known = r.filter((x) => x.producer !== "unknown");
+  const total = known.reduce((s, x) => s + x.blocks, 0);
+  if (total < 50) return null;
+  let acc = 0, toMajority = 0;
+  for (const x of known) { acc += x.blocks; toMajority++; if (acc > total / 2) break; }
+  const span = (await sql().query("select count(distinct day)::int as d from zkas_producers where day > now() - make_interval(days => $1)", [days])) as { d: number }[];
+  return {
+    days: span[0]?.d ?? 0, sampled: total, distinct: known.length, toMajority,
+    top: known.slice(0, 6).map((x) => ({ id: x.producer, share: x.blocks / total })),
+    unknown: r.find((x) => x.producer === "unknown")?.blocks ?? 0,
+  };
 }
 
 export const getAssets = unstable_cache(async (): Promise<Asset[]> => (hasDb() ? loadAll() : []), ["dawns-assets-v1"], { revalidate: 300, tags: ["assets"] });

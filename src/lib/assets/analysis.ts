@@ -38,12 +38,17 @@ export function analyse(a: Asset): Analysis {
 
   // distribution
   if (a.top10 != null) {
-    // contracts (pools, lending markets, bridges) hold on behalf of many; wallets do not
-    const inContracts = (a.topHolders ?? []).filter((h) => h.contract).reduce((s, h) => s + h.share, 0);
-    const wallets = Math.max(0, a.top10 - inContracts);
+    // contracts (pools, markets, bridges) and exchanges hold on behalf of many; burned supply is gone
+    const sum = (f: (h: NonNullable<Asset["topHolders"]>[number]) => boolean) => (a.topHolders ?? []).filter(f).reduce((s, h) => s + h.share, 0);
+    const inContracts = sum((h) => h.contract);
+    const onExchanges = sum((h) => !h.contract && h.kind === "exchange");
+    const burned = sum((h) => h.kind === "burn");
+    const wallets = Math.max(0, a.top10 - inContracts - onExchanges - burned);
+    const parts = [inContracts >= 0.01 && `${pct(inContracts)} in contracts (pools, markets, bridges)`, onExchanges >= 0.01 && `${pct(onExchanges)} on exchanges`, burned >= 0.01 && `${pct(burned)} burned`, `${pct(wallets)} in other wallets`].filter(Boolean);
     const t: Status = wallets >= 0.8 ? "crit" : wallets >= 0.5 ? "warn" : "good";
-    flags.push([t, `The 10 largest addresses hold ${pct(a.top10)} of supply${inContracts >= 0.01 ? `: ${pct(inContracts)} in contracts (pools, markets, bridges), ${pct(wallets)} in wallets` : ""}.`]);
-    if (wallets >= 0.5) questions.push("Who are the largest holders: exchanges, the team, or individuals? Can they exit into the available liquidity?");
+    flags.push([t, `The 10 largest addresses hold ${pct(a.top10)} of supply${parts.length > 1 ? `: ${parts.join(", ")}` : ""}.`]);
+    if (onExchanges >= 0.1) questions.push("How much of the supply on exchanges is liquid, and how quickly could it be sold?");
+    if (wallets >= 0.5) questions.push("Who are the largest holders: the team, a fund, or individuals? Can they exit into the available liquidity?");
   }
   if (a.holders != null && a.holders < 100 && a.standard !== "native") flags.push(["warn", `Only ${n(a.holders)} holders.`]);
 
@@ -60,6 +65,12 @@ export function analyse(a: Asset): Analysis {
   }
   if (a.net?.inflation != null) flags.push([a.net.inflation >= 0.2 ? "warn" : "info", `New supply over the next 12 months, on its schedule: about ${pct(a.net.inflation, a.net.inflation >= 1 ? 0 : 1)} of today's circulating supply.`]);
   if (a.net?.mergedShare != null) flags.push(["info", `Hashrate equals ${pct(a.net.mergedShare, 1)} of Kaspa's. With merged mining, that is at most the share of Kaspa's work also securing ${a.symbol}.`]);
+  const pr = a.net?.producers;
+  if (pr) {
+    const lead = pr.top[0]?.share ?? 0;
+    flags.push([lead >= 0.5 || pr.toMajority <= 1 ? "crit" : lead >= 0.33 || pr.toMajority <= 2 ? "warn" : "good",
+      `Block production: ${pr.toMajority} payout address${pr.toMajority > 1 ? "es" : ""} made over half of ${pr.sampled.toLocaleString("en-US")} sampled blocks; the largest made ${pct(lead)}. ${pr.distinct} distinct producers seen in ${pr.days} day${pr.days > 1 ? "s" : ""}.`]);
+  }
   if (a.net?.shielded && a.net.shielded.turnstileOut === 0) flags.push(["info", "No coins have ever left the shielded pool: every coin minted is still shielded."]);
 
   if (a.standard === "erc20" && BRIDGED.test(a.symbol)) {
