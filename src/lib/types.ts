@@ -132,6 +132,8 @@ export interface Opportunity {
   status: Status; statusText: string;
   notes: string[];
   pair?: string; feeTier?: number | null;
+  /** canonical asset ids (chain:standard:ref) of what the position holds, in the order of `assets` */
+  assetIds: string[];
 }
 
 export interface Snapshot {

@@ -12,6 +12,7 @@ const IGRA_SCOUT = "https://explorer.igralabs.com";
 const ZKAS_API = "https://explorer.zkas.info/api";
 const ZKAS_OTC = "https://mining-pool.zkas.info/api/otc/price";
 const YEAR_S = 31_536_000;
+const VENUE: Record<string, string> = { nonkyc: "NonKYC", neoxa: "Neoxa" };
 
 async function get<T = unknown>(url: string, ms = 12_000): Promise<T> {
   const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(ms), headers: { accept: "application/json", "user-agent": "dawns.money asset index" } });
@@ -120,7 +121,7 @@ export async function readZkas(kasHashrate: number | null): Promise<Asset> {
   const px = otc && !otc.stale ? num(otc.zkasUsd) : null;
   Object.assign(a, {
     decimals: 8, supply: circ, maxSupply: null, launched: Date.UTC(2026, 6, 26),
-    price: px, priceSrc: px != null ? `OTC desk quote${venues.length ? ` (${venues.join(", ")})` : ""}` : null,
+    price: px, priceSrc: px != null ? `OTC desk quote${venues.length ? ` (${venues.map((v) => VENUE[v] ?? v).join(", ")})` : ""}` : null,
     mcap: px != null && circ != null ? px * circ : null,
   });
   a.net = {
@@ -164,7 +165,7 @@ export async function readKrc20(): Promise<Asset[]> {
         launched: num(t.creationDate), holders: num(t.totalHolders), rank: num(t.rank),
         price: px && px > 0 ? px : null, priceSrc: px && px > 0 ? "KaspaCom marketplace trades" : null,
         mcap: px && px > 0 && minted != null ? px * minted : null,
-        vol24: num(t.volumeUsd), volSrc: "KaspaCom marketplace, 24h",
+        vol24: num(t.volumeUsd), vol7: num(t.volume7dUsd), volSrc: "KaspaCom marketplace, 24h",
       });
       out.set(id, a);
     }

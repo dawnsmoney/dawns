@@ -39,7 +39,7 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
           apyRange: rng && rng.hours >= 1 ? [rng.apyMin, rng.apyMax] : null, rangeHours: rng?.hours ?? 0,
           size: m.suppliedUsd, exitNow: m.cashUsd, exitShare,
           vol24: null, swaps24: null, turnover: null, priceMove: null, ilAtMove: null,
-          status, statusText, notes,
+          status, statusText, notes, assetIds: [`igra:erc20:${m.asset.toLowerCase()}`],
         });
       }
     }
@@ -88,6 +88,7 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
           size: pool.usd, exitNow: pool.usd, exitShare: null,
           vol24: pr && covered >= DAY ? pr.vol24 : null, swaps24: pr && covered >= DAY ? pr.swaps24 : null, turnover, priceMove, ilAtMove,
           status, statusText, notes, pair: pool.pair, feeTier: feeRate,
+          assetIds: pool.tk.map((t) => `${pool.chain}:erc20:${t.a.toLowerCase()}`),
         });
       }
     }

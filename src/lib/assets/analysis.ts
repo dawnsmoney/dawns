@@ -1,5 +1,5 @@
 import type { Status } from "../types";
-import { CHAIN_NAME, STANDARD_NAME, type Asset } from "./types";
+import { CHAIN_NAME, STANDARD_NAME, valueCredible, type Asset } from "./types";
 import { CURATED, BRIDGED } from "./profiles";
 
 const pct = (x: number, d = 0) => `${(x * 100).toFixed(d)}%`;
@@ -30,8 +30,11 @@ export function analyse(a: Asset): Analysis {
   else if (a.priceSrc?.startsWith("OTC")) flags.push(["warn", `Priced from OTC desk quotes only${a.priceSrc.includes("(") ? " " + a.priceSrc.slice(a.priceSrc.indexOf("(")) : ""}. No DEX pool or public order book dawns reads.`]);
   else if (a.priceSrc?.startsWith("Igra explorer")) flags.push(["info", "Price comes from the Igra explorer, not from pools dawns reads itself."]);
 
+  const otc = !!a.priceSrc?.startsWith("OTC");
   const thin = (a.vol24 ?? 0) < 1_000 && (a.liquidity ?? 0) < 10_000;
-  if (a.price != null && thin) flags.push(["warn", `Thin market: ${a.vol24 != null ? usd(a.vol24) + " traded in 24h" : "no measured volume"}${a.liquidity ? `, ${usd(a.liquidity)} in DEX pools` : ""}. Entering or leaving moves the price.`]);
+  if (a.mcap != null && !valueCredible(a))
+    flags.push(["warn", `Its supply is priced at ${usd(a.mcap)}, but only ${usd(Math.max(a.vol7 ?? 0, a.vol24 ?? 0))} traded in the last 7 days${a.liquidity ? ` and ${usd(a.liquidity)} sits in DEX pools` : ""}. That value could not be realized.`]);
+  else if (a.price != null && thin && !otc) flags.push(["warn", `Thin market: ${a.vol24 != null ? usd(a.vol24) + " traded in 24h" : "no measured volume"}${a.liquidity ? `, ${usd(a.liquidity)} in DEX pools` : ""}. Entering or leaving moves the price.`]);
 
   // distribution
   if (a.top10 != null) {
@@ -88,7 +91,8 @@ function generated(a: Asset): string {
     if (a.state === "finished") parts.push("Minting is complete, so supply is fixed.");
   }
   if (a.holders != null) parts.push(`${n(a.holders)} addresses hold it${a.top10 != null ? `; the 10 largest have ${pct(a.top10)}` : ""}.`);
-  if (a.price != null && a.mcap != null) parts.push(`At ${a.priceSrc?.startsWith("dawns") ? "dawns' on-chain" : "the"} price its supply is worth ${usd(a.mcap)}.`);
+  if (a.price != null && a.mcap != null && valueCredible(a)) parts.push(`At ${a.priceSrc?.startsWith("dawns") ? "dawns' on-chain" : "the"} price its supply is worth ${usd(a.mcap)}.`);
+  else if (a.price != null && a.mcap != null) parts.push("It has a last trade price, but too little trading to put a meaningful value on its supply.");
   if (a.pools.length) parts.push(`It is in ${a.pools.length} DeFi venue${a.pools.length > 1 ? "s" : ""} dawns watches.`);
   return parts.join(" ");
 }

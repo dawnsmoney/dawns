@@ -4,6 +4,7 @@ import type { Address } from "viem";
 import { readKaskad, KASKAD, type KaskadState } from "./chain/kaskad";
 import { readUniV2, readUniV3, readBalances, readBondingNative, buildPriceMap, valuePools, type PriceBook, type PricedPool, type RawPool } from "./chain/dex";
 import { readIgraBridge, IGRA_BRIDGE } from "./chain/bridge";
+import { readInfinityPools } from "./chain/zealous";
 import { readOwn } from "./history";
 import { buildOpportunities } from "./opportunities";
 import { explorerAddress, explorerBlock, type ChainKey } from "./chain/clients";
@@ -23,7 +24,7 @@ const KASDEX_TOKENS: Address[] = [
 /** DEXs read pool by pool. Addresses come from each protocol's own app config. */
 type DexSource = { chain: ChainKey; kind: "v2" | "v3"; factory: Address };
 const DEX_ADAPTERS: Record<string, { sources: DexSource[]; note?: string }> = {
-  zealousswap: { sources: [{ chain: "igra", kind: "v2", factory: ZEALOUS_FACTORY }, { chain: "kasplex", kind: "v2", factory: ZEALOUS_FACTORY }], note: "Farm and Infinity Pool deposits are not counted as liquidity." },
+  zealousswap: { sources: [{ chain: "igra", kind: "v2", factory: ZEALOUS_FACTORY }, { chain: "kasplex", kind: "v2", factory: ZEALOUS_FACTORY }], note: "Infinity Pools holding NACHO and KASPER count toward TVL; ZEAL staked in its own Infinity Pools is shown separately as staking, not TVL. Farms hold LP tokens of the pools above, so they are not counted twice." },
   "kaspacom-dex": { sources: [{ chain: "igra", kind: "v2", factory: "0x21350BcDa9E81731CF4cDE3DbC457e3de2739c01" }, { chain: "kasplex", kind: "v2", factory: "0xa9CBa43A407c9Eb30933EA21f7b9D74A128D613c" }] },
   "krokoswap-v3": { sources: [{ chain: "kasplex", kind: "v3", factory: "0x0dfb1Bb755d872EA1fa4d95E4ad0c2E6317Ce9B9" }], note: "Concentrated-liquidity pools are valued at the tokens they hold; positions out of range still count." },
   "krokoswap-v2": { sources: [{ chain: "kasplex", kind: "v2", factory: "0x4373b7Fcf5059A785843cD224129e01d243Aef71" }] },
@@ -202,7 +203,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
 
   // on-chain reads
   const dexJobs = Object.entries(DEX_ADAPTERS).flatMap(([slug, a]) => a.sources.map((src) => ({ slug, src })));
-  const [kaskad, kasdex, attest, lfg, dexReads, bridge, own] = await Promise.all([
+  const [kaskad, kasdex, attest, lfg, dexReads, bridge, own, infinity] = await Promise.all([
     safe("Kaskad on-chain", () => readKaskad((sym) => book.get(normSym(sym).toLowerCase()) ?? null)),
     safe("KasDex on-chain", () => readBalances("igra", KASDEX, KASDEX_TOKENS)),
     safe("Igra Attestation on-chain", () => readBalances("igra", IGRA_ATTESTATION, [IGRA_TOKEN])),
@@ -210,6 +211,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
     Promise.all(dexJobs.map((j) => safe(`${j.slug} ${j.src.chain} on-chain`, () => (j.src.kind === "v3" ? readUniV3(j.src.chain, j.src.factory) : readUniV2(j.src.chain, j.src.factory))))),
     safe("Igra bridge", () => readIgraBridge()),
     safe("dawns history", readOwn),
+    safe("ZealousSwap Infinity Pools", readInfinityPools),
   ]);
   const dexBySlug = new Map<string, { src: DexSource; read: NonNullable<(typeof dexReads)[number]> }[]>();
   dexJobs.forEach((j, i) => { const r = dexReads[i]; if (r) dexBySlug.set(j.slug, [...(dexBySlug.get(j.slug) ?? []), { src: j.src, read: r }]); });
@@ -406,7 +408,26 @@ export async function buildSnapshot(): Promise<Snapshot> {
         ["Token metadata", "symbol() and decimals() per token", "On-chain"],
         ...(kinds.includes("v2") ? [["Price impact by trade size", "Constant-product maths on live reserves", "Derived"] as [string, string, string]] : []),
       ];
-      base.cannotVerify = [["Swap volume and fees", "Taken from DefiLlama until the indexer reads Swap events"], ...(it.slug === "zealousswap" ? [["Infinity Pool and farm deposits", "Separate contracts, not yet read"] as [string, string]] : [])];
+      base.cannotVerify = [["Swap volume and fees", "Taken from DefiLlama until the indexer reads Swap events"]];
+      if (it.slug === "zealousswap") {
+        // Infinity Pools: third-party tokens are TVL, the protocol's own token is staking
+        const vaults = (infinity ?? []).map((v) => ({ ...v, px: pxMap.get(`${v.chain}:${v.token.toLowerCase()}`) ?? null }));
+        const val = (v: (typeof vaults)[number]) => (v.px != null ? v.amount * v.px : 0);
+        const tvlVaults = vaults.filter((v) => !v.own), own = vaults.filter((v) => v.own);
+        const addTvl = tvlVaults.reduce((x, v) => x + val(v), 0), staking = own.reduce((x, v) => x + val(v), 0);
+        if (infinity) {
+          base.tvl += addTvl;
+          for (const v of tvlVaults) if (v.px != null) { const e = base.tokens.find((t) => t.sym === normSym(v.symbol)); if (e) e.usd += val(v); else base.tokens.push({ sym: normSym(v.symbol), usd: val(v) }); }
+          base.tokens.sort((a, b) => b.usd - a.usd);
+          const fmt = (v: (typeof vaults)[number]) => `${Math.round(v.amount).toLocaleString("en-US")} ${v.symbol} (${v.chain === "igra" ? "Igra" : "Kasplex"})${v.px == null ? ", unpriced" : ""}`;
+          const t = prov[`${it.slug}-tvl`];
+          t.value = usdFull(base.tvl);
+          t.trail.push(["Infinity Pools", `+ ${usdFull(addTvl)}: totalStaked + totalRewards of ${tvlVaults.map(fmt).join(", ")}`]);
+          prov[`${it.slug}-staking`] = { label: "ZEAL staked", value: usdFull(staking), trail: [["Contracts", own.map((v) => `${v.vault} (${v.chain === "igra" ? "Igra" : "Kasplex"})`).join(" · ")], ["Read", "totalStaked() + totalRewards()"], ["Amount", own.map(fmt).join(" + ")]], note: "The protocol's own token staked in its own vaults: reported as staking, never added to TVL.", links: own.map((v) => explorerAddress(v.chain, v.vault)) };
+          base.canVerify.push(["Infinity Pools", `${vaults.length} vaults read on-chain: ${usd(addTvl)} of NACHO and KASPER in TVL, ${usd(staking)} of ZEAL staking kept out of TVL`, "On-chain"]);
+        } else base.cannotVerify.push(["Infinity Pools", "The vault read failed this run"]);
+        base.cannotVerify.push(["Farm deposits", "Farms hold LP tokens of the pools above, so their value is already in TVL; how much of each pool is farmed is not read yet"]);
+      }
       const top = pools[0];
       base.status = top && top.share > 0.6 ? "warn" : "good";
       base.statusText = base.status === "warn" ? "Concentrated" : "Healthy";
@@ -483,10 +504,15 @@ export async function buildSnapshot(): Promise<Snapshot> {
           prov[`${it.slug}-fee`] = { label: "24h fees", value: usdFull(base.dex.fees24), trail: [["Volume", `${usdFull(act.vol24)} of swaps read on-chain`], ["Fee rate", `${pct(base.dex.feeRate, 3)}: the median fee paid by ${base.dex.feeSamples} swaps in 7 days, from each pair's reserves just before the swap`], ["To liquidity providers", base.dex.lpShare != null ? `${pct(base.dex.lpShare, 0)} of fees (factory fee switch read on-chain)` : "unknown"]] };
         }
         if (act.vol7 != null) base.dex.vol7 = act.vol7;
-        prov[`${it.slug}-vol`] = { label: "24h volume", value: usdFull(act.vol24), trail: [["Source", "Swap events read by dawns from every pool of this DEX"], ["Swaps", `${act.swaps24.toLocaleString("en-US")} in the last 24 hours`], ["Price", "Each swap valued at the priced leg, at current token prices"], ["Indexed since", new Date(own!.indexedSince!).toISOString().slice(0, 16).replace("T", " ") + " UTC"]], note: "Fees still come from DefiLlama: fee rates differ between these DEXs and are not read on-chain yet." };
+        const allV3 = base.dex.pools.length > 0 && base.dex.pools.every((q) => q.kind === "v3");
+        const feesOnChain = base.dex.feeSource === "on-chain" || allV3;
+        prov[`${it.slug}-vol`] = { label: "24h volume", value: usdFull(act.vol24), trail: [["Source", "Swap events read by dawns from every pool of this DEX"], ["Swaps", `${act.swaps24.toLocaleString("en-US")} in the last 24 hours`], ["Price", "Each swap valued at the priced leg, at current token prices"], ["Indexed since", new Date(own!.indexedSince!).toISOString().slice(0, 16).replace("T", " ") + " UTC"]],
+          ...(feesOnChain ? {} : { note: "Fees for this DEX still come from DefiLlama: too few swaps have been sampled to measure its fee rate on-chain." }) };
         base.cannotVerify = base.cannotVerify.filter(([k]) => k !== "Swap volume and fees");
-        base.cannotVerify.push(["Trading fees", "Taken from DefiLlama; volume is read on-chain"]);
         base.canVerify.push(["Swap volume", "Swap events on every pool, valued at current prices", "On-chain"]);
+        if (allV3) base.canVerify.push(["Trading fees", "Each pool's fee tier and the protocol's share (slot0.feeProtocol)", "On-chain"]);
+        else if (feesOnChain) base.canVerify.push(["Trading fees", `Median fee of ${base.dex.feeSamples.toLocaleString("en-US")} swaps, from each pair's reserves just before the swap${base.dex.lpShare != null ? "; LP share from the factory fee switch" : ""}`, "On-chain"]);
+        else base.cannotVerify.push(["Trading fees", "Taken from DefiLlama until enough swaps are sampled; volume is read on-chain"]);
         const avg = act.vol7 != null ? act.vol7 / 7 : null;
         if (avg && act.vol24 > 2 * avg && act.vol24 >= 5_000 && !base.floor)
           signals.push({ key: `${it.slug}:vol`, t: "info", p: it.slug, rule: "vol", strong: `${it.name} volume is ${(act.vol24 / avg).toFixed(1)}× its 7-day average`, rest: ` (${usd(act.vol24)} in 24h across ${act.swaps24} swaps).` });

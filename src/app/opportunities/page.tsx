@@ -4,6 +4,8 @@ import { Banner } from "@/components/Banner";
 import { DataBridge } from "@/components/providers";
 import { OpportunityTable } from "@/components/opportunities";
 import { getSnapshot } from "@/lib/snapshot";
+import { getAssets } from "@/lib/assets";
+import { knownOf } from "@/lib/assets/view";
 import { toLite } from "@/lib/view";
 import { usd, pct } from "@/lib/format";
 
@@ -14,8 +16,9 @@ export const metadata: Metadata = {
 export const revalidate = 120;
 
 export default async function OpportunitiesPage() {
-  const s = await getSnapshot();
+  const [s, assets] = await Promise.all([getSnapshot(), getAssets()]);
   const rows = s.opportunities;
+  const known = knownOf(assets, rows.flatMap((o) => o.assetIds ?? []));
   const lend = rows.filter((o) => o.kind === "supply");
   const lp = rows.filter((o) => o.kind === "lp");
   const bestOpen = lend.filter((o) => o.status === "good").sort((a, b) => (b.apy ?? 0) - (a.apy ?? 0))[0];
@@ -46,7 +49,7 @@ export default async function OpportunitiesPage() {
           </div>
         </div>
 
-        <OpportunityTable rows={rows} />
+        <OpportunityTable rows={rows} known={known} />
 
         <div className="grid gA" style={{ marginTop: 28 }}>
           <div className="card">

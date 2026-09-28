@@ -11,14 +11,20 @@ type Filter = "All" | "Lending" | "Liquidity";
 
 const hrs = (h: number) => (h >= 48 ? `${Math.round(h / 24)} days` : `${Math.max(1, Math.round(h))} h`);
 
-function Pair({ o }: { o: Opportunity }) {
+const pathOf = (id: string) => `/assets/${id.split(":").map(encodeURIComponent).join("/")}`;
+
+function Pair({ o, known }: { o: Opportunity; known: Set<string> }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center" }}>
-      {o.assets.slice(0, 2).map((a, i) => (
-        <span key={a + i} style={{ marginLeft: i ? -12 : 0, borderRadius: "50%", boxShadow: i ? "0 0 0 3px var(--card, #1C1642)" : undefined, display: "inline-flex" }}>
-          <AssetCoin a={a} size={34} />
-        </span>
-      ))}
+      {o.assets.slice(0, 2).map((a, i) => {
+        const id = o.assetIds?.[i];
+        const coin = <AssetCoin a={a} size={34} />;
+        return (
+          <span key={a + i} style={{ marginLeft: i ? -12 : 0, borderRadius: "50%", boxShadow: i ? "0 0 0 3px var(--card, #1C1642)" : undefined, display: "inline-flex" }}>
+            {id && known.has(id) ? <Link href={pathOf(id)} aria-label={`${a}: asset profile`} title={`${a}: asset profile`} style={{ display: "inline-flex" }}>{coin}</Link> : coin}
+          </span>
+        );
+      })}
     </span>
   );
 }
@@ -42,7 +48,8 @@ function Risk({ o }: { o: Opportunity }) {
   return <span>{pct(o.priceMove ?? 0, 0)} move<small className="muted" style={{ display: "block" }}>LP trails holding by {pct(o.ilAtMove, 1)} · {hrs(o.rangeHours)}</small></span>;
 }
 
-export function OpportunityTable({ rows }: { rows: Opportunity[] }) {
+export function OpportunityTable({ rows, known: knownIds = [] }: { rows: Opportunity[]; known?: string[] }) {
+  const known = new Set(knownIds);
   const [f, setF] = useState<Filter>("All");
   const [open, setOpen] = useState<string | null>(null);
   const shown = rows.filter((o) => f === "All" || (f === "Lending" ? o.kind === "supply" : o.kind === "lp"));
@@ -60,7 +67,7 @@ export function OpportunityTable({ rows }: { rows: Opportunity[] }) {
             <Fragment key={o.id}>
               <tr onClick={() => { if (open !== o.id) track("opportunity_open", { id: o.id }); setOpen(open === o.id ? null : o.id); }} style={{ cursor: "pointer" }} aria-expanded={open === o.id}>
                 <td>
-                  <span className="proto"><Pair o={o} /><span><b>{o.name}</b><small><Link href={`/protocols/${o.protocol}`} onClick={(e) => e.stopPropagation()}>{o.pname}</Link> · {o.chain === "igra" ? "Igra" : "Kasplex"}</small></span></span>
+                  <span className="proto"><span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex" }}><Pair o={o} known={known} /></span><span><b>{o.name}</b><small><Link href={`/protocols/${o.protocol}`} onClick={(e) => e.stopPropagation()}>{o.pname}</Link> · {o.chain === "igra" ? "Igra" : "Kasplex"}</small></span></span>
                 </td>
                 <td>
                   <b style={{ font: "600 18px var(--display)" }}>{o.apy != null ? pct(o.apy, o.apy < 0.1 ? 2 : 1) : "—"}</b>
@@ -77,6 +84,9 @@ export function OpportunityTable({ rows }: { rows: Opportunity[] }) {
                   <td colSpan={7} className="wrap" style={{ background: "rgba(255,255,255,.03)" }}>
                     <ul style={{ margin: "4px 0", paddingLeft: 18, display: "grid", gap: 6, color: "var(--ink-2)", fontSize: 14.5 }}>
                       {o.notes.map((n) => <li key={n}>{n}</li>)}
+                      {o.assetIds?.some((id) => known.has(id)) && (
+                        <li>Assets: {o.assets.map((a, i) => { const id = o.assetIds[i]; return <Fragment key={a + i}>{i ? " · " : ""}{id && known.has(id) ? <Link href={pathOf(id)}>{a} profile</Link> : a}</Fragment>; })}</li>
+                      )}
                     </ul>
                   </td>
                 </tr>

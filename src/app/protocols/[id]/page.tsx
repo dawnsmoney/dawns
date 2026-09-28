@@ -12,6 +12,12 @@ import { RangeChart, Bars, AreaChart } from "@/components/charts";
 import { Feed, SubNav } from "@/components/sections";
 import { DataBridge } from "@/components/providers";
 import { Fresh } from "@/components/Fresh";
+import { getAssets } from "@/lib/assets";
+import { assetPath } from "@/lib/assets/types";
+
+/** Asset profile links for this protocol: by chain:address, and by symbol for composition. */
+type Links = Map<string, string>;
+const AssetName = ({ sym, href }: { sym: string; href?: string }) => (href ? <Link href={href}>{sym}</Link> : <>{sym}</>);
 
 export const revalidate = 120;
 export const dynamicParams = true;
@@ -122,7 +128,7 @@ function Financials({ p }: { p: ProtocolView }) {
   return <div className="card"><History p={p} /></div>;
 }
 
-function Markets({ p }: { p: ProtocolView }) {
+function Markets({ p, links }: { p: ProtocolView; links: Links }) {
   if (p.lending)
     return (
       <>
@@ -131,7 +137,7 @@ function Markets({ p }: { p: ProtocolView }) {
           <tbody>
             {p.lending.markets.map((m) => (
               <tr key={m.symbol}>
-                <td><span className="proto"><AssetCoin a={m.symbol} size={34} /><span><b>{m.symbol}</b><small>{m.supplied.toLocaleString("en-US", { maximumFractionDigits: m.supplied < 10 ? 4 : 0 })} tokens</small></span></span></td>
+                <td><span className="proto"><AssetCoin a={m.symbol} size={34} /><span><b><AssetName sym={m.symbol} href={links.get(`igra:${m.asset.toLowerCase()}`)} /></b><small>{m.supplied.toLocaleString("en-US", { maximumFractionDigits: m.supplied < 10 ? 4 : 0 })} tokens</small></span></span></td>
                 <td>{usd(m.suppliedUsd)}</td><td>{usd(m.borrowedUsd)}</td><td><UtilMeter v={m.utilization} /></td>
                 <td><b style={{ fontFamily: "var(--display)" }}>{pct(m.supplyApy, 2)}</b></td><td>{pct(m.borrowApr, 2)}</td><td>{pct(m.ltv, 0)}</td>
                 <td>{m.frozen ? <Pill t="warn">Frozen</Pill> : m.paused ? <Pill t="crit">Paused</Pill> : m.utilization >= 0.95 ? <Pill t="crit">No liquidity</Pill> : <Pill t="good">Active</Pill>}</td>
@@ -150,7 +156,7 @@ function Markets({ p }: { p: ProtocolView }) {
           <tbody>
             {p.dex.pools.slice(0, 15).map((q) => (
               <tr key={q.chain + q.pair}>
-                <td><a className="proto" href={explorer(q.chain, q.pair)} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}><span style={{ display: "flex" }}>{q.symbols.map((a, j) => (<span key={j} style={j ? { marginLeft: -10 } : undefined}><AssetCoin a={a} size={30} /></span>))}</span><b>{q.symbols.join(" / ")}</b></a></td>
+                <td><span className="proto"><span style={{ display: "flex" }}>{q.symbols.map((a, j) => (<span key={j} style={j ? { marginLeft: -10 } : undefined}><AssetCoin a={a} size={30} /></span>))}</span><b>{q.symbols.map((a, j) => (<span key={j}>{j ? " / " : ""}<AssetName sym={a} href={links.get(`${q.chain}:${q.tk[j].a.toLowerCase()}`)} /></span>))}</b><a href={explorer(q.chain, q.pair)} target="_blank" rel="noopener noreferrer" aria-label={`${q.symbols.join(" / ")} pool on the explorer`} title="Pool on the explorer" style={{ display: "inline-flex", color: "var(--ink-3)" }}><External width={14} height={14} /></a></span></td>
                 <td>{q.chain === "igra" ? "Igra" : "Kasplex"}</td>
                 <td>{usd(q.usd)}</td><td>{pct(q.share)}</td>
                 <td className="muted" style={{ fontSize: 13 }}>{q.reserves.map((r, j) => `${r.toLocaleString("en-US", { maximumFractionDigits: r < 10 ? 3 : 0 })} ${q.symbols[j]}`).join(" + ")}</td>
@@ -207,7 +213,7 @@ function Liquidity({ p }: { p: ProtocolView }) {
   );
 }
 
-function Assets({ p }: { p: ProtocolView }) {
+function Assets({ p, links }: { p: ProtocolView; links: Links }) {
   const comp = p.tokens.filter((t) => t.usd > 0);
   const tot = comp.reduce((s, c) => s + c.usd, 0);
   if (!comp.length) return <p className="muted">No composition data.</p>;
@@ -216,7 +222,7 @@ function Assets({ p }: { p: ProtocolView }) {
     <div className="card">
       <div className="c-head"><h3>{p.lending ? "Cash held by asset" : "Assets held"}</h3><span className="tag">{usd(tot)}</span></div>
       <div className="stack">{comp.map((c, i) => (<i key={c.sym} style={{ width: `${(c.usd / tot) * 100}%`, background: colors[i] }} />))}</div>
-      <div className="comp">{comp.slice(0, 8).map((c) => (<div key={c.sym}><AssetCoin a={c.sym} size={28} /><span>{c.sym}</span><b>{usd(c.usd)}</b><small>{pct(c.usd / tot)}</small></div>))}</div>
+      <div className="comp">{comp.slice(0, 8).map((c) => (<div key={c.sym}><AssetCoin a={c.sym} size={28} /><span><AssetName sym={c.sym} href={links.get(`sym:${c.sym.toUpperCase()}`)} /></span><b>{usd(c.usd)}</b><small>{pct(c.usd / tot)}</small></div>))}</div>
     </div>
   );
 }
@@ -401,14 +407,24 @@ function Verification({ p }: { p: ProtocolView }) {
 
 export default async function ProtocolPage({ params }: PageProps<"/protocols/[id]">) {
   const { id } = await params;
-  const s = await getSnapshot();
+  const [s, assets] = await Promise.all([getSnapshot(), getAssets()]);
   const p = findProtocol(s, id);
   if (!p) notFound();
+  const links: Links = new Map();
+  for (const a of assets) {
+    if (a.standard !== "erc20") continue;
+    links.set(`${a.chain}:${a.ref}`, assetPath(a.id));
+    if (!a.pools.some((x) => x.startsWith(`${p.id}:`))) continue;
+    const k = `sym:${a.symbol.toUpperCase()}`;
+    if (!links.has(k)) links.set(k, assetPath(a.id));
+  }
+  // composition groups KAS wrappers as KAS: point it at the KAS profile
+  if (assets.some((a) => a.id === "kaspa:native:KAS")) links.set("sym:KAS", assetPath("kaspa:native:KAS"));
   const tabs: [string, React.ReactNode][] = [
     ["Financials", <Financials key="f" p={p} />],
-    ...(p.lending || p.dex ? ([[p.lending ? "Markets" : "Pools", <Markets key="m" p={p} />]] as [string, React.ReactNode][]) : []),
+    ...(p.lending || p.dex ? ([[p.lending ? "Markets" : "Pools", <Markets key="m" p={p} links={links} />]] as [string, React.ReactNode][]) : []),
     ...(p.lending ? ([["Liquidity", <Liquidity key="l" p={p} />], ["Borrowers", <Borrowers key="b" p={p} />]] as [string, React.ReactNode][]) : []),
-    ["Assets", <Assets key="a" p={p} />],
+    ["Assets", <Assets key="a" p={p} links={links} />],
     ["Activity", <Activity key="ac" p={p} s={s} />],
     ["Contracts", <Contracts key="c" p={p} />],
     ["Verification", <Verification key="v" p={p} />],

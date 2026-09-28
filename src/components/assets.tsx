@@ -8,7 +8,7 @@ import type { Status } from "@/lib/types";
 
 export interface AssetLite {
   id: string; path: string; symbol: string; name: string; chain: string; chainName: string; standard: string; standardName: string;
-  price: number | null; mcap: number | null; vol24: number | null; holders: number | null; liquidity: number | null;
+  price: number | null; mcap: number | null; credible: boolean; vol24: number | null; holders: number | null; liquidity: number | null;
   top10: number | null; venues: number; grade: Status; gradeLabel: string; significant: boolean;
 }
 
@@ -30,7 +30,9 @@ export function AssetTable({ rows }: { rows: AssetLite[] }) {
     const s = q.trim().toLowerCase();
     return rows
       .filter((a) => inGroup(a, g) && (all || s || a.significant) && (!s || a.symbol.toLowerCase().includes(s) || a.name.toLowerCase().includes(s) || a.id.includes(s)))
-      .sort((x, y) => (y[key] ?? -1) - (x[key] ?? -1) || (y.holders ?? 0) - (x.holders ?? 0));
+      // values no market could carry sort below real ones
+      .sort((x, y) => key === "mcap" ? (Number(y.credible) - Number(x.credible)) || (y.mcap ?? -1) - (x.mcap ?? -1) || (y.holders ?? 0) - (x.holders ?? 0)
+        : (y[key] ?? -1) - (x[key] ?? -1) || (y.holders ?? 0) - (x.holders ?? 0));
   }, [rows, g, q, key, all]);
 
   const th = (k: Key, label: string) => (
@@ -61,7 +63,7 @@ export function AssetTable({ rows }: { rows: AssetLite[] }) {
                 </Link>
               </td>
               <td className="mono">{price(a.price)}</td>
-              <td>{a.mcap != null ? usd(a.mcap) : "—"}</td>
+              <td>{a.mcap == null ? "—" : a.credible ? usd(a.mcap) : <span className="muted" title="Priced by too little trading: no market could realize this value">{usd(a.mcap)}<small style={{ display: "block" }}>not realizable</small></span>}</td>
               <td>{a.vol24 != null ? usd(a.vol24) : "—"}</td>
               <td>{count(a.holders)}</td>
               <td>{a.top10 != null ? pct(a.top10, 0) : <span className="muted">—</span>}</td>

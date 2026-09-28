@@ -31,6 +31,7 @@ export interface Asset {
   priceSrc: string | null;       // where the price comes from, in words
   mcap: number | null;           // price × circulating supply
   vol24: number | null;          // USD traded in 24h
+  vol7?: number | null;          // USD traded in 7 days
   volSrc: string | null;
 
   supply: number | null;         // circulating / minted, in whole tokens
@@ -68,3 +69,15 @@ export interface NetworkStats {
 }
 
 export interface AssetDay { day: string; price: number | null; holders: number | null; mcap: number | null; vol24: number | null; supply: number | null }
+
+/**
+ * Is price × supply a value anyone could realize? Only when some market carries it: 7-day
+ * volume or DEX liquidity of at least 0.05% of that value. A 43-holder token priced by one
+ * $3 trade is not worth $361 trillion.
+ */
+export function valueCredible(a: Pick<Asset, "standard" | "mcap" | "vol24" | "vol7" | "liquidity">): boolean {
+  if (a.mcap == null) return false;
+  if (a.standard === "native") return true;
+  const flow = Math.max(a.vol7 ?? 0, (a.vol24 ?? 0) * 7);
+  return Math.max(flow, a.liquidity ?? 0) >= a.mcap * 0.0005;
+}

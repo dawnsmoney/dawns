@@ -3,14 +3,15 @@ import Link from "next/link";
 import { Fragment } from "react";
 import { notFound } from "next/navigation";
 import { Banner } from "@/components/Banner";
-import { Pill } from "@/components/bits";
+import { Pill, ProtocolCoin } from "@/components/bits";
 import { RangeChart } from "@/components/charts";
 import { OpportunityTable } from "@/components/opportunities";
 import { getAssets, getAssetHistory } from "@/lib/assets";
 import { analyse } from "@/lib/assets/analysis";
 import { CURATED } from "@/lib/assets/profiles";
-import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, type Asset, type AssetChain, type AssetStandard } from "@/lib/assets/types";
+import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, valueCredible, type Asset, type AssetChain, type AssetStandard } from "@/lib/assets/types";
 import { getSnapshot } from "@/lib/snapshot";
+import { knownOf, holdingsOf } from "@/lib/assets/view";
 import { usd, pct, price } from "@/lib/format";
 
 export const revalidate = 300;
@@ -54,7 +55,10 @@ export default async function AssetPage({ params }: P) {
   const r = analyse(a);
   const cur = CURATED[a.id];
   const opps = s.opportunities.filter((o) => a.pools.includes(o.id));
-  const sameTicker = (await getAssets()).filter((x) => x.symbol.toUpperCase() === a.symbol.toUpperCase() && x.id !== a.id);
+  const held = holdingsOf(a, s);
+  const heldTotal = held.reduce((x, h) => x + h.usd, 0);
+  const all = await getAssets();
+  const sameTicker = all.filter((x) => x.symbol.toUpperCase() === a.symbol.toUpperCase() && x.id !== a.id);
   const dates = hist.map((d) => Date.parse(d.day));
   const priced = hist.filter((d) => d.price != null).length >= 2;
   const explorer = a.chain === "igra" ? `https://explorer.igralabs.com/token/${a.ref}` : a.standard === "krc20" ? `https://kaspa.com/tokens/marketplace/token/${a.ref}` : a.chain === "kasplex" ? `https://explorer.kasplex.org/token/${a.ref}` : a.chain === "zkas" ? "https://explorer.zkas.info/analytics" : "https://explorer.kaspa.org";
@@ -62,12 +66,12 @@ export default async function AssetPage({ params }: P) {
   return (
     <>
       <Banner short crumb={[{ href: "/assets", label: "Assets" }, { label: `${STANDARD_NAME[a.standard]} · ${CHAIN_NAME[a.chain]}` }]}
-        title={<>{a.symbol} <span className="muted" style={{ fontWeight: 400 }}>{a.name !== a.symbol ? a.name : ""}</span></>}
+        title={<>{a.symbol}{a.name.toLowerCase() !== a.symbol.toLowerCase() && <span className="muted" style={{ fontWeight: 400 }}> {a.name}</span>}</>}
         lede={r.what} />
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
         <div className="grid g3">
           <Stat label="Price" value={price(a.price)} sub={a.priceSrc} />
-          <Stat label={a.standard === "native" ? "Market value" : "Value on chain"} value={a.mcap != null ? usd(a.mcap) : "—"} sub={a.mcap != null ? "price × circulating supply" : "no price to value it"} />
+          <Stat label={a.standard === "native" ? "Market value" : "Value on chain"} value={a.mcap != null ? usd(a.mcap) : "—"} sub={a.mcap == null ? "no price to value it" : valueCredible(a) ? "price × circulating supply" : "not realizable: too little trading behind the price"} />
           <Stat label="Traded 24h" value={a.vol24 != null ? usd(a.vol24) : "—"} sub={a.volSrc ?? "not measured"} />
           <Stat label="Holders" value={a.holders != null ? a.holders.toLocaleString("en-US") : a.chain === "zkas" ? "Shielded" : "—"} sub={a.top10 != null ? `10 largest hold ${pct(a.top10, 0)}` : a.chain === "zkas" ? "balances are private by design" : null} />
           <Stat label="In DeFi" value={a.liquidity ? usd(a.liquidity) : `${opps.length} venues`} sub={a.liquidity ? `in ${a.pools.length} pools and markets dawns reads` : opps.length ? "lending and pools dawns reads" : "no DeFi venue dawns reads"} />
@@ -115,7 +119,7 @@ export default async function AssetPage({ params }: P) {
                 {a.net.mergedShare != null && <><dt>Share of Kaspa</dt><dd>{pct(a.net.mergedShare, 1)} of Kaspa&apos;s hashrate</dd></>}
                 {a.net.difficulty != null && <><dt>Difficulty</dt><dd>{a.net.difficulty.toExponential(3)}</dd></>}
                 {a.net.daa != null && <><dt>DAA score</dt><dd>{a.net.daa.toLocaleString("en-US")}</dd></>}
-                {a.net.shielded && <><dt>Shielded pool</dt><dd>{a.net.shielded.notes.toLocaleString("en-US")} notes · {a.net.shielded.nullifiers.toLocaleString("en-US")} spent · {whole(a.net.shielded.turnstileOut, a.symbol)} ever left</dd></>}
+                {a.net.shielded && <><dt>Shielded pool</dt><dd>{a.net.shielded.notes.toLocaleString("en-US")} notes · {a.net.shielded.nullifiers.toLocaleString("en-US")} spent · {a.net.shielded.turnstileOut > 0 ? `${whole(a.net.shielded.turnstileOut, a.symbol)} ever left` : "nothing has ever left"}</dd></>}
               </dl>
               {cur && <dl className="kv" style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--line)" }}>{cur.facts.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>}
             </div>
@@ -143,9 +147,25 @@ export default async function AssetPage({ params }: P) {
           </div>
         )}
 
+        {held.length > 0 && (
+          <div className="card">
+            <div className="c-head"><h3>Held in protocols</h3><span className="tag">{usd(heldTotal)}</span></div>
+            <div className="vlist">
+              {held.map((h) => (
+                <div className="vrow" key={h.protocol}>
+                  <ProtocolCoin p={{ id: h.protocol, letter: h.letter }} size={30} />
+                  <div><Link href={`/protocols/${h.protocol}`}>{h.name}</Link><small>{h.where.slice(0, 4).join(" · ")}{h.where.length > 4 ? ` · +${h.where.length - 4} more` : ""}</small></div>
+                  <b>{usd(h.usd)}<small className="muted" style={{ display: "block", fontWeight: 400, textAlign: "right" }}>{pct(h.usd / heldTotal, 0)}</small></b>
+                </div>
+              ))}
+            </div>
+            <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>From dawns&apos; own reads: half of each pool&apos;s value per token, and what was supplied to each lending market.{a.id === "kaspa:native:KAS" ? " KAS includes its wrapped forms on the L2s (WiKAS, iKAS, WKAS)." : ""}</p>
+          </div>
+        )}
+
         <section>
           <div className="c-head" style={{ marginBottom: 14 }}><h3>Where capital can go with {a.symbol}</h3></div>
-          {opps.length ? <OpportunityTable rows={opps} /> : (
+          {opps.length ? <OpportunityTable rows={opps} known={knownOf(all, opps.flatMap((o) => o.assetIds ?? []))} /> : (
             <div className="card"><p className="muted" style={{ margin: 0 }}>
               {a.pools.length ? "It sits in pools or markets below the $5K dawns lists as an opportunity." : "No pool or lending market dawns reads holds it. Today the only position is holding it."}
               {" "}<Link href="/opportunities">All opportunities</Link>
@@ -168,7 +188,7 @@ export default async function AssetPage({ params }: P) {
           <div className="card">
             <div className="c-head"><h3>Sources</h3></div>
             <div className="vlist">
-              <div className="vrow"><span /><div><a href={explorer} target="_blank" rel="noopener noreferrer">{a.chain === "igra" ? "Igra explorer" : a.standard === "krc20" ? "KaspaCom market" : a.chain === "zkas" ? "ZKas explorer" : "Explorer"}</a><small>{a.standard === "krc20" ? "price, volume, holders" : "supply, holders"}</small></div><b /></div>
+              <div className="vrow"><span /><div><a href={explorer} target="_blank" rel="noopener noreferrer">{a.chain === "igra" ? "Igra explorer" : a.standard === "krc20" ? "KaspaCom market" : a.chain === "zkas" ? "ZKas explorer" : "Explorer"}</a><small>{a.standard === "krc20" ? "price, volume, holders" : a.chain === "zkas" ? "supply, emission, hashrate, shielded pool" : "supply, holders"}</small></div><b /></div>
               {cur?.sources.map(([l, u]) => <div className="vrow" key={u}><span /><div><a href={u} target="_blank" rel="noopener noreferrer">{l}</a><small>{new URL(u).host}</small></div><b /></div>)}
               <div className="vrow"><span /><div>dawns<small>DEX pools and lending markets read on-chain; updated {when(a.updatedAt)}</small></div><b /></div>
             </div>
