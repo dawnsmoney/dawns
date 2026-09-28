@@ -6,15 +6,16 @@ import { MANAGERS, trackRecord } from "@/lib/vaults/registry";
 export const metadata: Metadata = { title: "Vault managers", description: "Who runs each vault, what they have done, and what dawns has checked about them." };
 export const revalidate = 60;
 
-export default function ManagersPage() {
+export default async function ManagersPage() {
+  const records = await Promise.all(MANAGERS.map((m) => trackRecord(m.id)));
   return (
     <>
       <Banner short crumb={[{ href: "/vaults", label: "Vaults" }, { label: "Managers" }]} title="Managers"
         lede="A manager runs vaults inside mandates the network enforces. Here is who they are, what they have done, and what dawns has checked." />
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
         <div className="vcards">
-          {MANAGERS.map((m) => {
-            const t = trackRecord(m.id);
+          {MANAGERS.map((m, i) => {
+            const t = records[i];
             const done = m.checks.filter((c) => c[1]).length;
             return (
               <Link key={m.id} href={`/managers/${m.id}`} className="card vcard">

@@ -9,8 +9,8 @@ export const revalidate = 60;
 
 const STATUS = { live: { t: "good" as const, w: "Live" }, ready: { t: "info" as const, w: "Launching" }, designed: { t: "info" as const, w: "Designed" } };
 
-export default function VaultsHub() {
-  const vs = vaults();
+export default async function VaultsHub() {
+  const vs = await vaults();
   const man = (id: string) => MANAGERS.find((m) => m.id === id);
   return (
     <>

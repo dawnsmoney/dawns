@@ -4,7 +4,7 @@ import { Banner } from "@/components/Banner";
 import { Pill } from "@/components/bits";
 import { SplitBar, Ring, CapBars, CopyId } from "@/components/viz";
 import { NavPanel } from "@/components/nav-panel";
-import { navLedger as l, navMandate as m, navFigures, readNavLive, SOMPI, FIRST_PRICE } from "@/lib/vaults/nav";
+import { getNav, navFigures, readNavLive, SOMPI, FIRST_PRICE } from "@/lib/vaults/nav";
 
 export const metadata: Metadata = { title: "NAV vault", description: "Deposit KAS from any wallet, get shares at NAV, redeem at NAV. Rules enforced by the Kaspa network. Testnet-10." };
 export const revalidate = 30;
@@ -56,6 +56,7 @@ function Keys({ roles }: { roles: { allocator: string; valuer: string; guardian:
 }
 
 export default async function NavVaultPage() {
+  const { l, m } = await getNav();
   if (!l || !m) {
     return (
       <>

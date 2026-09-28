@@ -21,7 +21,7 @@ export default async function ManagerPage({ params }: P) {
   const { id } = await params;
   const m = MANAGERS.find((x) => x.id === id);
   if (!m) notFound();
-  const t = trackRecord(m.id);
+  const t = await trackRecord(m.id);
   const done = m.checks.filter((c) => c[1]).length;
   return (
     <>

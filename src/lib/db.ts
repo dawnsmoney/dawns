@@ -106,6 +106,8 @@ const SCHEMA = [
   `alter table asset_daily add column if not exists top jsonb`,
   // NAV vault accounts: the Kaspa addresses whose personal deposit/redeem accounts the keeper watches
   `create table if not exists vault_accounts (vault text not null, address text not null, created_at timestamptz not null default now(), primary key (vault, address))`,
+  // vault ledgers the keeper publishes (signed by the vault's allocator key), newer than the one in git
+  `create table if not exists vault_ledgers (vault text primary key, doc jsonb not null, updated_at timestamptz not null default now())`,
   // ZKas block producers: blocks sampled per payout address per day
   `create table if not exists zkas_producers (day date not null, producer text not null, blocks int not null, primary key (day, producer))`,
   // share cards: drafts picked daily (or made on demand) with their numbers frozen, reviewed in /admin/cards

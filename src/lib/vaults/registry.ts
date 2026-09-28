@@ -1,6 +1,6 @@
 import "server-only";
 import { mandate as mm, ledger as ml, figures as mandateFigures, SOMPI } from "@/lib/vault";
-import { navLedger, navMandate, navFigures, FIRST_PRICE } from "./nav";
+import { getNav, navFigures, FIRST_PRICE } from "./nav";
 
 /**
  * Every vault dawns knows, whatever its state, and the managers who run them.
@@ -25,7 +25,8 @@ export const KIND: Record<VaultKind, { label: string; color: string; one: string
   credit: { label: "Credit", color: "#199e70", one: "Lends to approved borrowers with an amount, a rate and a due date." },
 };
 
-export function vaults(): VaultCard[] {
+export async function vaults(): Promise<VaultCard[]> {
+  const { l: navLedger, m: navMandate } = await getNav();
   const mf = mandateFigures();
   const out: VaultCard[] = [{
     id: "mandate-tn10", kind: "mandate", name: mm.name, href: "/vaults/mandate-tn10", manager: "dawns", network: "testnet-10", status: ml.closed ? "designed" : "live",
@@ -75,8 +76,9 @@ export const MANAGERS: Manager[] = [{
 }];
 
 /** What a manager has done, from its vaults' ledgers. */
-export function trackRecord(id: string) {
-  const vs = vaults().filter((v) => v.manager === id);
+export async function trackRecord(id: string) {
+  const { l: navLedger, m: navMandate } = await getNav();
+  const vs = (await vaults()).filter((v) => v.manager === id);
   const sent = ml.moves.filter((x) => x.kind === "allocate").reduce((s, x) => s + (x.amount ?? 0), 0) / SOMPI
     + (navLedger?.moves.filter((x) => x.kind === "allocate").reduce((s, x) => s + (x.amount ?? 0), 0) ?? 0) / SOMPI;
   const back = ml.moves.filter((x) => x.kind === "recall").reduce((s, x) => s + (x.amount ?? 0), 0) / SOMPI

@@ -2,6 +2,7 @@ import "server-only";
 import navDoc from "../../../vault/deploy/nav.json";
 import navMandateDoc from "../../../vault/deploy/nav-mandate.json";
 import { accountAddress, ownerOf, fromHex, type AccountTemplate } from "./account";
+import { sql, hasDb, ensureSchema } from "@/lib/db";
 
 /**
  * The NAV vault on testnet-10. As for the mandate vault: the ledger (nav.json,
@@ -34,6 +35,23 @@ const raw = navDoc as unknown as Partial<NavLedger>;
 export const navLive = raw.status !== "planned" && !!raw.covenantId;
 export const navLedger = (navLive ? raw : null) as NavLedger | null;
 export const navMandate = ((navMandateDoc as unknown as { standard?: string }).standard ? navMandateDoc : null) as NavMandateDoc | null;
+
+/**
+ * The newest ledger: the one in git, or a newer one the keeper published
+ * (signed by the allocator key, checked in /api/vaults/ledger). Same vault,
+ * same mandate, never fewer moves. The chain check on the page still decides
+ * whether it is current.
+ */
+export async function getNav(): Promise<{ l: NavLedger | null; m: NavMandateDoc | null }> {
+  if (!navLedger || !navMandate || !hasDb()) return { l: navLedger, m: navMandate };
+  try {
+    await ensureSchema();
+    const r = (await sql().query("select doc from vault_ledgers where vault = $1", [navLedger.covenantId])) as { doc: NavLedger }[];
+    const d = r[0]?.doc;
+    if (d && d.covenantId === navLedger.covenantId && d.mandateHash === navLedger.mandateHash && Array.isArray(d.moves) && d.moves.length >= navLedger.moves.length) return { l: d, m: navMandate };
+  } catch { /* fall back to git */ }
+  return { l: navLedger, m: navMandate };
+}
 
 async function get<T>(path: string): Promise<T | null> {
   try {

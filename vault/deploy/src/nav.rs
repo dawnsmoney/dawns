@@ -8,6 +8,7 @@
 //!   nav pay <role> <kas> [redeem]
 //!                             test helper: a role key pays its own deposit (or redeem) account
 //!   nav keeper [once]         sweep deposits and redemptions of every registered account
+//!   nav publish               send nav.json to the site now (signed by the allocator key)
 //!   nav allocate <slot> <kas> allocator sends capital to an approved destination
 //!   nav recall <slot> <kas>   a strategy wallet returns capital
 //!   nav mark <k0> <k1> <k2>   valuer marks the positions (KAS)
@@ -221,6 +222,22 @@ impl Ledger {
     fn push(&mut self, k: &str, x: Value) { let mut a = self.v[k].as_array().cloned().unwrap_or_default(); a.push(x); self.v[k] = Value::Array(a); }
 }
 
+/// Publish the ledger to the site (POST /api/vaults/ledger), signed by the
+/// allocator key over blake2b-256 of the exact body. Best effort: the chain is
+/// the truth, git remains the fallback.
+fn publish(led: &Ledger) {
+    let run = || -> Res<String> {
+        let body = serde_json::to_string(&led.v)?;
+        let k = load_key("allocator")?;
+        let msg = secp256k1::Message::from_digest_slice(&b2b(body.as_bytes()))?;
+        let sig = k.sign_schnorr(msg);
+        let site = std::env::var("DAWNS_SITE").unwrap_or_else(|_| "https://www.dawns.money".into());
+        let r = ureq::post(&format!("{site}/api/vaults/ledger")).set("content-type", "application/json").set("x-dawns-sig", &hex(sig.as_ref())).timeout(Duration::from_secs(15)).send_string(&body);
+        match r { Ok(x) => Ok(x.into_string().unwrap_or_default()), Err(ureq::Error::Status(c, x)) => Err(format!("{c} {}", x.into_string().unwrap_or_default()).into()), Err(e) => Err(e.to_string().into()) }
+    };
+    match run() { Ok(r) => println!("published      : {r}"), Err(e) => println!("publish failed : {e} (git still works: commit nav.json)") }
+}
+
 struct NCtx { client: KaspaRpcClient, m: NavMandate, led: Ledger, state: Nav, cur: CompiledContract<'static>, coin: Coin, cov: Hash, daa: i64 }
 
 async fn open_nav() -> Res<NCtx> {
@@ -258,6 +275,7 @@ async fn commit(c: &mut NCtx, kind: &str, tx: Transaction, entries: Vec<UtxoEntr
             c.led.v["pending"] = Value::Null;
             c.led.write()?;
             println!("accepted. txid : {id}\nvault moved to : {next_addr}");
+            publish(&c.led);
             Ok(id.to_string())
         }
         Err(e) => { c.led.v["pending"] = Value::Null; c.led.write()?; Err(format!("rejected by the node: {e}").into()) }
@@ -352,6 +370,7 @@ async fn sweep_deposit(c: &mut NCtx, owner: [u8; 32], owner_addr: &str, acct: &C
     let id = commit(c, "deposit", tx, entries, next, vault_out, json!({ "owner": owner_addr, "paid": paid, "shares": minted, "price": price })).await?;
     c.led.push("notes", json!({ "owner": owner_addr, "shares": minted, "txid": id, "index": 2, "value": c.m.note_value, "at": now(), "price": price }));
     c.led.write()?;
+    publish(&c.led);
     await_vault(c).await
 }
 
@@ -397,6 +416,7 @@ async fn sweep_redeem(c: &mut NCtx, owner: [u8; 32], owner_addr: &str, acct: &Co
     let id = commit(c, "redeem", tx, entries, next, vault_out, json!({ "owner": owner_addr, "shares": shares, "price": price, "payout": to_owner })).await?;
     c.led.v["notes"][ni]["redeemed"] = json!({ "txid": id, "at": now(), "payout": to_owner, "price": price });
     c.led.write()?;
+    publish(&c.led);
     await_vault(c).await
 }
 
@@ -530,9 +550,12 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
             c.led.v["shareCovid"] = json!(sc.to_string());
             c.led.v["tokenTx"] = json!(id);
             c.led.write()?;
+            publish(&c.led);
         }
 
         "show" => { let c = open_nav().await?; print_nav(&c); }
+
+        "publish" => { publish(&Ledger::read()?); }
 
         "accounts" => {
             // nav accounts <address> [vault covenant id — defaults to nav.json's]
@@ -572,11 +595,16 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
         "keeper" => {
             let once = args.get(3).map(String::as_str) == Some("once");
             loop {
-                let mut c = open_nav().await?;
-                let n = keeper_pass(&mut c).await?;
-                println!("keeper         : {n} done · {}", now());
+                // a failed pass (node hiccup, a move still confirming) must not stop the keeper
+                match open_nav().await {
+                    Ok(mut c) => match keeper_pass(&mut c).await {
+                        Ok(n) => println!("keeper         : {n} done · {}", now()),
+                        Err(e) => println!("keeper pass    : {e} — retrying"),
+                    },
+                    Err(e) => println!("keeper open    : {e} — retrying"),
+                }
                 if once { break; }
-                tokio::time::sleep(Duration::from_secs(30)).await;
+                tokio::time::sleep(Duration::from_secs(20)).await;
             }
         }
 
