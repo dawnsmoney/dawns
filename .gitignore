@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# vault (Rust): build output and TESTNET keys never enter git
+/vault/*/target
+*.key
+/vault/deploy/keys/
+/vault/deploy/vault.json.tmp
+/vault/deploy/vault.failed.json

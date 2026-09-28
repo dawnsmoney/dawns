@@ -1,0 +1,318 @@
+pragma silverscript ^0.1.0;
+
+// Dawns — mandate vault covenant, v0 (TESTNET-10 ONLY, NOT AUDITED)
+//
+// A vault is the execution of an investment mandate. The mandate's hard rules
+// live here, baked into the script, so the allocator cannot move capital
+// outside them — not "should not", CANNOT:
+//
+//   * capital leaves only to one of four approved destinations
+//   * each destination is capped as a share of the vault's value
+//   * a liquid reserve always stays in the vault
+//   * a single move and each epoch's total outflow are capped
+//   * the depositor can withdraw from the reserve at any time
+//   * the guardian can stop the vault, which pays EVERYTHING to the depositor
+//
+// Three keys, three powers, never collapsed (the Warda discipline):
+//   allocator  moves capital, within the mandate            (cannot withdraw)
+//   guardian   stops the vault; funds go to the depositor   (cannot take)
+//   depositor  owns the capital; withdraws and tops up      (cannot allocate)
+//
+// Valuation is AT COST: `deployed[i]` is what went to destination i minus what
+// came back, attributed by the allocator's signature. The vault cannot see an
+// L2 position's market value, so caps bind on capital sent, not on marks.
+// Dawns' off-chain monitor reports marks against these cost figures.
+//
+// Authority is in constructor params (baked into the scriptPubKey, immutable).
+// Accounting is in contract fields (the implicit State, bound to the successor
+// output by the covenant declaration). There is no delegation in v0, so no
+// authority has to travel in State — which is what Warda had to do.
+
+contract DawnsVault(
+    pubkey   allocatorKey,
+    pubkey   guardianKey,
+    pubkey   depositorKey,
+    int      maxFee,
+    // blake2b of each approved destination's scriptPubKey, as the engine
+    // introspects it. A zero hash is an unused slot: nothing hashes to zero.
+    byte[32] dest0,
+    byte[32] dest1,
+    byte[32] dest2,
+    byte[32] dest3,
+    // Per-destination cap, basis points of vault value (value held + deployed).
+    int      cap0,
+    int      cap1,
+    int      cap2,
+    int      cap3,
+    // Share of vault value that must stay liquid in the vault after any move.
+    int      reserveFloorBps,
+    int      maxPerMove,
+    int      epochLimit,
+    int      epochLength,
+    int      notBefore,
+    // blake2b of the human-readable mandate document. The covenant never reads
+    // it; it is here so anyone can check that the published mandate is the one
+    // the vault was created under.
+    byte[32] mandateHash,
+    int      initDeployed0,
+    int      initDeployed1,
+    int      initDeployed2,
+    int      initDeployed3,
+    int      initPrincipal,
+    int      initEpochIndex,
+    int      initEpochSpent
+) {
+    // ---- STATE (accounting only) ----
+    int deployed0  = initDeployed0;
+    int deployed1  = initDeployed1;
+    int deployed2  = initDeployed2;
+    int deployed3  = initDeployed3;
+    int principal  = initPrincipal;   // net deposits, for reporting
+    int epochIndex = initEpochIndex;
+    int epochSpent = initEpochSpent;
+
+    // No figure here may exceed this. Caps multiply vault value (at most five
+    // figures summed, 5e14) by at most 10_000, so every product stays below
+    // 2^63. v0 is therefore bounded at 1M KAS per figure; a mainnet version
+    // needs division-first arithmetic to lift it. Silverscript overflow is UNDEFINED BEHAVIOUR and UB may
+    // SUCCEED, so every figure is bounded before it meets arithmetic.
+    int constant MAX_VALUE = 100000000000000;   // 1e14 sompi = 1M KAS (v0 testnet bound)
+    int constant BPS = 10000;
+
+    // ------------------------------------------------------------------
+    // ALLOCATE — send capital to an approved destination, within the caps.
+    // Continuation at output 0, the destination at output 1.
+    // ------------------------------------------------------------------
+    #[covenant.singleton]
+    function allocate(
+        State prevState,
+        State newState,
+        int   slot,
+        int   amount,
+        int   claimedDaa,
+        sig   allocatorSig
+    ) {
+        require(slot >= 0);
+        require(slot <= 3);
+        require(amount > 0);
+        require(amount <= maxPerMove);
+        require(amount <= MAX_VALUE);
+
+        int inValue = tx.inputs[this.activeInputIndex].value;
+        require(inValue <= MAX_VALUE);
+        require(amount <= inValue);
+
+        int d0 = prevState.deployed0;
+        int d1 = prevState.deployed1;
+        int d2 = prevState.deployed2;
+        int d3 = prevState.deployed3;
+        require(d0 >= 0);
+        require(d1 >= 0);
+        require(d2 >= 0);
+        require(d3 >= 0);
+        require(d0 <= MAX_VALUE);
+        require(d1 <= MAX_VALUE);
+        require(d2 <= MAX_VALUE);
+        require(d3 <= MAX_VALUE);
+
+        // Vault value before the move: what it holds plus what it has sent out.
+        int nav = inValue + d0 + d1 + d2 + d3;
+
+        // ---- which destination, its cap, its exposure so far ----
+        byte[32] dest = dest0;
+        int cap = cap0;
+        int already = d0;
+        if (slot == 1) { dest = dest1; cap = cap1; already = d1; }
+        if (slot == 2) { dest = dest2; cap = cap2; already = d2; }
+        if (slot == 3) { dest = dest3; cap = cap3; already = d3; }
+        require(cap > 0);
+        require(cap <= BPS);
+
+        // WHERE: output 1 must be exactly the approved destination.
+        require(blake2b(tx.outputs[1].scriptPubKey) == dest);
+        require(tx.outputs[1].value == amount);
+
+        // CAP: exposure to this destination after the move stays within its
+        // share of the vault. Multiplying instead of dividing is exact, and
+        // safe because nav <= 5e14 and cap <= 1e4 keep the product below 2^63.
+        require((already + amount) * BPS <= cap * nav);
+
+        // RESERVE: what stays in the vault is at least the floor share.
+        require(reserveFloorBps >= 0);
+        require(reserveFloorBps <= BPS);
+        require((inValue - amount) * BPS >= reserveFloorBps * nav);
+
+        // RATE: per-epoch outflow cap with a monotonic epoch ratchet. tx.daa is
+        // write-only, so the allocator claims a DAA score and CLTV proves the
+        // chain has reached it. An allocator that claims an EARLIER epoch to get
+        // a fresh allowance is stopped by the ratchet (Warda found this hole in
+        // its own first version, verified against the engine).
+        require(claimedDaa >= notBefore);
+        require(tx.daa >= claimedDaa);
+        require(epochLength > 0);
+        int currentEpoch = (claimedDaa - notBefore) / epochLength;
+        require(currentEpoch >= prevState.epochIndex);
+        int spentThisEpoch = 0;
+        if (currentEpoch == prevState.epochIndex) {
+            spentThisEpoch = prevState.epochSpent;
+        }
+        require(spentThisEpoch >= 0);
+        require(spentThisEpoch <= epochLimit);
+        require(amount <= epochLimit - spentThisEpoch);
+
+        // ---- successor accounting: exactly one slot moves ----
+        int n0 = d0;
+        int n1 = d1;
+        int n2 = d2;
+        int n3 = d3;
+        if (slot == 0) { n0 = d0 + amount; }
+        if (slot == 1) { n1 = d1 + amount; }
+        if (slot == 2) { n2 = d2 + amount; }
+        if (slot == 3) { n3 = d3 + amount; }
+        require(newState.deployed0 == n0);
+        require(newState.deployed1 == n1);
+        require(newState.deployed2 == n2);
+        require(newState.deployed3 == n3);
+        require(newState.principal == prevState.principal);
+        require(newState.epochIndex == currentEpoch);
+        require(newState.epochSpent == spentThisEpoch + amount);
+
+        // ---- topology and value ----
+        require(OpAuthOutputCount(this.activeInputIndex) == 1);
+        require(OpAuthOutputIdx(this.activeInputIndex, 0) == 0);
+        require(tx.outputs[0].value >= inValue - amount - maxFee);
+
+        require(checkSig(allocatorSig, allocatorKey));
+    }
+
+    // ------------------------------------------------------------------
+    // RECALL — capital comes home from a destination. The returning coin is
+    // another input; the continuation must hold the vault's value plus it.
+    // The allocator attributes the return to a slot. Returns above cost (a
+    // profit) zero the slot; they cannot drive it negative.
+    // ------------------------------------------------------------------
+    #[covenant.singleton]
+    function recall(State prevState, State newState, int slot, int amount, sig allocatorSig) {
+        require(slot >= 0);
+        require(slot <= 3);
+        require(amount > 0);
+        require(amount <= MAX_VALUE);
+
+        int inValue = tx.inputs[this.activeInputIndex].value;
+        require(inValue <= MAX_VALUE);
+
+        int n0 = prevState.deployed0;
+        int n1 = prevState.deployed1;
+        int n2 = prevState.deployed2;
+        int n3 = prevState.deployed3;
+        require(n0 >= 0);
+        require(n1 >= 0);
+        require(n2 >= 0);
+        require(n3 >= 0);
+        require(n0 <= MAX_VALUE);
+        require(n1 <= MAX_VALUE);
+        require(n2 <= MAX_VALUE);
+        require(n3 <= MAX_VALUE);
+        if (slot == 0) { n0 = n0 - amount; if (n0 < 0) { n0 = 0; } }
+        if (slot == 1) { n1 = n1 - amount; if (n1 < 0) { n1 = 0; } }
+        if (slot == 2) { n2 = n2 - amount; if (n2 < 0) { n2 = 0; } }
+        if (slot == 3) { n3 = n3 - amount; if (n3 < 0) { n3 = 0; } }
+        require(newState.deployed0 == n0);
+        require(newState.deployed1 == n1);
+        require(newState.deployed2 == n2);
+        require(newState.deployed3 == n3);
+        require(newState.principal == prevState.principal);
+        require(newState.epochIndex == prevState.epochIndex);
+        require(newState.epochSpent == prevState.epochSpent);
+
+        require(OpAuthOutputCount(this.activeInputIndex) == 1);
+        require(OpAuthOutputIdx(this.activeInputIndex, 0) == 0);
+        // The returned coin must actually land in the vault.
+        require(tx.outputs[0].value >= inValue + amount - maxFee);
+
+        require(checkSig(allocatorSig, allocatorKey));
+    }
+
+    // ------------------------------------------------------------------
+    // DEPOSIT — the depositor tops up. Principal grows by the amount added.
+    // ------------------------------------------------------------------
+    #[covenant.singleton]
+    function deposit(State prevState, State newState, int amount, sig depositorSig) {
+        require(amount > 0);
+        require(amount <= MAX_VALUE);
+        require(prevState.principal >= 0);
+        require(prevState.principal <= MAX_VALUE);
+        int inValue = tx.inputs[this.activeInputIndex].value;
+        require(inValue <= MAX_VALUE);
+
+        require(newState.deployed0 == prevState.deployed0);
+        require(newState.deployed1 == prevState.deployed1);
+        require(newState.deployed2 == prevState.deployed2);
+        require(newState.deployed3 == prevState.deployed3);
+        require(newState.principal == prevState.principal + amount);
+        require(newState.epochIndex == prevState.epochIndex);
+        require(newState.epochSpent == prevState.epochSpent);
+
+        require(OpAuthOutputCount(this.activeInputIndex) == 1);
+        require(OpAuthOutputIdx(this.activeInputIndex, 0) == 0);
+        require(tx.outputs[0].value >= inValue + amount - maxFee);
+
+        require(checkSig(depositorSig, depositorKey));
+    }
+
+    // ------------------------------------------------------------------
+    // WITHDRAW — the depositor takes liquid capital out, at any time. The
+    // reserve floor binds the allocator, not the owner. Output 1 pays the
+    // depositor and nobody else.
+    // ------------------------------------------------------------------
+    #[covenant.singleton]
+    function withdraw(State prevState, State newState, int amount, sig depositorSig) {
+        require(amount > 0);
+        require(amount <= MAX_VALUE);
+        int inValue = tx.inputs[this.activeInputIndex].value;
+        require(inValue <= MAX_VALUE);
+        require(amount <= inValue);
+        require(prevState.principal >= 0);
+        require(prevState.principal <= MAX_VALUE);
+
+        int p = prevState.principal - amount;
+        if (p < 0) { p = 0; }
+        require(newState.deployed0 == prevState.deployed0);
+        require(newState.deployed1 == prevState.deployed1);
+        require(newState.deployed2 == prevState.deployed2);
+        require(newState.deployed3 == prevState.deployed3);
+        require(newState.principal == p);
+        require(newState.epochIndex == prevState.epochIndex);
+        require(newState.epochSpent == prevState.epochSpent);
+
+        byte[34] toDepositor = new ScriptPubKeyP2PK(depositorKey);
+        require(tx.outputs[1].scriptPubKey == byte[](toDepositor));
+        require(tx.outputs[1].value == amount);
+
+        require(OpAuthOutputCount(this.activeInputIndex) == 1);
+        require(OpAuthOutputIdx(this.activeInputIndex, 0) == 0);
+        require(tx.outputs[0].value >= inValue - amount - maxFee);
+
+        require(checkSig(depositorSig, depositorKey));
+    }
+
+    // ------------------------------------------------------------------
+    // HALT — the guardian stops the vault. Everything it holds goes to the
+    // depositor. A STOP capability, not a TAKE or a BURN one: the destination
+    // is fixed and the value is conserved (Warda's revoke, after its fix).
+    // ------------------------------------------------------------------
+    entry halt(sig s) {
+        require(checkSig(s, guardianKey));
+        byte[34] toDepositor = new ScriptPubKeyP2PK(depositorKey);
+        require(tx.outputs[0].scriptPubKey == byte[](toDepositor));
+        require(tx.outputs[0].value >= tx.inputs[this.activeInputIndex].value - maxFee);
+    }
+
+    // CLOSE — the depositor ends the vault and takes everything it holds.
+    entry close(sig s) {
+        require(checkSig(s, depositorKey));
+        byte[34] toDepositor = new ScriptPubKeyP2PK(depositorKey);
+        require(tx.outputs[0].scriptPubKey == byte[](toDepositor));
+        require(tx.outputs[0].value >= tx.inputs[this.activeInputIndex].value - maxFee);
+    }
+}
