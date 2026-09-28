@@ -14,6 +14,7 @@
 //!                          on the record
 //!   halt                   guardian stops the vault: everything to the depositor
 //!   close                  depositor closes the vault
+//!   nav …                  the NAV vault: see src/nav.rs
 //!
 //! Connects through the public Kaspa resolver (testnet-10) unless DAWNS_RPC
 //! names a node (ws://host:17210). wRPC Borsh straight to a node: covenant
@@ -50,6 +51,8 @@ use silverscript_lang::compiler::{compile_contract, struct_object, CompileOption
 use std::error::Error;
 use std::path::PathBuf;
 use std::time::Duration;
+
+mod nav;
 
 type Res<T> = Result<T, Box<dyn Error>>;
 
@@ -866,6 +869,8 @@ async fn run() -> Res<()> {
             let mv = Move { kind: if cmd == "halt" { "halt" } else { "close" }, tx, entries, next: None, slot: None, amount: paid, claimed_daa: None, value_after: 0 };
             submit(&c.client, c.man, &c.m, mv, false).await?;
         }
+
+        "nav" => nav::run_nav(&args).await?,
 
         _ => return Err(format!("unknown command {cmd}").into()),
     }

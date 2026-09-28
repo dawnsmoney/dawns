@@ -224,3 +224,4 @@ where
 pub fn new_tx(inputs: Vec<TransactionInput>, outputs: Vec<TransactionOutput>, lock_time: u64) -> Transaction {
     Transaction::new(1, inputs, outputs, lock_time, Default::default(), 0, vec![])
 }
+pub mod nav;

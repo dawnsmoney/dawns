@@ -1,0 +1,35 @@
+pragma silverscript ^0.1.0;
+
+// Dawns — personal vault account (TESTNET-10 ONLY, NOT AUDITED)
+//
+// A plain P2SH address a user can send KAS to from any wallet. `kind` says what
+// the coin is for: 0 = a deposit into the vault, 1 = a request to redeem one
+// share note. The vault reads this state (template-authenticated) and does the
+// rest; this script only decides WHO may spend the coin:
+//   enter   : the vault this account belongs to is spent at input 0 and this
+//             coin is input 1, in the one transaction shape that reads it (a
+//             deposit: 3 inputs, 3 outputs; a redemption: 4 inputs, 3 outputs).
+//             The vault's rules then fix shares, payout and owner. No other vault
+//             path has these shapes, so no other path can consume the coin.
+//   reclaim : the owner, with a signature, at any time
+contract DawnsAccount(byte[32] initOwner, byte[32] initVault, int initKind) {
+    byte[32] owner = initOwner;
+    byte[32] vault = initVault;
+    int kind = initKind;
+
+    entry enter() {
+        require(OpInputCovenantId(0) == vault);
+        require(this.activeInputIndex == 1);
+        require(tx.outputs.length == 3);
+        if (kind == 0) {
+            require(tx.inputs.length == 3);
+        } else {
+            require(kind == 1);
+            require(tx.inputs.length == 4);
+        }
+    }
+
+    entry reclaim(sig s) {
+        require(checkSig(s, pubkey(owner)));
+    }
+}
