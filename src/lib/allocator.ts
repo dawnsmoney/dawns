@@ -90,6 +90,8 @@ export function allocate(opps: Opportunity[], p: Policy): Plan {
   type C = { o: Opportunity; score: number; cap: number };
   const cands: C[] = [];
   for (const o of opps) {
+    // a farm is the same LP staked in one more contract; its reward is an incentive the allocator never counts
+    if (o.farm) continue;
     if (o.status === "crit") { out(o, "Exit blocked: suppliers cannot withdraw now"); continue; }
     if (o.notes.some((n) => n.startsWith("Frozen"))) { out(o, "Frozen: not accepting deposits"); continue; }
     if (o.apy == null) { out(o, "Yield not measured yet"); continue; }

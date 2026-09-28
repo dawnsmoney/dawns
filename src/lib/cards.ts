@@ -124,7 +124,7 @@ export function pickDaily(s: Snapshot, assets: Asset[], recent: Set<string>) {
   const as = assets
     .filter((a) => a.standard !== "native" && significant(a) && a.price != null && valueCredible(a) && flow(a) > 0 && !recent.has(`asset:${a.id}`))
     .sort((x, y) => flow(y) - flow(x)).slice(0, 3);
-  const pool = s.opportunities.filter((o) => o.size >= 25_000 && !recent.has(`opp:${o.id}`));
+  const pool = s.opportunities.filter((o) => !o.farm && o.size >= 25_000 && !recent.has(`opp:${o.id}`));
   const picks = [
     [...pool].sort((x, y) => y.size - x.size)[0],
     [...pool].filter((o) => o.apy != null).sort((x, y) => (y.apy ?? 0) - (x.apy ?? 0))[0],

@@ -81,7 +81,7 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
         if (pool.tk.some((t) => t.px == null)) notes.push("One token has no reliable price; value counts the priced side only.");
         if (lpShare < 0.999) notes.push(`${pct(1 - lpShare, 0)} of trading fees go to the protocol, not LPs (read on-chain).`);
         const [status, statusText]: [Status, string] = turnover != null && turnover >= 3 ? ["warn", "Check volume"] : ilAtMove != null && ilAtMove >= 0.05 ? ["warn", "Volatile"] : ["good", "Open"];
-        out.push({
+        const lpOpp: Opportunity = {
           id: `${p.id}:${key}`, kind: "lp", protocol: p.id, pname: p.name, chain: pool.chain,
           name: `${pool.symbols.join(" / ")} liquidity`, assets: [...pool.symbols],
           apy, apyBasis: basis, apyShort: short, apyRange: null, rangeHours: rg?.hours ?? 0,
@@ -89,7 +89,33 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
           vol24: pr && covered >= DAY ? pr.vol24 : null, swaps24: pr && covered >= DAY ? pr.swaps24 : null, turnover, priceMove, ilAtMove,
           status, statusText, notes, pair: pool.pair, feeTier: feeRate,
           assetIds: pool.tk.map((t) => `${pool.chain}:erc20:${t.a.toLowerCase()}`),
-        });
+        };
+        out.push(lpOpp);
+
+        /* ---- farm: the same LP staked for the protocol's token ---- */
+        for (const f of p.dex.farms ?? []) {
+          const fp = f.pools.find((q) => q.pair === key);
+          if (!fp) continue;
+          const on = f.perDay > 0 && fp.active && fp.perDay > 0;
+          const since = f.history?.length ? f.history[f.history.length - 1] : null;
+          const offSince = !on && since && since.perBlock === 0 ? new Date(since.t).toISOString().slice(0, 10) : null;
+          const fnotes = [
+            on ? `Farm rewards: ${Math.round(fp.perDay).toLocaleString("en-US")} ${f.reward.sym} a day to this pool (${pct(fp.allocShare, 0)} of the farm's ${Math.round(f.perDay).toLocaleString("en-US")})${fp.apr != null ? `, ${pct(fp.apr, 1)} a year on the LP staked at the ${f.reward.sym} market price${fp.aprPool != null ? `, ${pct(fp.aprPool, 1)} at its pool price` : ""}` : ""}. Paid in ${f.reward.sym}, never added to yield.`
+              : `Farm rewards are off${offSince ? ` since ${offSince} (the owner set the rate to 0)` : ""}: staking this LP earns only the pool's trading fees, the same as not staking.`,
+            `The farm holds ${Math.round(f.budget).toLocaleString("en-US")} ${f.reward.sym}${f.budgetDays != null ? `, enough for ${Math.round(f.budgetDays)} days at today's rate` : ""}. Its owner can change the rate or the pools at any time.`,
+            `Emergency withdrawal costs ${pct(f.emergencyFeeBps / 10_000, 0)} of the stake${f.lockSec ? `; stakes are locked ${Math.round(f.lockSec / 3600)} h` : "; no locking period"}.`,
+            `${pct(fp.stakedShare, 0)} of this pool's LP is staked in the farm.`,
+            "The farm contract is not verified on the explorer: one more contract between you and the pool.",
+            ...lpOpp.notes.filter((n) => !n.startsWith("Yield:")),
+          ];
+          const [fs, ft]: [Status, string] = !on ? ["warn", "Rewards off"] : lpOpp.status === "good" ? ["good", "Rewards on"] : [lpOpp.status, lpOpp.statusText];
+          out.push({
+            ...lpOpp, id: `${p.id}:farm:${key}`, name: `${pool.symbols.join(" / ")} farm`,
+            apyBasis: `${lpOpp.apyBasis} · staked in the ${p.name} farm; ${f.reward.sym} rewards shown separately`, apyShort: lpOpp.apyShort,
+            status: fs, statusText: ft, notes: fnotes,
+            farm: { address: f.address, reward: f.reward.sym, perDay: fp.perDay, apr: on ? fp.apr : 0, aprPool: on ? fp.aprPool : 0, on, since: since?.t ?? null, budgetDays: f.budgetDays, emergencyFeeBps: f.emergencyFeeBps, lockSec: f.lockSec, stakedShare: fp.stakedShare },
+          });
+        }
       }
     }
   }

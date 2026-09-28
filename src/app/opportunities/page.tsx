@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Banner } from "@/components/Banner";
 import { DataBridge } from "@/components/providers";
-import { OpportunityTable, YieldLadder } from "@/components/opportunities";
+import { FarmPanel, OpportunityTable, YieldLadder } from "@/components/opportunities";
 import { getSnapshot } from "@/lib/snapshot";
 import { getAssets } from "@/lib/assets";
 import { knownOf } from "@/lib/assets/view";
@@ -20,7 +20,9 @@ export default async function OpportunitiesPage() {
   const rows = s.opportunities;
   const known = knownOf(assets, rows.flatMap((o) => o.assetIds ?? []));
   const lend = rows.filter((o) => o.kind === "supply");
-  const lp = rows.filter((o) => o.kind === "lp");
+  const lp = rows.filter((o) => o.kind === "lp" && !o.farm);
+  const farms = rows.filter((o) => o.farm);
+  const farm = s.protocols.flatMap((p) => (p.dex?.farms ?? []).map((f) => ({ p, f })))[0] ?? null;
   const bestOpen = lend.filter((o) => o.status === "good").sort((a, b) => (b.apy ?? 0) - (a.apy ?? 0))[0];
   const bestLp = lp.filter((o) => o.apy != null && o.status === "good")[0];
   const blocked = lend.filter((o) => o.status === "crit");
@@ -53,8 +55,10 @@ export default async function OpportunitiesPage() {
           <div className="c-head"><h3>Highest native yields, and whether you can get out</h3>
             <div className="split-legend" style={{ marginTop: 0 }}><span><i style={{ background: "#3987e5" }} />Lending</span><span><i style={{ background: "#d95926" }} />Liquidity</span></div>
           </div>
-          <YieldLadder rows={rows} />
+          <YieldLadder rows={rows.filter((o) => !o.farm)} />
         </div>
+
+        {farm && <div style={{ marginBottom: 28 }}><FarmPanel p={{ id: farm.p.id, name: farm.p.name }} f={farm.f} opps={farms} now={s.asOf} /></div>}
 
         <OpportunityTable rows={rows} known={known} />
 
@@ -70,7 +74,7 @@ export default async function OpportunitiesPage() {
           <div className="card">
             <div className="c-head"><h3>Not counted</h3></div>
             <div className="vlist">
-              <div className="vrow"><span /><div>Token incentives<small>KSKD, ZEAL and farm rewards are paid in the protocol&apos;s own token. They are shown on each protocol, never added to yield.</small></div><b /></div>
+              <div className="vrow"><span /><div>Token incentives<small>KSKD, ZEAL and farm rewards are paid in the protocol&apos;s own token. Farms show them next to the fee yield, never added to it.</small></div><b /></div>
               <div className="vrow"><span /><div>Markets and pools under $5K<small>Too small to enter and leave without moving the price.</small></div><b /></div>
             </div>
           </div>

@@ -29,6 +29,17 @@ export interface PoolView {
   /** token address, decimals and USD price (null if unpriced) — used to value indexed events */
   tk: [PoolToken, PoolToken];
 }
+/** A farm: stake a pool's LP tokens, earn the protocol's token. Incentives, never native yield. */
+export interface FarmView {
+  chain: "igra" | "kasplex"; address: string; owner: string;
+  reward: { sym: string; address: string; px: number | null; pp: number | null };
+  perBlock: number; perDay: number; blockSec: number;
+  rateSince: number | null;                 // ms: when the current rate was set (from the explorer)
+  history: { t: number; perBlock: number }[] | null;
+  budget: number; budgetDays: number | null; // reward tokens the farm holds, and how long they last at today's rate
+  lockSec: number; emergencyFeeBps: number;
+  pools: { pair: string; symbols: [string, string]; alloc: number; allocShare: number; staked: number; stakedShare: number; stakedUsd: number | null; perDay: number; apr: number | null; aprPool: number | null; active: boolean }[];
+}
 export interface PoolToken { a: string; d: number; px: number | null; pp?: number | null } // px headline price, pp price from pools on that chain only
 
 /** Events dawns indexed itself from contract logs. */
@@ -96,6 +107,7 @@ export interface ProtocolView {
     vol24: number | null; vol7: number | null; fees24: number | null;
     /** trading fee per unit of volume, and the share of it paid to LPs (DefiLlama fees ÷ volume, 7 days) */
     feeRate: number | null; lpShare: number | null; feeSource: "on-chain" | "defillama" | null; feeSamples: number;
+    farms?: FarmView[];
   };
 }
 
@@ -138,6 +150,11 @@ export interface Opportunity {
   pair?: string; feeTier?: number | null;
   /** canonical asset ids (chain:standard:ref) of what the position holds, in the order of `assets` */
   assetIds: string[];
+  /** a farm: the pool's LP staked for the protocol's token. Its incentive is shown, never added to `apy`. */
+  farm?: {
+    address: string; reward: string; perDay: number; apr: number | null; aprPool: number | null;
+    on: boolean; since: number | null; budgetDays: number | null; emergencyFeeBps: number; lockSec: number; stakedShare: number;
+  };
 }
 
 export interface Snapshot {

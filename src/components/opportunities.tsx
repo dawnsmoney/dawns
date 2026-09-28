@@ -5,9 +5,10 @@ import Link from "next/link";
 import { Fragment, useState } from "react";
 import { AssetCoin, Pill } from "./bits";
 import { usd, pct } from "@/lib/format";
-import type { Opportunity } from "@/lib/types";
+import type { FarmView, Opportunity } from "@/lib/types";
 
-type Filter = "All" | "Lending" | "Liquidity";
+type Filter = "All" | "Lending" | "Liquidity" | "Farms";
+const inFilter = (o: Opportunity, f: Filter) => f === "All" || (f === "Lending" ? o.kind === "supply" : f === "Farms" ? !!o.farm : o.kind === "lp" && !o.farm);
 
 const hrs = (h: number) => (h >= 48 ? `${Math.round(h / 24)}\u00a0days` : `${Math.max(1, Math.round(h))}\u00a0h`);
 
@@ -52,12 +53,13 @@ export function OpportunityTable({ rows, known: knownIds = [] }: { rows: Opportu
   const known = new Set(knownIds);
   const [f, setF] = useState<Filter>("All");
   const [open, setOpen] = useState<string | null>(null);
-  const shown = rows.filter((o) => f === "All" || (f === "Lending" ? o.kind === "supply" : o.kind === "lp"));
+  const shown = rows.filter((o) => inFilter(o, f));
+  const filters = (["All", "Lending", "Liquidity", "Farms"] as Filter[]).filter((x) => x !== "Farms" || rows.some((o) => o.farm));
   return (
     <>
       <div className="filters" style={{ marginBottom: 20, justifyContent: "flex-end" }}>
-        {(["All", "Lending", "Liquidity"] as Filter[]).map((x) => (
-          <button key={x} type="button" className={x === f ? "on" : ""} onClick={() => setF(x)}>{x} <span className="muted">{x === "All" ? rows.length : rows.filter((o) => (x === "Lending" ? o.kind === "supply" : o.kind === "lp")).length}</span></button>
+        {filters.map((x) => (
+          <button key={x} type="button" className={x === f ? "on" : ""} onClick={() => setF(x)}>{x} <span className="muted">{rows.filter((o) => inFilter(o, x)).length}</span></button>
         ))}
       </div>
       <div className="card flush"><div className="tbl-wrap"><table className="opps-tbl">
@@ -72,6 +74,7 @@ export function OpportunityTable({ rows, known: knownIds = [] }: { rows: Opportu
                 <td>
                   <b style={{ font: "600 18px var(--display)" }}>{o.apy != null ? pct(o.apy, o.apy < 0.1 ? 2 : 1) : "—"}</b>
                   <small className="muted" style={{ display: "block", whiteSpace: "nowrap" }} title={o.apyBasis}>{o.apyShort}</small>
+                  {o.farm && <small style={{ display: "block", whiteSpace: "nowrap", color: o.farm.on ? "var(--ink-2)" : "var(--warn)" }} title="Paid in the protocol's token: shown, never added to native yield">{o.farm.on ? `+ ${o.farm.apr != null ? pct(o.farm.apr, 1) : "?"} ${o.farm.reward}, not added` : `${o.farm.reward} rewards off`}</small>}
                 </td>
                 <td>{usd(o.size)}{o.vol24 != null && <small className="muted" style={{ display: "block" }}>{usd(o.vol24)} traded 24h</small>}</td>
                 <td><Exit o={o} /></td>
@@ -125,6 +128,71 @@ export function YieldLadder({ rows, limit = 8 }: { rows: Opportunity[]; limit?: 
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * A farm at a glance: its reward rate over time, what each farmed pool pays in fees next to
+ * what it pays in the protocol's token (never summed), and what leaving costs.
+ */
+export function FarmPanel({ p, f, opps, now }: { p: { id: string; name: string }; f: FarmView; opps: Opportunity[]; now: number }) {
+  const [hi, setHi] = useState<number | null>(null);
+  const on = f.perDay > 0;
+  const hist = (f.history ?? []).map((h) => ({ t: h.t, perDay: h.perBlock * (86_400 / f.blockSec) }));
+  const pts = hist.length ? [...hist, { t: now, perDay: f.perDay }] : [{ t: now - 30 * 86_400_000, perDay: f.perDay }, { t: now, perDay: f.perDay }];
+  const t0 = pts[0].t, t1 = now, maxY = Math.max(1, ...pts.map((x) => x.perDay)) * 1.15;
+  const W = 520, H = 180, L = 52, R = 10, T = 10, B = 24;
+  const x = (t: number) => L + ((t - t0) / Math.max(1, t1 - t0)) * (W - L - R), y = (v: number) => T + (1 - v / maxY) * (H - T - B);
+  let d = `M${x(pts[0].t)},${y(pts[0].perDay)}`;
+  for (let i = 1; i < pts.length; i++) d += `H${x(pts[i].t)}V${y(pts[i].perDay)}`;
+  const day = (t: number) => new Date(t).toISOString().slice(0, 10);
+  const rows = f.pools.map((q) => ({ q, o: opps.find((o) => o.id.endsWith(`:farm:${q.pair}`)) ?? null }));
+  const maxA = Math.max(0.01, ...rows.map((r) => Math.max(r.o?.apy ?? 0, r.q.apr ?? 0)));
+  return (
+    <div className="card">
+      <div className="c-head"><h3>{p.name} farm</h3><Pill t={on ? "good" : "warn"}>{on ? "Rewards on" : "Rewards off"}</Pill></div>
+      <div className="farm-figs">
+        <span><small>{f.reward.sym} a day now</small><b>{Math.round(f.perDay).toLocaleString("en-US")}</b></span>
+        <span><small>Held by the farm</small><b>{Math.round(f.budget / 1e6 * 10) / 10}M {f.reward.sym}</b></span>
+        <span><small>Lasts at this rate</small><b>{f.budgetDays != null ? `${Math.round(f.budgetDays).toLocaleString("en-US")} days` : "—"}</b></span>
+        <span><small>Emergency exit</small><b>{pct(f.emergencyFeeBps / 10_000, 0)} fee</b></span>
+      </div>
+      <div className="grid g2" style={{ gap: 24, marginTop: 18 }}>
+        <div>
+          <b style={{ fontSize: 14 }}>{f.reward.sym} paid a day, every rate the owner set</b>
+          <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Farm reward rate: ${hist.map((h) => `${day(h.t)} ${Math.round(h.perDay)} a day`).join(", ") || "no changes read"}; now ${Math.round(f.perDay)} a day`} style={{ marginTop: 8 }}>
+            {[0].map((v) => <g key={v}><line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="rgba(255,255,255,.08)" /><text x={L - 6} y={y(v)} textAnchor="end" dominantBaseline="central" fill="var(--ink-3)" fontSize="11">0</text></g>)}
+            <path d={d} fill="none" stroke="#c98500" strokeWidth={2} />
+            {hist.map((h, i) => (
+              <g key={h.t} onMouseEnter={() => setHi(i)} onMouseLeave={() => setHi(null)}>
+                <circle cx={x(h.t)} cy={y(h.perDay)} r={12} fill="transparent" />
+                <circle cx={x(h.t)} cy={y(h.perDay)} r={hi === i ? 6 : 4} fill="#c98500" stroke="var(--card)" strokeWidth={2} />
+                <text x={x(h.t) + 8} y={y(h.perDay) - 8} fill="var(--ink-2)" fontSize="11.5">{h.perDay ? `${Math.round(h.perDay).toLocaleString("en-US")} a day · ${day(h.t)}` : `0 · ${day(h.t)}`}</text>
+              </g>
+            ))}
+            <text x={L} y={H - 6} fill="var(--ink-3)" fontSize="11">{day(t0)}</text>
+            <text x={W - R} y={H - 6} textAnchor="end" fill="var(--ink-3)" fontSize="11">today</text>
+          </svg>
+          <div className="split-tip">{hi != null ? <span><b>{day(hist[hi].t)}</b> · owner set {Math.round(hist[hi].perDay).toLocaleString("en-US")} {f.reward.sym} a day</span> : <span className="muted">{hist.length ? `${hist.length} rate changes read from the explorer. Hover a change.` : "Rate history not read this run."}</span>}</div>
+        </div>
+        <div>
+          <b style={{ fontSize: 14 }}>Per farmed pool: trading fees vs {f.reward.sym} rewards (never summed)</b>
+          <div className="farm-rows">
+            {rows.map(({ q, o }) => (
+              <div key={q.pair} className="farm-row">
+                <span className="farm-n"><b>{q.symbols.join(" / ")}</b><small>{pct(q.stakedShare, 0)} of its LP staked · {pct(q.allocShare, 0)} of rewards</small></span>
+                <span className="farm-bars">
+                  <span title={`Trading fees ${o?.apy != null ? pct(o.apy, 1) : "measuring"}`}><i style={{ width: `${((o?.apy ?? 0) / maxA) * 100}%`, background: "#d95926" }} /><em>{o?.apy != null ? pct(o.apy, 1) : "—"}</em></span>
+                  <span title={`${f.reward.sym} rewards ${q.apr != null ? pct(q.apr, 1) : "unpriced"}`}><i className="hatch" style={{ width: `${((q.apr ?? 0) / maxA) * 100}%` }} /><em>{on ? (q.apr != null ? pct(q.apr, 1) : "unpriced") : "0%"}</em></span>
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="split-legend"><span><i style={{ background: "#d95926" }} />Trading fees (native)</span><span><i className="hatch" />{f.reward.sym} rewards (incentive)</span></div>
+        </div>
+      </div>
+      <p className="muted" style={{ fontSize: 13, margin: "16px 0 0" }}>{on ? `The owner can change the rate or the pools at any time; rewards are worth what ${f.reward.sym} can be sold for.` : `Rewards are off: a staked LP earns the same trading fees as an unstaked one, with one more contract in between and a ${pct(f.emergencyFeeBps / 10_000, 0)} fee on emergency exits.`} Contract <a href={`https://explorer.igralabs.com/address/${f.address}`} target="_blank" rel="noopener noreferrer">{f.address.slice(0, 8)}…{f.address.slice(-4)}</a>, not verified on the explorer; see <Link href={`/protocols/${p.id}`}>{p.name}</Link>.</p>
     </div>
   );
 }

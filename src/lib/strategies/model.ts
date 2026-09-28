@@ -129,7 +129,7 @@ export interface Evaluation {
   legs: LegView[];
   capacityUsd: number | null;
   gross: number | null;            // native APY on the whole vault, reserve earning nothing
-  rewards: number;                 // always 0: dawns never adds incentives in
+  rewards: number;                 // farm incentives on the whole vault: shown, never added to gross or net
   perfFee: number; mgmtFee: number;
   net: number | null;
   measuring: string[];             // legs without a measured yield
@@ -164,6 +164,9 @@ export function evaluate(d: StrategyDoc, opps: Opportunity[], kasUsd: number | n
     if (cover != null && cover < d.exitCover) flags.push({ t: cover < 1 ? "crit" : "warn", text: `At full capacity this leg would be ${cover < 1 ? "larger than" : `${(1 / cover * 100).toFixed(0)}% of`} the market's withdrawable cash; the rule asks for ${d.exitCover}× cover.` });
     const ofMarket = o.size > 0 && usdPos > 0 ? usdPos / o.size : null;
     if (ofMarket != null && ofMarket > 0.2) flags.push({ t: ofMarket > 0.5 ? "crit" : "warn", text: `At full capacity this leg would be ${(ofMarket * 100).toFixed(0)}% of the ${o.kind === "lp" ? "pool" : "market"} (${o.kind === "lp" ? "pool" : "market"} size today). Its own entry would move the ${o.kind === "lp" ? "price" : "rate"}.` });
+    if (o.farm) flags.push(o.farm.on
+      ? { t: "info", text: `Farm: ${o.farm.apr != null ? `${(o.farm.apr * 100).toFixed(1)}% a year` : "rewards"} in ${o.farm.reward}, shown but never added to the strategy's yield. The farm's owner can change it at any time; emergency exit costs ${o.farm.emergencyFeeBps / 100}%.` }
+      : { t: "warn", text: `Farm rewards are off${o.farm.since ? ` since ${new Date(o.farm.since).toISOString().slice(0, 10)}` : ""}: this leg earns the pool's trading fees only, through one more contract, with a ${o.farm.emergencyFeeBps / 100}% emergency-exit fee.` });
     if (o.kind === "lp") flags.push({ t: "info", text: `Exposed to ${o.assets.join(" and ")} prices${o.ilAtMove != null && o.priceMove != null ? `; the price moved ${(o.priceMove * 100).toFixed(0)}% in dawns' last ${Math.round(o.rangeHours)} h of readings, where an LP trailed holding by ${(o.ilAtMove * 100).toFixed(1)}%` : ""}.` });
     if (o.apy == null) flags.push({ t: "info", text: o.apyBasis });
     return { leg, o, share, cap: leg.cap / BPS, usd: usdPos, apy: o.apy, range: o.apyRange, exitUsd, cover, paused, flags };
@@ -176,6 +179,8 @@ export function evaluate(d: StrategyDoc, opps: Opportunity[], kasUsd: number | n
   const gross = active.length && !measured.length ? null : measured.reduce((s, l) => s + l.share * (l.apy ?? 0), 0);
   const lo = measured.reduce((s, l) => s + l.share * (l.range?.[0] ?? l.apy ?? 0), 0);
   const hi = measured.reduce((s, l) => s + l.share * (l.range?.[1] ?? l.apy ?? 0), 0);
+  // incentives: what farm legs pay in the protocol's token, shown next to the yield and never added to it
+  const rewards = active.reduce((s, l) => s + l.share * (l.o?.farm?.on ? l.o.farm.apr ?? 0 : 0), 0);
   const perfFee = gross != null ? gross * d.fees.performanceBps / BPS : 0;
   const mgmtFee = d.fees.managementBps / BPS;
   const net = gross != null ? gross - perfFee - mgmtFee : null;
@@ -209,7 +214,7 @@ export function evaluate(d: StrategyDoc, opps: Opportunity[], kasUsd: number | n
   const worst = checks.filter((c) => !c.ok).map((c) => c.t);
   const [status, statusText]: [Status, string] = worst.includes("crit") ? ["crit", "Does not hold"] : worst.includes("warn") ? ["warn", "Holds with warnings"] : ["good", "Holds"];
 
-  return { legs, capacityUsd: capUsd, gross, rewards: 0, perfFee, mgmtFee, net, measuring, range: gross != null && legs.length ? [lo, hi] : null,
+  return { legs, capacityUsd: capUsd, gross, rewards, perfFee, mgmtFee, net, measuring, range: gross != null && legs.length ? [lo, hi] : null,
     exitNow: Math.min(1, exitNow), byProtocol, byAsset, checks, status, statusText };
 }
 

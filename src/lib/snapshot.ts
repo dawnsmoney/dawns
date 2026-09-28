@@ -5,6 +5,7 @@ import { readKaskad, KASKAD, type KaskadState } from "./chain/kaskad";
 import { readUniV2, readUniV3, readBalances, readBondingNative, buildPriceMap, valuePools, type PriceBook, type PricedPool, type RawPool } from "./chain/dex";
 import { readIgraBridge, IGRA_BRIDGE } from "./chain/bridge";
 import { readInfinityPools } from "./chain/zealous";
+import { readZealousFarm } from "./chain/farms";
 import { readOwn } from "./history";
 import { buildOpportunities } from "./opportunities";
 import { explorerAddress, explorerBlock, type ChainKey } from "./chain/clients";
@@ -204,7 +205,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
 
   // on-chain reads
   const dexJobs = Object.entries(DEX_ADAPTERS).flatMap(([slug, a]) => a.sources.map((src) => ({ slug, src })));
-  const [kaskad, kasdex, attest, lfg, dexReads, bridge, own, infinity] = await Promise.all([
+  const [kaskad, kasdex, attest, lfg, dexReads, bridge, own, infinity, zfarm] = await Promise.all([
     safe("Kaskad on-chain", () => readKaskad((sym) => book.get(normSym(sym).toLowerCase()) ?? null)),
     safe("KasDex on-chain", () => readBalances("igra", KASDEX, KASDEX_TOKENS)),
     safe("Igra Attestation on-chain", () => readBalances("igra", IGRA_ATTESTATION, [IGRA_TOKEN])),
@@ -213,6 +214,7 @@ export async function buildSnapshot(): Promise<Snapshot> {
     safe("Igra bridge", () => readIgraBridge()),
     safe("dawns history", readOwn),
     safe("ZealousSwap Infinity Pools", readInfinityPools),
+    safe("ZealousSwap farm", readZealousFarm),
   ]);
   const dexBySlug = new Map<string, { src: DexSource; read: NonNullable<(typeof dexReads)[number]> }[]>();
   dexJobs.forEach((j, i) => { const r = dexReads[i]; if (r) dexBySlug.set(j.slug, [...(dexBySlug.get(j.slug) ?? []), { src: j.src, read: r }]); });
@@ -433,7 +435,39 @@ export async function buildSnapshot(): Promise<Snapshot> {
           prov[`${it.slug}-staking`] = { label: "ZEAL staked", value: usdFull(staking), trail: [["Contracts", own.map((v) => `${v.vault} (${v.chain === "igra" ? "Igra" : "Kasplex"})`).join(" · ")], ["Read", "totalStaked() + totalRewards()"], ["Amount", own.map(fmt).join(" + ")]], note: "The protocol's own token staked in its own vaults: reported as staking, never added to TVL.", links: own.map((v) => explorerAddress(v.chain, v.vault)) };
           base.canVerify.push(["Infinity Pools", `${vaults.length} vaults read on-chain: ${usd(addTvl)} of NACHO and KASPER in TVL (${usd(addPool)} at pool prices), ${usd(staking)} of ZEAL staking kept out of TVL (${usd(stakingPool)} at pool prices)`, "On-chain"]);
         } else base.cannotVerify.push(["Infinity Pools", "The vault read failed this run"]);
-        base.cannotVerify.push(["Farm deposits", "Farms hold LP tokens of the pools above, so their value is already in TVL; how much of each pool is farmed is not read yet"]);
+        if (zfarm && base.dex) {
+          const f = zfarm;
+          const key = `${f.chain}:${f.rewardToken}`;
+          const px = pxMap.get(key) ?? null, pp = pxPool.get(key) ?? null;
+          const perDay = f.perBlock * (86_400 / f.blockSec);
+          const totalAlloc = f.pools.reduce((x, q) => x + (q.active ? q.alloc : 0), 0) || 1;
+          const cur = f.history?.length ? f.history[f.history.length - 1] : null;
+          const farmPools = f.pools.map((q) => {
+            const pv = base.dex!.pools.find((x) => x.pair.toLowerCase() === q.lp);
+            const stakedShare = q.lpSupply > 0 ? q.staked / q.lpSupply : 0;
+            const stakedUsd = pv ? pv.usd * stakedShare : null;
+            const qDay = q.active ? perDay * (q.alloc / totalAlloc) : 0;
+            const apr = stakedUsd && px != null ? (qDay * 365 * px) / stakedUsd : null;
+            const aprPool = stakedUsd && pp != null ? (qDay * 365 * pp) / stakedUsd : null;
+            return { pair: q.lp, symbols: (pv?.symbols ?? ["?", "?"]) as [string, string], alloc: q.alloc, allocShare: q.active ? q.alloc / totalAlloc : 0, staked: q.staked, stakedShare, stakedUsd, perDay: qDay, apr, aprPool, active: q.active };
+          });
+          base.dex.farms = [{
+            chain: f.chain as "igra", address: f.address, owner: f.owner, reward: { sym: "ZEAL", address: f.rewardToken, px, pp },
+            perBlock: f.perBlock, perDay, blockSec: f.blockSec, rateSince: cur && Math.abs(cur.perBlock - f.perBlock) < 1e-12 ? cur.t : null,
+            history: f.history?.map((h) => ({ t: h.t, perBlock: h.perBlock })) ?? null,
+            budget: f.budget, budgetDays: perDay > 0 ? f.budget / perDay : null, lockSec: f.lockSec, emergencyFeeBps: f.emergencyFeeBps, pools: farmPools,
+          }];
+          const staked = farmPools.reduce((x, q) => x + (q.stakedUsd ?? 0), 0);
+          prov[`${it.slug}-farm`] = { label: "Farm", value: perDay > 0 ? `${Math.round(perDay).toLocaleString("en-US")} ZEAL a day` : "Rewards off",
+            trail: [["Contract", `${f.address} (Igra; not verified on the explorer, functions matched from bytecode selectors)`], ["Read", "rewardPerBlock(), poolInfo(i): LP token, allocation, LP staked; ZEAL.balanceOf(farm); emergencyWithdrawFeeBP(); lockingPeriod()"],
+              ["Rate", `${f.perBlock} ZEAL per block × ${(86_400 / f.blockSec).toFixed(0)} blocks a day (block time ${f.blockSec.toFixed(2)} s over the last 100,000 blocks)`],
+              ["Staked", `${usdFull(staked)} of LP in ${farmPools.filter((q) => q.active).length} pools: ${farmPools.map((q) => `${q.symbols.join("/")} ${pct(q.stakedShare, 0)} of its LP`).join(", ")}`],
+              ["Budget", `${Math.round(f.budget).toLocaleString("en-US")} ZEAL held by the farm`], ["Exit", `emergency withdraw costs ${pct(f.emergencyFeeBps / 10_000, 0)}; locking period ${f.lockSec ? `${Math.round(f.lockSec / 3600)} h` : "none"}`]],
+            note: "Farm rewards are paid in ZEAL, the protocol's own token: shown next to trading-fee yield, never added to it. The owner can change the rate at any time.",
+            links: [explorerAddress(f.chain, f.address)] };
+          base.canVerify.push(["Farm", `${farmPools.length} farmed pools read on-chain: ${usd(staked)} of LP staked (already inside the pools' TVL), ${perDay > 0 ? `${Math.round(perDay).toLocaleString("en-US")} ZEAL a day` : "rewards currently off"}`, "On-chain"]);
+          if (perDay === 0) base.flags.push(["info", `Farm rewards are off${cur && cur.perBlock === 0 ? ` since ${new Date(cur.t).toISOString().slice(0, 10)}` : ""}: staked LP earns trading fees only`]);
+        } else base.cannotVerify.push(["Farm deposits", "The farm read failed this run; farms hold LP tokens of the pools above, so their value is already in TVL"]);
       }
       if (base.tvlPool != null && Math.abs(base.tvlPool / Math.max(1, base.tvl) - 1) >= 0.03)
         prov[`${it.slug}-tvl`].trail.push(["At pool prices", `${usdFull(base.tvlPool)}: ecosystem tokens (NACHO, ZEAL, IGRA…) valued at their own pool price on each chain, not the CoinGecko price. KAS, stablecoins and majors unchanged.`]);

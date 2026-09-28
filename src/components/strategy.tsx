@@ -22,7 +22,7 @@ export function ApyWaterfall({ ev }: { ev: Evaluation }) {
   const g = ev.gross, max = Math.max(g, 0.0001);
   const rows = [
     { label: "Native yield", sub: "Paid by borrowers and traders, on the whole vault (reserve earns nothing)", from: 0, to: g, v: `${p1(g, 2)}`, kind: "base" },
-    { label: "Ecosystem rewards", sub: "Token incentives: shown on protocols, never added", from: g, to: g, v: "+0.00%", kind: "zero" },
+    { label: "Ecosystem rewards", sub: ev.rewards > 0 ? `${p1(ev.rewards, 2)} a year in farm tokens: shown, never added. Its value depends on selling the token.` : "Token incentives: none on these legs today, and never added", from: g, to: g, v: ev.rewards > 0 ? `(${p1(ev.rewards, 2)}) not added` : "+0.00%", kind: "zero" },
     { label: "Performance fee", sub: "The strategist's share of yield only, never of principal", from: g - ev.perfFee, to: g, v: `−${p1(ev.perfFee, 2)}`, kind: "fee" },
     ...(ev.mgmtFee ? [{ label: "Management fee", sub: "Charged on time", from: g - ev.perfFee - ev.mgmtFee, to: g - ev.perfFee, v: `−${p1(ev.mgmtFee, 2)}`, kind: "fee" }] : []),
     { label: "Expected net APY", sub: ev.range ? `At the legs' observed lows and highs: ${p1(ev.range[0] * (1 - (ev.perfFee / (g || 1))) - ev.mgmtFee, 1)} to ${p1(ev.range[1] * (1 - (ev.perfFee / (g || 1))) - ev.mgmtFee, 1)}` : "", from: 0, to: ev.net ?? 0, v: p1(ev.net ?? 0, 2), kind: "net" },
