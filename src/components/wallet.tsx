@@ -30,9 +30,11 @@ export function useWalletOptions(): WalletOption[] {
       mobile: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)), link: metamaskLink() }), 400);
     return () => { window.removeEventListener("eip6963:announceProvider", on); clearTimeout(t); };
   }, []);
+  // WalletConnect: any mobile wallet (MetaMask, Trust, Rabby…) by QR code on desktop or by app link on a phone
+  const wc: WalletOption[] = WC_PROJECT ? [{ key: "walletconnect", label: "WalletConnect", kind: "evm", installed: true }] : [];
   // a phone's own browser has no wallet: offer to open this page inside the wallet app instead
   if (kaspa.mobile && !evm.length && !kaspa.eth && !kaspa.kasware && !kaspa.kastle)
-    return [
+    return [...wc,
       // MetaMask SDK: from Safari or Chrome, hands the request to the MetaMask app and comes back
       { key: "metamask-sdk", label: "MetaMask", kind: "evm", installed: true },
       { key: "metamask-app", label: "MetaMask", kind: "evm", installed: false, open: kaspa.link, install: "https://metamask.io/download/" },
@@ -42,6 +44,7 @@ export function useWalletOptions(): WalletOption[] {
     { key: "kastle", label: "Kastle", kind: "kaspa", installed: kaspa.kastle, install: "https://kastle.cc" },
     ...evm.map((d) => ({ key: `6963:${d.info.uuid}`, label: d.info.name, icon: d.info.icon, kind: "evm" as const, installed: true })),
   ];
+  opts.push(...wc);
   if (!evm.length) opts.push({ key: "injected", label: "MetaMask or other EVM wallet", kind: "evm", installed: kaspa.eth, install: "https://metamask.io" });
   return opts;
 }
@@ -56,6 +59,22 @@ async function post<T>(url: string, body: unknown): Promise<T> {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((j as { error?: string }).error ?? "Something went wrong.");
   return j as T;
+}
+
+/** WalletConnect, loaded only when used. Needs NEXT_PUBLIC_WC_PROJECT_ID (a free project id from cloud.reown.com). */
+const WC_PROJECT = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? "";
+let wcProvider: Eip1193 | null = null;
+async function walletConnect(): Promise<Eip1193> {
+  if (wcProvider) return wcProvider;
+  const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+  const p = await EthereumProvider.init({
+    projectId: WC_PROJECT, showQrModal: true, optionalChains: [1],
+    optionalMethods: ["personal_sign", "eth_requestAccounts", "eth_accounts"],
+    metadata: { name: "dawns.money", description: "The capital intelligence layer for Kaspa DeFi", url: window.location.origin, icons: [`${window.location.origin}/icon.svg`] },
+  });
+  if (!p.connected) await p.connect();
+  wcProvider = p as unknown as Eip1193;
+  return wcProvider;
 }
 
 /** The MetaMask SDK, loaded only when someone signs in with it (it is large). */
@@ -83,6 +102,10 @@ export async function signInWith(key: string): Promise<Account> {
     kind = "kaspa"; if (!(await w.connect())) throw new Error("Kastle did not connect.");
     address = (await w.getAccount()).address;
     sign = (m) => w.signMessage(m);
+  } else if (key === "walletconnect") {
+    const prov = await walletConnect();
+    kind = "evm"; address = ((await prov.request({ method: "eth_requestAccounts" })) as string[])[0];
+    sign = (m) => prov.request({ method: "personal_sign", params: [toHex(m), address] }) as Promise<string>;
   } else if (key === "metamask-sdk") {
     const prov = await metamaskSdk();
     kind = "evm"; address = ((await prov.request({ method: "eth_requestAccounts" })) as string[])[0];
