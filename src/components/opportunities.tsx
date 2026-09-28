@@ -9,7 +9,7 @@ import type { Opportunity } from "@/lib/types";
 
 type Filter = "All" | "Lending" | "Liquidity";
 
-const hrs = (h: number) => (h >= 48 ? `${Math.round(h / 24)} days` : `${Math.max(1, Math.round(h))} h`);
+const hrs = (h: number) => (h >= 48 ? `${Math.round(h / 24)}\u00a0days` : `${Math.max(1, Math.round(h))}\u00a0h`);
 
 const pathOf = (id: string) => `/assets/${id.split(":").map(encodeURIComponent).join("/")}`;
 
@@ -45,7 +45,7 @@ function Risk({ o }: { o: Opportunity }) {
   if (o.kind === "supply")
     return o.apyRange ? <span>{pct(o.apyRange[0], 1)} – {pct(o.apyRange[1], 1)}<small className="muted" style={{ display: "block" }}>rate range, {hrs(o.rangeHours)}</small></span> : <span className="muted">building history</span>;
   if (o.ilAtMove == null) return <span className="muted">building history</span>;
-  return <span>{pct(o.priceMove ?? 0, 0)} move<small className="muted" style={{ display: "block" }}>LP trails holding by {pct(o.ilAtMove, 1)} · {hrs(o.rangeHours)}</small></span>;
+  return <span>{pct(o.priceMove ?? 0, 0)} move<small className="muted" style={{ display: "block" }}>trails holding by {pct(o.ilAtMove, 1)} · {hrs(o.rangeHours)}</small></span>;
 }
 
 export function OpportunityTable({ rows, known: knownIds = [] }: { rows: Opportunity[]; known?: string[] }) {
@@ -60,14 +60,14 @@ export function OpportunityTable({ rows, known: knownIds = [] }: { rows: Opportu
           <button key={x} type="button" className={x === f ? "on" : ""} onClick={() => setF(x)}>{x} <span className="muted">{x === "All" ? rows.length : rows.filter((o) => (x === "Lending" ? o.kind === "supply" : o.kind === "lp")).length}</span></button>
         ))}
       </div>
-      <div className="card flush"><div className="tbl-wrap"><table>
-        <thead><tr><th>Opportunity</th><th>Native yield</th><th>Size</th><th>Exit now</th><th>Stability · 7 days</th><th>State</th><th /></tr></thead>
+      <div className="card flush"><div className="tbl-wrap"><table className="opps-tbl">
+        <thead><tr><th>Opportunity</th><th>Native yield</th><th>Size</th><th>Exit now</th><th>Stability · 7 days</th><th>State</th></tr></thead>
         <tbody>
           {shown.map((o) => (
             <Fragment key={o.id}>
               <tr onClick={() => { if (open !== o.id) track("opportunity_open", { id: o.id }); setOpen(open === o.id ? null : o.id); }} style={{ cursor: "pointer" }} aria-expanded={open === o.id}>
                 <td>
-                  <span className="proto"><span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex" }}><Pair o={o} known={known} /></span><span><b>{o.name}</b><small><Link href={`/protocols/${o.protocol}`} onClick={(e) => e.stopPropagation()}>{o.pname}</Link> · {o.chain === "igra" ? "Igra" : "Kasplex"}</small></span></span>
+                  <span className="proto"><span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex" }}><Pair o={o} known={known} /></span><span className="opp-name"><b>{o.name}</b><small><Link href={`/protocols/${o.protocol}`} onClick={(e) => e.stopPropagation()}>{o.pname}</Link> · {o.chain === "igra" ? "Igra" : "Kasplex"}</small></span></span>
                 </td>
                 <td>
                   <b style={{ font: "600 18px var(--display)" }}>{o.apy != null ? pct(o.apy, o.apy < 0.1 ? 2 : 1) : "—"}</b>
@@ -75,13 +75,12 @@ export function OpportunityTable({ rows, known: knownIds = [] }: { rows: Opportu
                 </td>
                 <td>{usd(o.size)}{o.vol24 != null && <small className="muted" style={{ display: "block" }}>{usd(o.vol24)} traded 24h</small>}</td>
                 <td><Exit o={o} /></td>
-                <td><Risk o={o} /></td>
-                <td><Pill t={o.status}>{o.statusText}</Pill></td>
-                <td className="muted" style={{ fontSize: 13, whiteSpace: "nowrap" }}>{open === o.id ? "Less" : `${o.notes.length} notes`}</td>
+                <td className="soft"><Risk o={o} /></td>
+                <td><Pill t={o.status}>{o.statusText}</Pill><small className="muted" style={{ display: "block", marginTop: 6 }}>{open === o.id ? "Less ▴" : `${o.notes.length} notes ▾`}</small></td>
               </tr>
               {open === o.id && (
                 <tr>
-                  <td colSpan={7} className="wrap" style={{ background: "rgba(255,255,255,.03)" }}>
+                  <td colSpan={6} className="wrap" style={{ background: "rgba(255,255,255,.03)" }}>
                     <ul style={{ margin: "4px 0", paddingLeft: 18, display: "grid", gap: 6, color: "var(--ink-2)", fontSize: 14.5 }}>
                       {o.notes.map((n) => <li key={n}>{n}</li>)}
                       {o.assetIds?.some((id) => known.has(id)) && (

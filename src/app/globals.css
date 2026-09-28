@@ -503,3 +503,13 @@ details.more summary{cursor:pointer;color:var(--ink-2);font-size:14px}
 table.assets-tbl th,table.assets-tbl td{padding-left:12px;padding-right:12px}
 table.assets-tbl td:first-child,table.assets-tbl th:first-child{padding-left:22px}
 table.assets-tbl td:last-child,table.assets-tbl th:last-child{padding-right:22px}
+/* opportunities table: fits the page, no sideways scroll on desktop */
+table.opps-tbl th,table.opps-tbl td{padding-left:14px;padding-right:14px}
+table.opps-tbl td:first-child,table.opps-tbl th:first-child{padding-left:22px}
+table.opps-tbl td:last-child,table.opps-tbl th:last-child{padding-right:22px}
+table.opps-tbl .opp-name{white-space:normal;max-width:220px}
+table.opps-tbl .opp-name b{display:block;line-height:1.25}
+table.opps-tbl td.soft{white-space:normal;max-width:190px}
+table.opps-tbl td.soft small{white-space:normal}
+.bridge-feat{grid-column:1/-1}
+.bridge-feat{min-height:0}

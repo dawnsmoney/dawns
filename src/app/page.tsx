@@ -4,7 +4,7 @@ import { getSnapshot } from "@/lib/snapshot";
 import { toLite, toRow, names, ecoTiles } from "@/lib/view";
 import { Tiles, SplitBar } from "@/components/viz";
 import { usd, usdFull, pct } from "@/lib/format";
-import { Clouds, BAND_CLOUDS, COIN, HealthMeter, Pill, ProtocolCoin, SERIES, assetColor } from "@/components/bits";
+import { Clouds, BAND_CLOUDS, COIN, Coin, HealthMeter, Pill, ProtocolCoin, SERIES, assetColor } from "@/components/bits";
 import { Arrow, Bell, Info } from "@/components/icons";
 import { HeroArt } from "@/components/HeroArt";
 import { ProvButton, ProvRow, WatchButton, CopyReport } from "@/components/actions";
@@ -127,17 +127,41 @@ export default async function Home() {
                 </div>
               );
             })}
+            {s.bridge && (() => {
+              const b = s.bridge;
+              const pending = b.payouts ? b.payouts.unpaidKas : b.inWindowKas;
+              const kasN = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${Math.round(n / 1e3)}K`);
+              return (
+                <div className="card feat bridge-feat" style={{ ["--glow" as string]: "#3F7FD8" }}>
+                  <div className="top">
+                    <Coin size={76} k="igra-attestation" glyph="⇄" />
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}><span className="tag">Bridge</span><Pill t={b.coverage >= 1 ? "good" : b.coverage >= 0.99 ? "warn" : "crit"}>{b.coverage >= 1 ? "Fully backed" : "Under-backed"}</Pill></div>
+                  </div>
+                  <div>
+                    <h3>Igra bridge</h3>
+                    <div style={{ marginTop: 14 }}>
+                      <SplitBar height={22} label="Locked KAS" parts={[
+                        { key: "ikas", label: "Backs iKAS", color: "#3987e5", share: Math.min(b.ikasSupply, b.lockedKas), note: `${kasN(b.ikasSupply)} iKAS on Igra` },
+                        ...(b.surplusKas > 0 ? [
+                          { key: "exits", label: "Exits awaiting payout", color: "#c98500", share: Math.min(pending, b.surplusKas), note: `${kasN(Math.min(pending, b.surplusKas))} KAS` },
+                          { key: "extra", label: "Surplus", color: "#199e70", share: Math.max(0, b.surplusKas - pending), note: `${kasN(Math.max(0, b.surplusKas - pending))} KAS` },
+                        ] : []),
+                      ].filter((x) => x.share > 0)} />
+                    </div>
+                  </div>
+                  <div className="row">
+                    <div className="stats">
+                      <div><span>Backing</span><b>{pct(b.coverage, 1)}</b></div>
+                      <div><span>KAS locked</span><b>{kasN(b.lockedKas)}</b></div>
+                      <div><span>Typical payout</span><b>{b.payouts?.medianHours != null ? `${Math.round(b.payouts.medianHours)} h` : "—"}</b></div>
+                    </div>
+                    <Link className="btn iris" href="/bridge">Check the bridge</Link>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </section>
-      )}
-
-      {s.bridge && (
-        <div className="wrap" style={{ marginTop: -30, marginBottom: 10 }}>
-          <div className="preview">
-            <span><b>iKAS is {pct(s.bridge.coverage)} backed.</b> {Math.round(s.bridge.lockedKas).toLocaleString("en-US")} KAS locked on Kaspa L1 against {Math.round(s.bridge.ikasSupply).toLocaleString("en-US")} iKAS on Igra, read live.</span>
-            <Link className="btn iris" href="/bridge">Check the bridge</Link>
-          </div>
-        </div>
       )}
 
       <section className="s wrap">
