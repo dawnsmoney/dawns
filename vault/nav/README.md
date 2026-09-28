@@ -13,7 +13,8 @@ price / share  = NAV ÷ shares        (rounded up to mint, down to pay; 1 share 
 
 | File | What it is |
 |---|---|
-| `dawns_nav.sil` | the vault covenant: init, allocate, recall, mark, deposit, redeem, halt |
+| `dawns_nav.sil` | v1, the covenant the first TN10 NAV vault runs (kept unchanged: a vault's address is its code) |
+| `dawns_nav_v11.sil` | v1.1, for new vaults: a closed position's leftover mark can be marked down at once |
 | `dawns_account.sil` | a personal account: a plain P2SH address any wallet can pay (kind 0 deposit, 1 redeem) |
 | `kcc20.sil` | the reference KCC-20 token, vendored unchanged from silverscript@84eb797 |
 
@@ -87,6 +88,16 @@ another check, and stay as defence in depth:
 Compute at the real signature price (`budget_report`): the vault input uses
 109–115k script units without a signature; token inputs 13–20k; accounts
 under 1k. The deploy tool commits 28 / 3 / 1.
+
+## v1.1
+
+On TN10 the first vault allocated 5 KAS, was marked at 5.5 and recalled 5: cost
+went to zero and the mark to 0.5 KAS, which v1 lets the valuer lower only by
+the mark step (10% of 0.5) per epoch. v1.1 lets a closed position (cost zero)
+be marked down to anything at once, never up. The deploy tool records the
+covenant version in `nav.json` (`covenant`; absent means v1) and compiles the
+matching file; `nav verify` checks offline that it still compiles a vault to
+its recorded address.
 
 ## Known limits of v1
 

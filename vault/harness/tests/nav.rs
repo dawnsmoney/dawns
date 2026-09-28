@@ -904,3 +904,18 @@ fn isolated_guards() {
     let mut r = vr(Red::valid(prev, held, prev.shares / 4)); r.note_coin = Some(100_000_000_000_000 + 1);
     no(r.run(), "a note coin above the bound");
 }
+
+// A closed position (cost fully returned above its mark... or below) can be
+// marked down at once, never up; an open one keeps the step.
+#[test]
+fn closed_position_mark() {
+    let m = NavMandate::default();
+    let (prev, held) = working();
+    let closed = Nav { deployed: [0, 20 * KAS, 0, 0], marks: [5 * KAS, 19 * KAS, 0, 0], ..prev }; // slot 0 fully returned, 5 KAS of mark left over
+    let down = Nav { marks: [0, 19 * KAS, 0, 0], mark_epoch: 1, ..closed };
+    ok(mark_with(&m, closed, down, held, held - FEE, false, false, false), "a closed position marked to zero at once");
+    let up = Nav { marks: [7 * KAS, 19 * KAS, 0, 0], mark_epoch: 1, ..closed };
+    no(mark_with(&m, closed, up, held, held - FEE, false, false, false), "a closed position marked up past the step");
+    let open_down = Nav { marks: [5 * KAS, 0, 0, 0], mark_epoch: 1, ..closed };
+    no(mark_with(&m, closed, open_down, held, held - FEE, false, false, false), "an open position marked to zero at once");
+}

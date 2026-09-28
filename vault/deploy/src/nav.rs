@@ -19,7 +19,15 @@
 
 use super::*;
 
-const NAV_SOURCE: &str = include_str!("../../nav/dawns_nav.sil");
+/// The covenant a vault runs is part of its address, so each version stays
+/// available: v1 is what the first TN10 NAV vault runs; new vaults get v1.1.
+const NAV_V1: &str = include_str!("../../nav/dawns_nav.sil");
+const NAV_V11: &str = include_str!("../../nav/dawns_nav_v11.sil");
+const NAV_LATEST: &str = "dawns-nav/1.1";
+static NAV_VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+fn nav_source() -> &'static str {
+    match NAV_VERSION.get().map(String::as_str) { Some("dawns-nav/1") => NAV_V1, _ => NAV_V11 }
+}
 const KCC_SOURCE: &str = include_str!("../../nav/kcc20.sil");
 const ACC_SOURCE: &str = include_str!("../../nav/dawns_account.sil");
 const NAV_STANDARD: &str = "dawns-nav/1";
@@ -175,7 +183,7 @@ fn nav_ctor(m: &NavMandate, s: &Nav) -> Res<Vec<Expr<'static>>> {
     Ok(v)
 }
 fn compile_nav(m: &NavMandate, s: &Nav) -> Res<CompiledContract<'static>> {
-    compile_contract(NAV_SOURCE, &nav_ctor(m, s)?, CompileOptions::default()).map_err(|e| format!("compile: {e:?}").into())
+    compile_contract(nav_source(), &nav_ctor(m, s)?, CompileOptions::default()).map_err(|e| format!("compile: {e:?}").into())
 }
 fn nav_state(s: &Nav) -> Expr<'static> {
     struct_object("State", vec![
@@ -209,6 +217,8 @@ impl Ledger {
     fn read() -> Res<Ledger> {
         let v: Value = serde_json::from_str(&std::fs::read_to_string("nav.json").map_err(|_| "no nav.json — run `nav genesis`")?)?;
         if v["status"] == "planned" { return Err("nav.json is the site's placeholder — run `nav genesis`".into()); }
+        // ledgers from before versioning ran v1
+        let _ = NAV_VERSION.set(v["covenant"].as_str().unwrap_or("dawns-nav/1").to_string());
         Ok(Ledger { v })
     }
     fn write(&self) -> Res<()> {
@@ -514,7 +524,7 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
             let (ap, asuf, _) = account_template()?;
             println!("covenant bytes : {}\nmandate hash   : {}\ncovenant id    : {cov}\nvault address  : {addr}\nlocal engine   : ACCEPTED ({used:?})", contract.bytecode.len(), hex(&mandate_hash(&m.doc)));
             let led = Ledger { v: json!({
-                "standard": NAV_STANDARD, "network": NETWORK, "name": m.doc["name"], "manager": m.doc["manager"],
+                "standard": NAV_STANDARD, "covenant": NAV_LATEST, "network": NETWORK, "name": m.doc["name"], "manager": m.doc["manager"],
                 "covenantId": cov.to_string(), "mandateHash": hex(&mandate_hash(&m.doc)), "genesisTx": tx.id().to_string(), "createdAt": now(),
                 "seed": seed, "state": st.to_json(), "address": addr.to_string(), "value": seed, "pending": Value::Null,
                 "accountTemplate": { "prefix": hex(&ap), "suffix": hex(&asuf) },
@@ -556,6 +566,15 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
         "show" => { let c = open_nav().await?; print_nav(&c); }
 
         "publish" => { publish(&Ledger::read()?); }
+
+        // offline: does this tool still compile the vault to the address nav.json records?
+        "verify" => {
+            let led = Ledger::read()?;
+            let m = read_nav_mandate()?;
+            let addr = p2sh_addr(&compile_nav(&m, &led.state()?)?)?;
+            let ok = led.v["address"].as_str() == Some(&addr.to_string()) && led.v["mandateHash"].as_str() == Some(&hex(&mandate_hash(&m.doc)));
+            println!("covenant       : {}\ncompiles to    : {addr}\nledger says    : {}\n{}", NAV_VERSION.get().map(String::as_str).unwrap_or(NAV_LATEST), led.v["address"].as_str().unwrap_or(""), if ok { "MATCH" } else { "MISMATCH — do not move this vault with this build" });
+        }
 
         "accounts" => {
             // nav accounts <address> [vault covenant id — defaults to nav.json's]
