@@ -26,6 +26,7 @@ export function AssetTable({ rows }: { rows: AssetLite[] }) {
   const [key, setKey] = useState<Key>("mcap");
   const [all, setAll] = useState(false);
   const [limit, setLimit] = useState(100);
+  const [allSm, setAllSm] = useState(false); // phones show the first 25 rows until asked
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -55,7 +56,7 @@ export function AssetTable({ rows }: { rows: AssetLite[] }) {
           ))}
         </div>
       </div>
-      <div className="card flush"><div className="tbl-wrap"><table className="assets-tbl">
+      <div className="card flush"><div className="tbl-wrap"><table className={`assets-tbl ${allSm ? "" : "clip-sm"}`}>
         <thead><tr><th>Asset</th><th>Price</th>{th("mcap", "Value")}{th("vol24", "Traded 24h")}{th("holders", "Holders")}{th("top10", "Top 10 hold")}{th("liquidity", "In DeFi")}<th>Reading</th></tr></thead>
         <tbody>
           {shown.slice(0, limit).map((a) => (
@@ -79,6 +80,7 @@ export function AssetTable({ rows }: { rows: AssetLite[] }) {
         </tbody>
       </table></div></div>
       <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 16, flexWrap: "wrap" }}>
+        {!allSm && Math.min(limit, shown.length) > 25 && <button type="button" className="btn ghost only-sm-flex" onClick={() => setAllSm(true)}>Show all {Math.min(limit, shown.length)}</button>}
         {shown.length > limit && <button type="button" className="btn ghost" onClick={() => setLimit((l) => l + 200)}>Show {Math.min(200, shown.length - limit)} more</button>}
         <button type="button" className="btn ghost" onClick={() => setAll((v) => !v)}>{all ? "Hide dormant tokens" : `Include dormant tokens (${rows.filter((a) => !a.significant).length})`}</button>
       </div>

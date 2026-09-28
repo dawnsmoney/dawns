@@ -1026,3 +1026,37 @@ textarea.st-ta:focus{outline:none;border-color:rgba(123,108,255,.8)}
   .tile-h > span{min-width:0;overflow-wrap:anywhere}
   .tile b{font-size:22px}
 }
+
+/* phones, pass 2: shorter pages */
+.only-sm-flex{display:none!important}
+@media (max-width:640px){
+  .only-sm-flex{display:inline-flex!important}
+  .clip-sm tbody tr:nth-child(n+26){display:none}
+  /* table cards: name across the top, the rest two to a row, label above value */
+  .tbl-wrap tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px}
+  .tbl-wrap td{display:block;padding:0;text-align:left}
+  .tbl-wrap td::before{display:block;margin-bottom:3px;padding:0}
+  .tbl-wrap td > *{justify-self:auto}
+  .tbl-wrap td:first-child,.tbl-wrap td[colspan]{grid-column:1 / -1}
+  .tbl-wrap td .bar-h{max-width:140px}
+}
+@media (max-width:760px){
+  section.s{padding-block:44px 0}
+  .s-head{margin-bottom:22px}
+  .s-head h2{font-size:30px}
+  .band{margin-top:48px;padding-block:48px}
+  .hero{padding-block:calc(env(safe-area-inset-top,0px) + 104px) 20px}
+  .strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding-block:8px 36px}
+  .strip b{font-size:22px}
+}
+.sm-more{display:none}
+@media (max-width:640px){
+  .clip-sm12 tbody tr:nth-child(n+13){display:none}
+  .sm-more{display:flex;margin:12px auto 16px}
+}
+.st-cta > *{min-width:0}
+.copyid{max-width:100%}
+.copyid span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.st-cta{grid-template-columns:minmax(0,1fr)}
+.st-cta small{overflow-wrap:anywhere}
+@media (max-width:640px){.tbl-wrap td{padding:0!important}}
