@@ -33,6 +33,10 @@ const FIRST_PRICE: i64 = 1_000_000;
 const NAV_BUDGET: u16 = 28;
 const KCC_BUDGET: u16 = 3;
 const ACC_BUDGET: u16 = 1;
+/// Vault-path transactions carry a ~10.5 KB covenant script; the node asks
+/// 100 sompi per gram of transient mass (~2.5 M sompi for the token tx), so
+/// every vault move pays the mandate's maxFee (0.05 KAS on testnet), the most
+/// the covenant allows. Plain P2PK transactions keep the small FEE.
 /// KAS the share token's minter branch carries (paid once, at token creation).
 const MINTER_DUST: i64 = KAS;
 
@@ -331,7 +335,7 @@ async fn sweep_deposit(c: &mut NCtx, owner: [u8; 32], owner_addr: &str, acct: &C
     let rh = redeem_hash(owner, &c.cov.as_bytes())?;
     let note = compile_kcc(&rh, ID_SCRIPT_HASH, minted, false)?;
     let daa = claimed_nav(c)?;
-    let vault_out = held + paid - c.m.note_value - FEE as i64;
+    let vault_out = held + paid - c.m.note_value - c.m.max_fee;
     let mut tx = tx_of(
         vec![input(&c.coin, NAV_BUDGET), input(&coin, ACC_BUDGET), input(&mcoin, KCC_BUDGET)],
         vec![cont(&succ, vault_out, c.cov), cov_out(&minter, mcoin.entry.amount as i64, 2, sc), cov_out(&note, c.m.note_value, 2, sc)],
@@ -513,7 +517,7 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
             let sc = covenant_id(c.coin.outpoint, std::iter::once((0u32, &placeholder)));
             let next = Nav { share_covid: sc.as_bytes(), ..c.state };
             let succ = compile_nav(&c.m, &next)?;
-            let vault_out = held - MINTER_DUST - FEE as i64;
+            let vault_out = held - MINTER_DUST - c.m.max_fee;
             if vault_out < c.m.min_keep { return Err("the seed cannot pay for the token".into()); }
             let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET)], vec![cov_out(&token, MINTER_DUST, 0, sc), cont(&succ, vault_out, c.cov)], 0);
             let entries = vec![c.coin.entry.clone()];
@@ -592,7 +596,7 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
             n.epoch_index = epoch;
             n.epoch_spent = spent + amount;
             let succ = compile_nav(&c.m, &n)?;
-            let keep = held - amount - FEE as i64;
+            let keep = held - amount - c.m.max_fee;
             let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET)], vec![cont(&succ, keep, c.cov), out(amount, to)], daa as u64);
             let entries = vec![c.coin.entry.clone()];
             let sig = sighash_sig(&tx, &entries, 0, &load_key("allocator")?)?;
@@ -616,7 +620,7 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
             n.deployed[slot] = (n.deployed[slot] - amount).max(0);
             n.marks[slot] = (n.marks[slot] - amount).max(0);
             let succ = compile_nav(&c.m, &n)?;
-            let landed = held + amount - FEE as i64;
+            let landed = held + amount - c.m.max_fee;
             let mut outs = vec![cont(&succ, landed, c.cov)];
             if change > 0 { outs.push(out(change, pay_to_address_script(&from))); }
             let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET), input(&coin, P2PK_BUDGET)], outs, 0);
@@ -638,7 +642,7 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
             n.mark_epoch = (daa - c.m.not_before) / c.m.epoch_length;
             let succ = compile_nav(&c.m, &n)?;
             let held = c.coin.entry.amount as i64;
-            let keep = held - FEE as i64;
+            let keep = held - c.m.max_fee;
             let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET)], vec![cont(&succ, keep, c.cov)], daa as u64);
             let entries = vec![c.coin.entry.clone()];
             let sig = sighash_sig(&tx, &entries, 0, &load_key("valuer")?)?;
@@ -653,7 +657,7 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
             let n = Nav { halted: true, ..c.state };
             let succ = compile_nav(&c.m, &n)?;
             let held = c.coin.entry.amount as i64;
-            let keep = held - FEE as i64;
+            let keep = held - c.m.max_fee;
             let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET)], vec![cont(&succ, keep, c.cov)], 0);
             let entries = vec![c.coin.entry.clone()];
             let sig = sighash_sig(&tx, &entries, 0, &load_key("guardian")?)?;
