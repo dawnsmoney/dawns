@@ -14,9 +14,17 @@ price / share  = NAV ÷ shares        (rounded up to mint, down to pay; 1 share 
 | File | What it is |
 |---|---|
 | `dawns_nav.sil` | v1, the covenant the first TN10 NAV vault runs (kept unchanged: a vault's address is its code) |
-| `dawns_nav_v11.sil` | v1.1, for new vaults: a closed position's leftover mark can be marked down at once |
+| `dawns_nav_v11.sil` | v1.1: a closed position's leftover mark can be marked down at once |
+| `dawns_nav_v12.sil` | v1.2, for new vaults: the address also commits to the mandate hash |
+| `nav-vectors.json` | mandates and states with the bytecode and address the compiler gives them |
 | `dawns_account.sil` | a personal account: a plain P2SH address any wallet can pay (kind 0 deposit, 1 redeem) |
 | `kcc20.sil` | the reference KCC-20 token, vendored unchanged from silverscript@84eb797 |
+
+## Versions and verifying a vault
+
+The compiler drops a constructor argument no path reads, and no v1 or v1.1 path read `mandateHash`. Their addresses commit to the terms the covenant checks (keys, destinations, caps, limits) but not to the mandate document (name, objective, labels). v1.2 reads the hash in `halt`, so its address commits to the whole mandate. New vaults launch on v1.2 (`nav genesis` writes `"covenant": "dawns-nav/1.2"`).
+
+`cargo run --release -- nav template [forms.json] [vectors.json]` writes the covenant as a form: literal bytes and named slots, checked against the compiler on 200 random mandates and states per version. The site fills it from a vault's mandate and state (`src/lib/vaults/verify-nav.ts`), hashes it, and checks the vault's address is that hash; a testnet-10 node then shows whether the coin there carries the vault's covenant id. It reproduces every vector here and the live TN10 NAV vault's address.
 
 ## How a deposit and a withdrawal work
 

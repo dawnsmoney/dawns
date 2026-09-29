@@ -1,5 +1,5 @@
 import { creditFigures, readCreditLive, SOMPI, FIRST_PRICE, type CreditLedger, type CreditMandateDoc } from "@/lib/vaults/credit";
-import { CreditProof } from "@/components/credit-proof";
+import { VaultProof } from "@/components/vault-proof";
 import { MCard, MFlags, MHead, MHero, MKv, MList, MNote, MRow, MStats } from "@/components/m/kit";
 import { MMore, MTabs } from "@/components/m/tabs";
 import { NavPanel } from "@/components/nav-panel";
@@ -35,7 +35,7 @@ export async function CreditVaultMobile({ l, m }: { l: CreditLedger; m: CreditMa
       <MHead back={{ href: "/vaults", label: "Vaults" }} eyebrow="Credit · testnet-10 · not audited" title={m.name}
         right={l.state.halted ? <Pill t="crit">Halted</Pill> : <Pill t="good">Open</Pill>} />
       <div className="m-screen">
-        <CreditProof l={l} m={m} compact />
+        <VaultProof kind="credit" l={l} m={m} compact />
         <MHero label="NAV" value={kas(f.nav)} sub={`${kas(f.liquid)} liquid · ${kas(f.lent)} in loans`} />
         <MStats items={[
           { label: "Per share", value: f.price.toFixed(6), sub: f.shares ? `${since >= 0 ? "+" : "−"}${pct(Math.abs(since), 2)} since launch` : "launch price" },

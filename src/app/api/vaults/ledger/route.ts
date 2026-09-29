@@ -3,7 +3,7 @@ import { blake2b } from "@noble/hashes/blake2b";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 import { navLedger, navMandate } from "@/lib/vaults/nav";
 import { creditLedger, creditMandate, launchedOk, type CreditMandateDoc } from "@/lib/vaults/credit";
-import { codeCheck } from "@/lib/vaults/credit-verify";
+import { codeCheck } from "@/lib/vaults/vault-verify";
 import { decodeKaspaAddress } from "@/lib/auth/kaspa";
 
 export const dynamic = "force-dynamic";

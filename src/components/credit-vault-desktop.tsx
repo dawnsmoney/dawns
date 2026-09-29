@@ -6,7 +6,7 @@ import { NavPanel } from "@/components/nav-panel";
 import { SharePriceChart } from "@/components/share-chart";
 import { BalanceSheet } from "@/components/balance-sheet";
 import { Basis, TokenFamily, type Stamp } from "@/components/research";
-import { CreditProof } from "@/components/credit-proof";
+import { VaultProof } from "@/components/vault-proof";
 import { sharePoints } from "@/lib/vaults/share-history";
 import { LoanCard, LOAN_COLORS, LIQUID, CREDIT_STEPS, kas, dur } from "@/components/credit-vault";
 import { creditFigures, readCreditLive, SOMPI, FIRST_PRICE, DAA_PER_SEC, type CreditLedger, type CreditMandateDoc } from "@/lib/vaults/credit";
@@ -59,7 +59,7 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
             <h2>{m.name}</h2>
             <div className="vault-tags"><Pill t="info">testnet-10</Pill><Pill t="warn">Not audited</Pill>{l.state.halted ? <Pill t="crit">Halted</Pill> : <Pill t="good">Open</Pill>}</div>
           </div>
-          <CreditProof l={l} m={m} />
+          <VaultProof kind="credit" l={l} m={m} />
           <div className="depth-top depth-4" style={{ margin: 0 }}>
             <div><span className="eyebrow muted">NAV</span><b>{kas(f.nav)}</b><small>{kas(f.liquid)} liquid · {kas(f.lent)} in loans</small>
               <Basis stamp={vs} text={`KAS held by the vault's coin, less its ${kas(f.keep)} seed, plus each loan at the lower of the valuer's mark and the covenant's schedule. The same formula prices every deposit and withdrawal, inside the covenant.`} /></div>

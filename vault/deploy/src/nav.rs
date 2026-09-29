@@ -15,6 +15,9 @@
 //!   nav recall <slot> <kas>   a strategy wallet returns capital
 //!   nav mark <k0> <k1> <k2>   valuer marks the positions (KAS)
 //!   nav halt                  guardian stops allocations and deposits for good
+//!   nav template [forms] [vectors]
+//!                             the covenant as a fill-in form, proven against the compiler; the site
+//!                             rebuilds each vault's address from its mandate with it
 //!
 //! Accounts come from the site's registry (DAWNS_SITE, default https://www.dawns.money)
 //! plus any addresses listed one per line in nav-accounts.txt.
@@ -22,13 +25,16 @@
 use super::*;
 
 /// The covenant a vault runs is part of its address, so each version stays
-/// available: v1 is what the first TN10 NAV vault runs; new vaults get v1.1.
+/// available: v1 is what the first TN10 NAV vault runs; v1.1 lets a closed
+/// position's mark fall at once; new vaults get v1.2, whose address also
+/// commits to the mandate hash.
 const NAV_V1: &str = include_str!("../../nav/dawns_nav.sil");
 const NAV_V11: &str = include_str!("../../nav/dawns_nav_v11.sil");
-const NAV_LATEST: &str = "dawns-nav/1.1";
+const NAV_V12: &str = include_str!("../../nav/dawns_nav_v12.sil");
+const NAV_LATEST: &str = "dawns-nav/1.2";
 static NAV_VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 fn nav_source() -> &'static str {
-    match NAV_VERSION.get().map(String::as_str) { Some("dawns-nav/1") => NAV_V1, _ => NAV_V11 }
+    match NAV_VERSION.get().map(String::as_str) { Some("dawns-nav/1") => NAV_V1, Some("dawns-nav/1.1") => NAV_V11, _ => NAV_V12 }
 }
 pub(crate) const KCC_SOURCE: &str = include_str!("../../nav/kcc20.sil");
 pub(crate) const ACC_SOURCE: &str = include_str!("../../nav/dawns_account.sil");
@@ -76,7 +82,9 @@ pub struct NavMandate {
 }
 
 fn read_nav_mandate() -> Res<NavMandate> {
-    let doc: Value = serde_json::from_str(&std::fs::read_to_string("nav-mandate.json").map_err(|_| "no nav-mandate.json — run `nav init`")?)?;
+    parse_nav_mandate(serde_json::from_str(&std::fs::read_to_string("nav-mandate.json").map_err(|_| "no nav-mandate.json — run `nav init`")?)?)
+}
+fn parse_nav_mandate(doc: Value) -> Res<NavMandate> {
     if doc["standard"] != NAV_STANDARD { return Err(format!("nav-mandate.standard must be \"{NAV_STANDARD}\"").into()); }
     if doc["network"] != NETWORK { return Err(format!("nav-mandate.network must be \"{NETWORK}\"").into()); }
     let role = |k: &str| -> Res<Address> { parse_addr(doc["roles"][k].as_str().ok_or(format!("roles.{k} missing"))?) };
@@ -158,22 +166,35 @@ pub(crate) fn account_template() -> Res<(Vec<u8>, Vec<u8>, [u8; 32])> { Ok(templ
 pub(crate) fn redeem_hash(owner: [u8; 32], vault: &[u8]) -> Res<[u8; 32]> { Ok(b2b(&compile_account(owner, vault, 1)?.bytecode)) }
 pub(crate) fn p2sh_addr(c: &CompiledContract<'_>) -> Res<Address> { Ok(extract_script_pub_key_address(&pay_to_script_hash_script(&c.bytecode), Prefix::Testnet)?) }
 
-fn nav_ctor(m: &NavMandate, s: &Nav) -> Res<Vec<Expr<'static>>> {
+/// The mandate's arguments by name, as the covenant is compiled with them (and as the
+/// site rebuilds them: see `nav template`).
+const NAV_INTS: [&str; 12] = ["reserveFloorBps", "maxPerMoveSompi", "epochLimitSompi", "epochLengthDaa", "notBeforeDaa", "maturityDaa", "depositUntilDaa", "minDepositSompi", "maxMarkStepBps", "noteValueSompi", "minKeepSompi", "exitFeeBps"];
+fn nav_named(m: &NavMandate) -> Res<Named> {
+    let mut n = Named::default();
+    for (k, a) in [("allocator", &m.allocator), ("valuer", &m.valuer), ("guardian", &m.guardian)] { n.b32.insert(k.into(), xonly_of(a)?); }
+    for i in 0..4 {
+        n.b32.insert(format!("dest{i}"), m.dests.get(i).map(|d| b2b(&spk_bytes(&pay_to_address_script(&d.address)))).unwrap_or([0u8; 32]));
+        n.num.insert(format!("cap{i}"), m.dests.get(i).map(|d| d.cap_bps).unwrap_or(0));
+    }
+    n.num.insert("maxFeeSompi".into(), m.max_fee);
+    for (k, x) in NAV_INTS.iter().zip([m.reserve_floor_bps, m.max_per_move, m.epoch_limit, m.epoch_length, m.not_before, m.maturity, m.deposit_until, m.min_deposit, m.max_mark_step_bps, m.note_value, m.min_keep, m.exit_fee_bps]) { n.num.insert(k.to_string(), x); }
+    n.b32.insert("mandateHash".into(), mandate_hash(&m.doc));
+    Ok(n)
+}
+fn nav_ctor_raw(n: &Named, s: &Nav) -> Res<Vec<Expr<'static>>> {
     let (kp, ks, kh) = kcc_template()?;
     let (_ap, asuf, ah) = account_template()?;
-    let dh = |i: usize| m.dests.get(i).map(|d| b2b(&spk_bytes(&pay_to_address_script(&d.address)))).unwrap_or([0u8; 32]);
-    let cp = |i: usize| m.dests.get(i).map(|d| d.cap_bps).unwrap_or(0);
-    let mut v = vec![Expr::bytes(xonly_of(&m.allocator)?.to_vec()), Expr::bytes(xonly_of(&m.valuer)?.to_vec()), Expr::bytes(xonly_of(&m.guardian)?.to_vec()), Expr::int(m.max_fee)];
-    for i in 0..4 { v.push(Expr::bytes(dh(i).to_vec())); }
-    for i in 0..4 { v.push(Expr::int(cp(i))); }
-    for x in [m.reserve_floor_bps, m.max_per_move, m.epoch_limit, m.epoch_length, m.not_before, m.maturity, m.deposit_until, m.min_deposit, m.max_mark_step_bps, m.note_value, m.min_keep, m.exit_fee_bps] { v.push(Expr::int(x)); }
+    let mut v = vec![Expr::bytes(n.b("allocator").to_vec()), Expr::bytes(n.b("valuer").to_vec()), Expr::bytes(n.b("guardian").to_vec()), Expr::int(n.n("maxFeeSompi"))];
+    for i in 0..4 { v.push(Expr::bytes(n.b(&format!("dest{i}")).to_vec())); }
+    for i in 0..4 { v.push(Expr::int(n.n(&format!("cap{i}")))); }
+    for k in NAV_INTS { v.push(Expr::int(n.n(k))); }
     v.push(Expr::int(kp.len() as i64));
     v.push(Expr::int(ks.len() as i64));
     v.push(Expr::bytes(kh.to_vec()));
     v.push(Expr::int(asuf.len() as i64));
     v.push(Expr::bytes(ah.to_vec()));
     v.push(Expr::dynamic_bytes(asuf));
-    v.push(Expr::bytes(mandate_hash(&m.doc).to_vec()));
+    v.push(Expr::bytes(n.b("mandateHash").to_vec()));
     v.push(Expr::bytes(s.share_covid.to_vec()));
     v.push(Expr::int(s.shares));
     for d in s.deployed { v.push(Expr::int(d)); }
@@ -184,6 +205,7 @@ fn nav_ctor(m: &NavMandate, s: &Nav) -> Res<Vec<Expr<'static>>> {
     v.push(Expr::bool(s.halted));
     Ok(v)
 }
+fn nav_ctor(m: &NavMandate, s: &Nav) -> Res<Vec<Expr<'static>>> { nav_ctor_raw(&nav_named(m)?, s) }
 fn compile_nav(m: &NavMandate, s: &Nav) -> Res<CompiledContract<'static>> {
     compile_contract(nav_source(), &nav_ctor(m, s)?, CompileOptions::default()).map_err(|e| format!("compile: {e:?}").into())
 }
@@ -471,6 +493,7 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
     let sub = args.get(2).map(String::as_str).unwrap_or("show");
     let arg = |i: usize| -> Res<&str> { args.get(i).map(String::as_str).ok_or_else(|| "usage: see the header of src/nav.rs".into()) };
     match sub {
+        "template" => return crate::template::run(&nav_family(), args.get(3).map(String::as_str).unwrap_or("nav-forms.json"), args.get(4).map(String::as_str).unwrap_or("nav-vectors.json"), &NAV_INTS),
         "init" => {
             for r in ["allocator", "guardian", "valuer", "depositor", "strategy-0", "strategy-1", "strategy-2"] {
                 let made = make_key(r)?;
@@ -729,4 +752,57 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
         _ => return Err(format!("unknown nav command {sub}").into()),
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// the covenant as a form (`nav template`, see template.rs)
+// ---------------------------------------------------------------------------
+use crate::template::{Enc, Family, Named, Rng, Sv};
+
+const NAV_STATE: [(&str, Enc); 14] = [
+    ("shareCovid", Enc::B32), ("shares", Enc::I64), ("deployed0", Enc::I64), ("deployed1", Enc::I64), ("deployed2", Enc::I64), ("deployed3", Enc::I64),
+    ("mark0", Enc::I64), ("mark1", Enc::I64), ("mark2", Enc::I64), ("mark3", Enc::I64), ("epochIndex", Enc::I64), ("epochSpent", Enc::I64), ("markEpoch", Enc::I64), ("halted", Enc::Bool),
+];
+fn nav_of_sv(s: &[Sv]) -> Nav {
+    let i = |k: usize| match s[k] { Sv::I64(x) => x, _ => 0 };
+    Nav { share_covid: match s[0] { Sv::B32(x) => x, _ => [0; 32] }, shares: i(1), deployed: [i(2), i(3), i(4), i(5)], marks: [i(6), i(7), i(8), i(9)],
+        epoch_index: i(10), epoch_spent: i(11), mark_epoch: i(12), halted: matches!(s[13], Sv::Bool(true)) }
+}
+fn sv_of_nav(n: &Nav) -> Vec<Sv> {
+    let mut v = vec![Sv::B32(n.share_covid), Sv::I64(n.shares)];
+    for x in n.deployed.iter().chain(n.marks.iter()) { v.push(Sv::I64(*x)); }
+    v.extend([Sv::I64(n.epoch_index), Sv::I64(n.epoch_spent), Sv::I64(n.mark_epoch), Sv::Bool(n.halted)]);
+    v
+}
+fn nav_random_doc(r: &mut Rng, slots: usize) -> Value {
+    json!({
+        "standard": NAV_STANDARD, "network": NETWORK, "name": format!("Vector {}", r.next() % 1000), "objective": "self-check", "manager": "vectors",
+        "roles": { "allocator": r.addr(), "valuer": r.addr(), "guardian": r.addr() },
+        // destinations may be keys or scripts (a strategy's own covenant)
+        "destinations": (0..slots).map(|i| json!({ "label": format!("D{i}"), "address": if i % 2 == 0 { r.addr() } else { r.p2sh() }, "capBps": r.pos(10_000) })).collect::<Vec<_>>(),
+        "reserveFloorBps": (r.next() % 10_001) as i64, "maxPerMoveSompi": (r.int() % (1 << 50)).max(1), "epochLimitSompi": (r.int() % (1 << 50)).max(1), "epochLengthDaa": r.pos(9_000_000),
+        "maxFeeSompi": 1_000_000 + (r.next() % 90_000_000) as i64, "notBeforeDaa": (r.next() % 900_000_000) as i64,
+        "maturityDaa": if r.next() % 2 == 0 { 0 } else { r.pos(1 << 40) }, "depositUntilDaa": if r.next() % 2 == 0 { 0 } else { r.pos(1 << 40) },
+        "minDepositSompi": r.int() % (1 << 50), "maxMarkStepBps": (r.next() % 10_001) as i64, "noteValueSompi": 100_000_000 + (r.next() % 1_000_000_000) as i64,
+        "minKeepSompi": 100_000_000 + (r.next() % 1_000_000_000) as i64, "exitFeeBps": (r.next() % 1_001) as i64,
+    })
+}
+pub(crate) fn nav_family() -> Family {
+    let mut b32: Vec<String> = ["allocator", "valuer", "guardian"].iter().map(|s| s.to_string()).collect();
+    b32.extend((0..4).map(|i| format!("dest{i}")));
+    b32.push("mandateHash".into());
+    let mut nums = vec!["maxFeeSompi".to_string()];
+    nums.extend((0..4).map(|i| format!("cap{i}")));
+    nums.extend(NAV_INTS.iter().map(|s| s.to_string()));
+    Family {
+        name: "nav", latest: NAV_LATEST,
+        versions: vec![("dawns-nav/1", NAV_V1, false), ("dawns-nav/1.1", NAV_V11, false), ("dawns-nav/1.2", NAV_V12, true)],
+        b32, nums, state: NAV_STATE.to_vec(),
+        compile: |src, n, s| compile_contract(src, &nav_ctor_raw(n, &nav_of_sv(s))?, CompileOptions::default()).map_err(|e| format!("compile: {e:?}").into()),
+        fresh: || sv_of_nav(&Nav::fresh()),
+        state_json: |s| nav_of_sv(s).to_json(),
+        random_doc: nav_random_doc,
+        named_of: |doc| nav_named(&parse_nav_mandate(doc)?),
+        slots: 4,
+    }
 }

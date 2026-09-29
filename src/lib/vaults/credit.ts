@@ -5,7 +5,7 @@ import { blake2b } from "@noble/hashes/blake2b";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 import { readNavLive, SOMPI, FIRST_PRICE, type NavNote, type NavLive } from "./nav";
 import type { AccountTemplate } from "./account";
-import { codeCheck } from "./credit-verify";
+import { codeCheck } from "./vault-verify";
 
 /**
  * The credit vault on testnet-10 (vault/credit/dawns_credit.sil). Shares,

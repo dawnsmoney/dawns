@@ -597,7 +597,7 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
     let sub = args.get(2).map(String::as_str).unwrap_or("show");
     let arg = |i: usize| -> Res<&str> { args.get(i).map(String::as_str).ok_or_else(|| "usage: see the header of src/credit.rs".into()) };
     match sub {
-        "template" => return crate::template::run(args).await,
+        "template" => return crate::template::run(&credit_family(), args.get(3).map(String::as_str).unwrap_or("credit-forms.json"), args.get(4).map(String::as_str).unwrap_or("credit-vectors.json"), &PARAM_INTS),
         "init" => {
             for r in ["allocator", "guardian", "valuer", "depositor", "borrower-0", "borrower-1", "borrower-2"] {
                 let made = make_key(r)?;
@@ -892,4 +892,74 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
         _ => return Err(format!("unknown credit command {sub}").into()),
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// the covenant as a form (`credit template`, see template.rs)
+// ---------------------------------------------------------------------------
+use crate::template::{Enc, Family, Named, Rng, Sv};
+
+const CREDIT_STATE: [(&str, Enc); 15] = [
+    ("shareCovid", Enc::B32), ("shares", Enc::I64), ("principal0", Enc::I64), ("principal1", Enc::I64), ("principal2", Enc::I64),
+    ("due0", Enc::I64), ("due1", Enc::I64), ("due2", Enc::I64), ("mark0", Enc::I64), ("mark1", Enc::I64), ("mark2", Enc::I64),
+    ("epochIndex", Enc::I64), ("epochSpent", Enc::I64), ("markEpoch", Enc::I64), ("halted", Enc::Bool),
+];
+fn credit_b32() -> Vec<String> { let mut v: Vec<String> = ["allocator", "valuer", "guardian"].iter().map(|s| s.to_string()).collect(); v.extend((0..SLOTS).map(|i| format!("dest{i}"))); v.push("mandateHash".into()); v }
+fn credit_nums() -> Vec<String> {
+    let mut v = vec!["maxFeeSompi".to_string()];
+    for i in 0..SLOTS { v.push(format!("cap{i}")); v.push(format!("term{i}")); v.push(format!("interest{i}")); }
+    v.extend(PARAM_INTS.iter().map(|s| s.to_string()));
+    v
+}
+fn named_of_params(p: &CreditParams) -> Named {
+    let mut n = Named::default();
+    for (i, k) in ["allocator", "valuer", "guardian"].iter().enumerate() { n.b32.insert(k.to_string(), p.keys[i]); }
+    for i in 0..SLOTS { n.b32.insert(format!("dest{i}"), p.dests[i]); n.num.insert(format!("cap{i}"), p.caps[i]); n.num.insert(format!("term{i}"), p.terms[i]); n.num.insert(format!("interest{i}"), p.interests[i]); }
+    n.b32.insert("mandateHash".into(), p.mandate);
+    n.num.insert("maxFeeSompi".into(), p.max_fee);
+    for (i, k) in PARAM_INTS.iter().enumerate() { n.num.insert(k.to_string(), p.ints[i]); }
+    n
+}
+fn params_of_named(n: &Named) -> CreditParams {
+    CreditParams { keys: [n.b("allocator"), n.b("valuer"), n.b("guardian")], max_fee: n.n("maxFeeSompi"),
+        dests: std::array::from_fn(|i| n.b(&format!("dest{i}"))), caps: std::array::from_fn(|i| n.n(&format!("cap{i}"))),
+        terms: std::array::from_fn(|i| n.n(&format!("term{i}"))), interests: std::array::from_fn(|i| n.n(&format!("interest{i}"))),
+        ints: std::array::from_fn(|i| n.n(PARAM_INTS[i])), mandate: n.b("mandateHash") }
+}
+fn credit_of_sv(s: &[Sv]) -> Credit {
+    let i = |k: usize| match s[k] { Sv::I64(x) => x, _ => 0 };
+    Credit { share_covid: match s[0] { Sv::B32(x) => x, _ => [0; 32] }, shares: i(1), principal: [i(2), i(3), i(4)], due: [i(5), i(6), i(7)], marks: [i(8), i(9), i(10)],
+        epoch_index: i(11), epoch_spent: i(12), mark_epoch: i(13), halted: matches!(s[14], Sv::Bool(true)) }
+}
+fn sv_of_credit(c: &Credit) -> Vec<Sv> {
+    let mut v = vec![Sv::B32(c.share_covid), Sv::I64(c.shares)];
+    for x in c.principal.iter().chain(c.due.iter()).chain(c.marks.iter()) { v.push(Sv::I64(*x)); }
+    v.extend([Sv::I64(c.epoch_index), Sv::I64(c.epoch_spent), Sv::I64(c.mark_epoch), Sv::Bool(c.halted)]);
+    v
+}
+fn credit_random_doc(r: &mut Rng, slots: usize) -> Value {
+    json!({
+        "standard": "dawns-credit/0", "network": NETWORK, "name": format!("Vector {}", r.next() % 1000), "objective": "self-check",
+        "roles": { "allocator": r.addr(), "valuer": r.addr(), "guardian": r.addr() },
+        "borrowers": (0..slots).map(|i| json!({ "label": format!("B{i}"), "address": r.addr(), "capBps": r.pos(10_000), "termDaa": r.pos(900_000_000), "interestBps": (r.next() % 10_001) as i64 })).collect::<Vec<_>>(),
+        "graceDaa": (r.next() % 90_000_000) as i64, "markdownStepBps": (r.next() % 10_001) as i64, "markdownPeriodDaa": r.pos(90_000_000),
+        "reserveFloorBps": (r.next() % 10_001) as i64, "maxPerMoveSompi": (r.int() % (1 << 50)).max(1), "epochLimitSompi": (r.int() % (1 << 50)).max(1), "epochLengthDaa": r.pos(9_000_000),
+        "maxFeeSompi": 1_000_000 + (r.next() % 90_000_000) as i64, "notBeforeDaa": (r.next() % 900_000_000) as i64,
+        "maturityDaa": 0, "depositUntilDaa": if r.next() % 2 == 0 { 0 } else { r.pos(1 << 40) },
+        "minDepositSompi": r.int() % (1 << 50), "maxMarkStepBps": (r.next() % 10_001) as i64, "noteValueSompi": 100_000_000 + (r.next() % 1_000_000_000) as i64,
+        "minKeepSompi": 100_000_000 + (r.next() % 1_000_000_000) as i64, "exitFeeBps": (r.next() % 1_001) as i64,
+    })
+}
+pub(crate) fn credit_family() -> Family {
+    Family {
+        name: "credit", latest: CREDIT_LATEST,
+        versions: vec![("dawns-credit/0", CREDIT_V0, false), ("dawns-credit/0.1", CREDIT_V01, false), ("dawns-credit/0.2", CREDIT_V02, true)],
+        b32: credit_b32(), nums: credit_nums(), state: CREDIT_STATE.to_vec(),
+        compile: |src, n, s| compile_credit_src(src, &params_of_named(n), &credit_of_sv(s)),
+        fresh: || sv_of_credit(&Credit::fresh()),
+        state_json: |s| credit_of_sv(s).to_json(),
+        random_doc: credit_random_doc,
+        named_of: |doc| Ok(named_of_params(&credit_params(&parse_credit_mandate(doc)?)?)),
+        slots: SLOTS,
+    }
 }

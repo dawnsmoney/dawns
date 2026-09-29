@@ -8,6 +8,7 @@ import { Basis, TokenFamily, type Stamp } from "@/components/research";
 import { SharePriceChart } from "@/components/share-chart";
 import { sharePoints } from "@/lib/vaults/share-history";
 import { getNav, navFigures, readNavLive, SOMPI, FIRST_PRICE } from "@/lib/vaults/nav";
+import { VaultProof } from "@/components/vault-proof";
 
 export const metadata: Metadata = { title: "NAV vault", description: "Deposit KAS from any wallet, get shares at NAV, redeem at NAV. Rules enforced by the Kaspa network. Testnet-10." };
 export const revalidate = 30;
@@ -121,12 +122,7 @@ export default async function NavVaultPage() {
             <h2>{m.name}</h2>
             <div className="vault-tags"><Pill t="info">testnet-10</Pill><Pill t="warn">Not audited</Pill>{l.state.halted ? <Pill t="crit">Halted</Pill> : <Pill t="good">Open</Pill>}</div>
           </div>
-          <div className={`proof ${live.matches ? "" : "off"}`}>
-            <span className="dot" />
-            <span>{live.matches ? <><b>The chain agrees.</b> The vault&apos;s coin at <span className="mono">{short(l.address)}</span> holds {kas(live.coin!.amount / SOMPI)}, created by its last recorded move.</>
-              : !live.ok ? <><b>Chain check unavailable.</b> Figures below are the operator&apos;s ledger.</>
-              : <><b>The ledger is behind the chain.</b> The vault has moved since this page&apos;s ledger was published.</>}</span>
-          </div>
+          <VaultProof kind="nav" l={l} m={m} />
           <div className="depth-top depth-4" style={{ margin: 0 }}>
             <div><span className="eyebrow muted">NAV</span><b>{kas(f.nav)}</b><small>{kas(f.liquid)} liquid · {kas(f.marks.reduce((s, x) => s + x, 0))} in positions</small><Basis stamp={vs} text={`KAS held by the vault's coin, less its ${kas(f.keep)} seed, plus each destination at the valuer's mark. The same formula prices every deposit and withdrawal, inside the covenant.`} /></div>
             <div><span className="eyebrow muted">Per share</span><b>{f.price.toFixed(6)}</b><small>{f.shares ? `${since >= 0 ? "+" : "−"}${pct(Math.abs(since), 2)} since launch at ${(FIRST_PRICE / SOMPI).toFixed(2)}` : "launch price"}</small><Basis stamp={vs} text={`NAV ÷ ${f.shares.toLocaleString("en-US")} shares. Deposits mint at this price rounded up; withdrawals pay it rounded down, less the ${m.exitFeeBps / 100}% exit fee that stays with holders.`} /></div>

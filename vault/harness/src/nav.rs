@@ -1,4 +1,4 @@
-//! NAV vault (nav/dawns_nav.sil) — harness helpers.
+//! NAV vault (nav/dawns_nav_v12.sil) — harness helpers.
 //!
 //! Three contracts meet in a deposit or a redemption: the vault, a personal
 //! account (nav/dawns_account.sil, a plain P2SH coin) and the share token
@@ -18,7 +18,7 @@ use silverscript_lang::compiler::{compile_contract, struct_object, CompileOption
 pub fn nav_source() -> &'static str {
     static SRC: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     SRC.get_or_init(|| {
-        let p = std::env::var("DAWNS_NAV_SIL").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../nav/dawns_nav_v11.sil").to_string());
+        let p = std::env::var("DAWNS_NAV_SIL").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../nav/dawns_nav_v12.sil").to_string());
         std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {p}: {e}"))
     })
 }

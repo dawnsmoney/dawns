@@ -20,6 +20,8 @@ export interface NavMove { kind: string; txid: string; at: number; valueAfter: n
 export interface NavLedger {
   status?: "planned";
   name?: string; manager?: string; standard?: string; network?: string;
+  /** the covenant version the vault runs ("dawns-nav/1", "/1.1", "/1.2"); absent on the first TN10 vault (v1) */
+  covenant?: string;
   covenantId: string; shareCovid: string | null; mandateHash: string; genesisTx: string; tokenTx: string | null; createdAt: number; seed: number;
   state: NavState; address: string; value: number; accountTemplate: AccountTemplate; notes: NavNote[]; moves: NavMove[];
 }
