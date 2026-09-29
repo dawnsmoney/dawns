@@ -24,6 +24,11 @@ export default async function AdminPage() {
   await ensureSchema();
   const q = sql();
   const one = async (text: string) => ((await q.query(text)) as R[])[0] ?? {};
+  const pio = await one(`select (select count(distinct user_id) from points) as pioneers,
+      (select count(distinct user_id) from points where t > now() - interval '7 days' and kind <> 'join') as active7,
+      (select count(*) from referral_visits where t > now() - interval '7 days') as visits7,
+      (select count(*) from referrals) as refs, (select count(activated_at) from referrals) as active_refs,
+      (select count(*) from finds where status = 'pending') as pending`);
   const [people, tg, events, daily, health, recent, vis, pages, refs, countries] = await Promise.all([
     one(`select (select count(*) from users) as users,
         (select count(*) from users where created_at > now() - interval '7 days') as users7,
@@ -63,6 +68,11 @@ export default async function AdminPage() {
           <div><b style={{ font: "600 18px var(--display)" }}>Share cards</b><span className="muted" style={{ display: "block", fontSize: 13.5, marginTop: 4 }}>Today&apos;s drafts for X and Telegram: review, edit, approve, download.</span></div>
           <span className="btn iris sm">Open</span>
         </Link>
+        <div className="grid g3" style={{ margin: "0" }}>
+          <Link href="/admin/signal" className="card" style={{ textDecoration: "none", color: "inherit" }}><b style={{ font: "600 18px var(--display)" }}>The Dawns Signal</b><span className="muted" style={{ display: "block", fontSize: 13.5, marginTop: 4 }}>This week&apos;s draft: edit, publish, Telegram, X thread.</span></Link>
+          <Link href="/admin/finds" className="card" style={{ textDecoration: "none", color: "inherit" }}><b style={{ font: "600 18px var(--display)" }}>Finds · {num(pio.pending)} to review</b><span className="muted" style={{ display: "block", fontSize: 13.5, marginTop: 4 }}>Opportunities Pioneers submitted.</span></Link>
+          <div className="card"><b style={{ font: "600 18px var(--display)" }}>Pioneers · {num(pio.pioneers)}</b><span className="muted" style={{ display: "block", fontSize: 13.5, marginTop: 4 }}>{num(pio.active7)} earned this week · {num(pio.visits7)} visitors via share links · {num(pio.refs)} referred ({num(pio.active_refs)} active)</span></div>
+        </div>
         <div className="grid g2">
           <Stat label="Visitors today" value={num(vis.today)} sub={`${num(vis.today_pv)} page views · ${num(vis.yesterday)} yesterday`} />
           <Stat label="Visitors, last 7 days" value={num(vis.week)} sub={`${num(vis.week_pv)} page views · ${num(vis.month)} in 30 days${vis.since ? ` · counting since ${new Date(String(vis.since)).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}`} />

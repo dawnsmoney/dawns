@@ -24,6 +24,8 @@ const MORE = [
   { href: "/allocate", label: "Allocate", sub: "A split for your risk and exit window" },
   { href: "/managers", label: "Managers", sub: "Who runs the vaults, and their record" },
   { href: "/watchlist", label: "Watchlist", sub: "Protocols you get alerts for" },
+  { href: "/signal", label: "The Signal", sub: "The week's biggest changes in Kaspa DeFi" },
+  { href: "/pioneer", label: "Pioneers", sub: "Help map Kaspa DeFi, earn Pioneer points" },
 ];
 
 function Icon({ k }: { k: string }) {

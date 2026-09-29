@@ -25,6 +25,8 @@ const EXPLORE: { href: string; label: string; badge?: string; primary?: boolean 
   { href: "/bridge", label: "Igra bridge" },
   { href: "/allocate", label: "Allocate" },
   { href: "/watchlist", label: "Watchlist", primary: true },
+  { href: "/signal", label: "The Signal", badge: "Weekly" },
+  { href: "/pioneer", label: "Pioneers", badge: "New" },
 ];
 
 export function Header() {

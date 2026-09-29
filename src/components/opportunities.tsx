@@ -6,6 +6,8 @@ import { Fragment, useState } from "react";
 import { AssetCoin, Pill } from "./bits";
 import { usd, pct } from "@/lib/format";
 import { takeHref } from "@/lib/act";
+import { Share } from "./share";
+import { oppShareText } from "@/lib/share-text";
 import type { FarmView, InfinityView, Opportunity, Status } from "@/lib/types";
 import type { Tag } from "@/lib/intel";
 import { Tags } from "./intel";
@@ -107,6 +109,7 @@ export function OpportunityTable({ rows, known: knownIds = [], trend = {}, filte
                     <div style={{ display: "flex", gap: 10, margin: "12px 0 4px" }}>
                       <Link className="btn sun sm" href={takeHref(o.id)}>Use it →</Link>
                       <Link className="btn ghost sm" href={`/protocols/${o.protocol}`}>{o.pname} health</Link>
+                      <span style={{ marginLeft: "auto" }}><Share compact path={`/opportunities/${encodeURIComponent(o.id)}`} text={oppShareText(o, trend[o.id]?.tags ?? [])} /></span>
                     </div>
                   </td>
                 </tr>

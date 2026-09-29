@@ -1629,3 +1629,42 @@ a.tf-id:hover{color:var(--ink)}
 .cproof li.na i{background:rgba(255,255,255,.07);color:var(--ink-3)}
 .cproof.compact{padding:14px}
 .cproof.compact li{font-size:13.5px}
+/* share + Pioneer */
+.share{display:flex;gap:8px;flex-wrap:wrap}
+.share-row{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;font-size:14px}
+.sig-list{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.sig-list li{display:grid;grid-template-columns:52px minmax(0,1fr);gap:16px;padding:18px 20px;border-radius:18px;background:var(--card);border:1px solid var(--line);border-left:3px solid var(--tone)}
+.sig-n{font:600 26px var(--display);color:var(--tone)}
+.sig-list b{font:600 18px var(--display);display:block}
+.sig-list p{margin:6px 0 8px;color:var(--ink-2)}
+.sig-list a{font-size:14px}
+.sig-arch{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+@media (max-width:640px){.sig-list li{grid-template-columns:36px minmax(0,1fr);gap:10px;padding:14px}.sig-n{font-size:20px}}
+.pio{display:grid;gap:20px}
+.pio-me{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:22px 28px;align-items:start}
+.pio-total{display:grid;gap:4px}
+.pio-total b{font:600 56px/1 var(--display);background:var(--sunrise);-webkit-background-clip:text;background-clip:text;color:transparent}
+.pio-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.pio-stats > div{display:grid;gap:2px;padding:12px;border:1px solid var(--line);border-radius:14px}
+.pio-stats b{font:600 22px var(--display)}.pio-stats small{color:var(--ink-3);font-size:12.5px}
+.pio-link{grid-column:1 / -1;display:grid;gap:8px;padding-top:16px;border-top:1px solid var(--line)}
+.pio-link code{font-size:15px;overflow-wrap:anywhere}
+.pio-join{display:flex;flex-wrap:wrap;gap:16px 28px;align-items:center;justify-content:space-between}
+.pio-join b{font:600 22px var(--display)}.pio-join p{margin:6px 0 0;color:var(--ink-2);max-width:62ch}
+.pio-rules{display:grid;gap:8px}
+.pio-rules > div{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:14px;align-items:center;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.03)}
+.pio-rules > div.got{background:rgba(74,222,155,.07)}
+.pio-rules b{font:600 17px var(--display);color:#FFD36A}
+.pio-rules span{display:grid;gap:2px}.pio-rules small{color:var(--ink-3);font-size:12.5px}
+.pio-rules em{font-style:normal;font-size:12.5px;color:var(--good)}
+.find-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.find-form label{display:grid;gap:6px;font-size:14px}.find-form label small{color:var(--ink-3)}
+.find-form .wide{grid-column:1 / -1}
+.find-form textarea{resize:vertical;font:inherit}
+.find-foot{display:flex;gap:12px;align-items:center;justify-content:flex-end}
+.find-ok{padding:14px;border-radius:14px;background:rgba(74,222,155,.08);display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.pio-finds,.pio-log{display:grid;gap:6px;margin-top:14px}
+.pio-finds > div,.pio-log > div{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.pio-terms{font-size:13px;color:var(--ink-3);line-height:1.6}
+.pio-terms b{color:var(--ink-2)}
+@media (max-width:760px){.pio-me{grid-template-columns:1fr}.pio-stats{grid-template-columns:1fr 1fr 1fr}.find-form{grid-template-columns:1fr}.pio-rules > div{grid-template-columns:56px minmax(0,1fr)}.pio-rules em{grid-column:2}}

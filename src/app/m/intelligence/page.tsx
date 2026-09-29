@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { IntelDay } from "@/components/pioneer-ping";
 import { getSnapshot } from "@/lib/snapshot";
 import { getIntelRaw } from "@/lib/intel-db";
 import { buildIntel } from "@/lib/intel";
@@ -25,6 +26,7 @@ export default async function MIntelligence() {
   const volCh = m.vol7 != null && m.volPrev7 ? m.vol7 / m.volPrev7 - 1 : null;
   return (
     <>
+      <IntelDay />
       <MHead eyebrow="Kaspa DeFi" title="Intelligence" clamp
         sub="Where capital and yield moved this week, from dawns' own readings every 10 minutes. Flows are counted in tokens, so a price move is never mistaken for money arriving." />
       <div className="m-screen">

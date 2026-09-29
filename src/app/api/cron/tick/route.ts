@@ -5,6 +5,7 @@ import { recordSnapshot, diffSignals, deliver, maybeDailyReport, planAlerts } fr
 import { hasBot, ensureWebhook } from "@/lib/telegram";
 import { refreshAssets } from "@/lib/assets";
 import { maybeDailyCards } from "@/lib/cards";
+import { maybeWeeklySignal } from "@/lib/signal";
 import { recordStrategyDaily } from "@/lib/strategies/store";
 import { recordInfinityRates } from "@/lib/infinity";
 import { evaluate } from "@/lib/strategies/model";
@@ -41,6 +42,7 @@ export async function GET(req: Request) {
     await step("payouts", () => checkPayouts());
     await step("assets", async () => { const r = await refreshAssets(s); revalidateTag("assets", "max"); return r; });
     await step("cards", () => maybeDailyCards(s)); // drafts only: nothing is posted until approved in /admin/cards
+    await step("signal", () => maybeWeeklySignal(s)); // the weekly Dawns Signal, drafted Monday; published from /admin/signal
     await step("staking rates", () => recordInfinityRates(s));
     await step("strategies", () => recordStrategyDaily((d) => { const e = evaluate(d, s.opportunities, s.kasUsd); return { net: e.net, gross: e.gross, exitNow: e.exitNow, status: e.status }; }));
     let events: Awaited<ReturnType<typeof diffSignals>> = [];

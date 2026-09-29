@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { IntelDay } from "@/components/pioneer-ping";
 import Link from "next/link";
 import { Banner } from "@/components/Banner";
 import { AreaChart, Bars as DayBars } from "@/components/charts";
@@ -30,6 +31,7 @@ export default async function IntelligencePage() {
 
   return (
     <>
+      <IntelDay />
       <Banner short crumb={[{ label: "Beta" }]} title="Intelligence"
         lede="Where capital and yield moved in Kaspa DeFi this week. Measured from dawns' own readings every 10 minutes, in token quantities, so a price move is never counted as money arriving." />
       <div className="wrap" style={{ paddingTop: 40 }}>

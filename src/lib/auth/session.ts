@@ -5,6 +5,7 @@ import { sha256 } from "@noble/hashes/sha256";
 import { sql, ensureSchema } from "../db";
 import { SITE } from "../telegram";
 import { decodeKaspaAddress, verifyKaspaMessage } from "./kaspa";
+import { linkReferral } from "../pioneer";
 
 /**
  * Wallet sign-in. dawns issues a one-time message, the wallet signs it, dawns checks the
@@ -70,7 +71,13 @@ export async function startSession(kind: WalletKind, addr: string) {
   const current = await currentUser();
   const existing = ((await q.query("select user_id from wallets where address = $1", [addr])) as { user_id: string }[])[0];
   let userId = existing?.user_id ?? current?.id ?? null;
-  if (!userId) { userId = `u_${rand(10)}`; await q.query("insert into users (id) values ($1)", [userId]); }
+  if (!userId) {
+    userId = `u_${rand(10)}`;
+    await q.query("insert into users (id) values ($1)", [userId]);
+    // arrived through someone's share link: the Pioneer program credits them once this account really uses dawns
+    const ref = (await cookies()).get("dawns_ref")?.value;
+    if (ref) await linkReferral(userId, ref).catch(() => null);
+  }
   if (!existing) await q.query("insert into wallets (address, kind, user_id, last_seen) values ($1, $2, $3, now())", [addr, kind, userId]);
   else await q.query("update wallets set last_seen = now() where address = $1", [addr]);
 

@@ -133,6 +133,26 @@ const SCHEMA = [
   // dawns' daily evaluation of each strategy's version in force (not realized returns)
   `create table if not exists strategy_daily (day date not null, family text not null, id text not null, net double precision, gross double precision,
     exit_now double precision, status text, primary key (day, family))`,
+  // Pioneer program: points are recognition for early use, never money and never transferable.
+  // One row per award; (user, kind, ref) makes every award happen once.
+  `create table if not exists points (
+    user_id text not null references users(id) on delete cascade, kind text not null, ref text not null, pts int not null,
+    note text, t timestamptz not null default now(), primary key (user_id, kind, ref))`,
+  `create table if not exists pioneer_codes (user_id text primary key references users(id) on delete cascade, code text not null unique, created_at timestamptz not null default now())`,
+  // who arrived through whose link: a visitor counts once a day (vid is the day-salted hash from /api/e)
+  `create table if not exists referral_visits (code text not null, vid text not null, day date not null, path text, t timestamptz not null default now(), primary key (code, vid, day))`,
+  // accounts that signed up after arriving through a link; activated once they have really used dawns
+  `create table if not exists referrals (user_id text primary key references users(id) on delete cascade, referrer text not null, code text not null,
+    created_at timestamptz not null default now(), activated_at timestamptz)`,
+  // "Find an opportunity": what people submit, and what dawns decided
+  `create table if not exists finds (
+    id text primary key, user_id text not null references users(id) on delete cascade, protocol text not null, target text not null, asset text,
+    link text, why text not null, status text not null default 'pending', note text, opp text,
+    created_at timestamptz not null default now(), reviewed_at timestamptz)`,
+  // the weekly Dawns Signal: drafted from the week's measured changes, edited and published by hand
+  `create table if not exists signal_issues (
+    id text primary key, data jsonb not null, status text not null default 'draft',
+    created_at timestamptz not null default now(), updated_at timestamptz not null default now(), published_at timestamptz, telegram_at timestamptz)`,
 ];
 
 let ready: Promise<void> | null = null;
