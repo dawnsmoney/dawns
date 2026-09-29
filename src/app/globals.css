@@ -1504,3 +1504,4 @@ a.vlog-row:hover b{color:var(--ink)}
 .spc-leg span{display:inline-flex;align-items:center;gap:6px}
 .spc-leg i{width:9px;height:9px;border-radius:50%}
 .spc-plot{position:relative;min-width:0}
+.vlog-row small a{color:inherit;text-decoration:underline;text-decoration-color:rgba(255,255,255,.25);text-underline-offset:2px}

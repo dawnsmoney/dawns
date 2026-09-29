@@ -24,6 +24,7 @@ interface Pos {
 }
 export interface NavPanelProps { vault: string; template: AccountTemplate; price: number; minDeposit: number; noteValue: number; maxFee: number; exitFeeBps: number; halted: boolean; maturityOpen: boolean }
 
+const when = (sec: number) => `${new Date(sec * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 const kas = (x: number, d = 4) => `${x.toLocaleString("en-US", { maximumFractionDigits: d })} KAS`;
 const LS = "dawns.nav.address";
 
@@ -182,7 +183,11 @@ export function NavPanel(p: NavPanelProps) {
                 {pos.notes.slice().reverse().map((n) => (
                   <div key={n.txid} className="vlog-row" style={{ ["--c" as string]: n.redeemed ? "#4A4270" : "#3987e5" }}>
                     <i />
-                    <div><b>{n.shares.toLocaleString("en-US")} shares {n.redeemed ? "· redeemed" : ""}</b><small>{new Date(n.at * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC · minted at {n.price.toFixed(6)} KAS{n.redeemed ? ` · paid ${kas(n.redeemed.payout)}` : ""}</small></div>
+                    <div>
+                      <b>{n.shares.toLocaleString("en-US")} shares {n.redeemed ? "· redeemed" : ""}</b>
+                      <small><a href={`https://tn10.kaspa.stream/transactions/${n.txid}`} target="_blank" rel="noopener noreferrer">Minted {when(n.at)}</a> at {n.price.toFixed(6)} KAS a share</small>
+                      {n.redeemed && <small><a href={`https://tn10.kaspa.stream/transactions/${n.redeemed.txid}`} target="_blank" rel="noopener noreferrer">Redeemed {when(n.redeemed.at)}</a>: {kas(n.redeemed.payout, 4)} paid to you, including the 1 KAS request and the note&apos;s 1 KAS</small>}
+                    </div>
                     <span className="amt">{n.redeemed ? "" : "live"}</span>
                   </div>
                 ))}
