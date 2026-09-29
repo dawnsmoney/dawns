@@ -1,8 +1,11 @@
+import { allReceipts } from "@/lib/receipts";
+import { ReceiptRow } from "@/components/underneath";
+import { MMore } from "@/components/m/tabs";
 import type { Metadata } from "next";
 import { getAssets } from "@/lib/assets";
 import { toAssetLite, significant } from "@/lib/assets/view";
 import { valueCredible } from "@/lib/assets/types";
-import { MHead, MNote, MStats } from "@/components/m/kit";
+import { MCard, MHead, MNote, MStats } from "@/components/m/kit";
 import { MAssetList } from "@/components/m/assets";
 import { usd } from "@/lib/format";
 
@@ -10,7 +13,7 @@ export const metadata: Metadata = { title: "Assets", description: "Every asset i
 export const revalidate = 300;
 
 export default async function MAssets() {
-  const all = await getAssets();
+  const [all, receipts] = await Promise.all([getAssets(), allReceipts()]);
   const live = all.filter(significant);
   const traded = all.reduce((s, a) => s + (a.standard !== "native" ? a.vol24 ?? 0 : 0), 0);
   const inDefi = all.filter((a) => a.pools.length > 0).length;
@@ -27,6 +30,7 @@ export default async function MAssets() {
               ...(movers ? [{ label: "Biggest 7-day move", value: `${movers.v >= 0 ? "+" : "−"}${Math.abs(movers.v * 100).toFixed(1)}%`, sub: movers.a.symbol, tone: (movers.v >= 0 ? "good" : "crit") as "good" | "crit" }] : []),
             ]} />
             <MAssetList rows={all.map(toAssetLite)} />
+            {receipts.length > 0 && <MCard title="Receipt tokens" tag="what's underneath"><MNote>Claims on something else, listed by what they hold.</MNote><div className="rc-list"><MMore first={5} label="Show all">{receipts.map((r) => <ReceiptRow key={r.id} r={r} />)}</MMore></div></MCard>}
           </>
         )}
       </div>

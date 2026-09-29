@@ -1111,3 +1111,26 @@ textarea.st-ta:focus{outline:none;border-color:rgba(123,108,255,.8)}
 .trend{display:block;font-size:12px;color:var(--ink-3);white-space:nowrap;font-variant-numeric:tabular-nums}
 @media (max-width:760px){.fbar{grid-template-columns:minmax(90px,1fr) 1.6fr auto;gap:10px}.mover{grid-template-columns:minmax(0,1fr) auto}.mover-s{display:none}}
 table.opps-tbl td.dv{white-space:normal;max-width:140px}
+
+/* ---------- underneath (look-through) ---------- */
+.under-claim{margin:0 0 14px;color:var(--ink-2);max-width:72ch}
+.under-per{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+.under-per b{font:600 22px var(--display);font-variant-numeric:tabular-nums}
+.under-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin:18px 0 0}
+.under-facts div{min-width:0;border-top:1px solid var(--line);padding-top:8px}
+.under-facts dt{font-size:12.5px;color:var(--ink-3)}
+.under-facts dd{margin:2px 0 0;overflow-wrap:anywhere}
+.under-exit{margin:16px 0 10px;padding:12px 14px;border-radius:12px;background:rgba(47,168,143,.08);border:1px solid rgba(47,168,143,.25)}
+.under-exit p{margin:4px 0 0}
+.under-id{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}
+.rc-list{display:grid;gap:2px}
+.rc-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(80px,1.2fr) minmax(0,1fr);gap:16px;align-items:center;padding:12px 4px;border-top:1px solid var(--line);text-decoration:none}
+.rc-row:first-child{border-top:0}
+.rc-row:hover b{text-decoration:underline}
+.rc-n,.rc-v{display:flex;flex-direction:column;min-width:0}
+.rc-n b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rc-n small,.rc-v small{color:var(--ink-3);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rc-v{align-items:flex-end;font-variant-numeric:tabular-nums}
+.rc-bar{display:flex;gap:2px;height:10px}
+.rc-bar i{border-radius:3px;min-width:3px}
+@media (max-width:760px){.under-facts{grid-template-columns:minmax(0,1fr)}.rc-row{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px}.rc-bar{grid-column:1/-1;grid-row:2}}

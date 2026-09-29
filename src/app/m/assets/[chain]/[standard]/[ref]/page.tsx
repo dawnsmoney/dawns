@@ -7,6 +7,9 @@ import { supplyParts, holderCat, catOf } from "@/lib/assets/holders";
 import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, valueCredible, type Asset, type AssetChain, type AssetStandard } from "@/lib/assets/types";
 import { holdingsOf } from "@/lib/assets/view";
 import { getSnapshot } from "@/lib/snapshot";
+import { receiptOf, KIND_LABEL, type Receipt } from "@/lib/underneath";
+import { Underneath, ReceiptId } from "@/components/underneath";
+import type { Snapshot } from "@/lib/types";
 import { MCard, MFlags, MHead, MKv, MList, MNote, MRow, MStats } from "@/components/m/kit";
 import { MMore, MTabs } from "@/components/m/tabs";
 import { MOpp } from "@/components/m/opps";
@@ -27,18 +30,45 @@ async function find(params: P["params"]): Promise<Asset | null> {
   const id = assetId(chain as AssetChain, standard as AssetStandard, decodeURIComponent(ref));
   return (await getAssets()).find((a) => a.id === id) ?? null;
 }
+async function findReceipt(params: P["params"]): Promise<{ r: Receipt; s: Snapshot } | null> {
+  const { chain, standard, ref } = await params;
+  if (!CHAINS.includes(chain as AssetChain) || standard !== "erc20") return null;
+  const s = await getSnapshot();
+  const r = receiptOf(s, assetId(chain as AssetChain, "erc20", decodeURIComponent(ref)));
+  return r ? { r, s } : null;
+}
 export async function generateMetadata({ params }: P): Promise<Metadata> {
   const a = await find(params);
+  if (!a) { const rc = await findReceipt(params); if (rc) return { title: `${rc.r.symbol} · ${KIND_LABEL[rc.r.kind]} on ${rc.r.chain}`, description: rc.r.claim.slice(0, 180) }; }
   return a ? { title: `${a.symbol} · ${STANDARD_NAME[a.standard]} on ${CHAIN_NAME[a.chain]}`, description: analyse(a).what.slice(0, 180) } : { title: "Asset not found" };
 }
 const whole = (v: number | null, sym: string) => (v == null ? "—" : `${v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : v >= 1e3 ? (v / 1e3).toFixed(1) + "K" : v.toFixed(2)} ${sym}`);
 const short = (s: string) => (s.length > 20 ? `${s.slice(0, 10)}…${s.slice(-6)}` : s);
 const when = (ms: number | null) => (ms == null ? "—" : new Date(ms).toISOString().slice(0, 10));
 
+function MReceipt({ r, s }: { r: Receipt; s: Snapshot }) {
+  const opp = s.opportunities.find((o) => o.id === r.opp);
+  return (
+    <>
+      <MHead back={{ href: "/assets", label: "Assets" }} eyebrow={`${KIND_LABEL[r.kind]} · ${r.chain}`} title={r.symbol} sub={r.name} />
+      <div className="m-screen">
+        <Underneath r={r} />
+        {opp && <div className="m-opps"><MOpp o={opp} /></div>}
+        <MCard><ReceiptId r={r} /></MCard>
+      </div>
+    </>
+  );
+}
+
 export default async function MAsset({ params }: P) {
   const a = await find(params);
-  if (!a) notFound();
+  if (!a) {
+    const rc = await findReceipt(params);
+    if (!rc) notFound();
+    return <MReceipt r={rc.r} s={rc.s} />;
+  }
   const [s, hist, all] = await Promise.all([getSnapshot(), getAssetHistory(a.id), getAssets()]);
+  const under = receiptOf(s, a.id);
   const r = analyse(a);
   const tiles = dimensions(a, r);
   const parts = supplyParts(a.topHolders, a.top10);
@@ -68,6 +98,7 @@ export default async function MAsset({ params }: P) {
         ]} />
         <MTabs tabs={tabs}>
           <div className="m-panel">
+            {under && <Underneath r={under} />}
             <MCard title="dawns' reading" tag={<Pill t={r.grade.t}>{r.grade.label}</Pill>}>
               <MStats items={tiles.map((t) => ({ label: t.title, value: t.big, sub: t.small, tone: t.t === "info" ? undefined : t.t }))} />
             </MCard>

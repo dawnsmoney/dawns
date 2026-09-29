@@ -16,6 +16,11 @@ import { External } from "@/components/icons";
 import { CURATED } from "@/lib/assets/profiles";
 import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, valueCredible, type Asset, type AssetDay, type AssetChain, type AssetStandard } from "@/lib/assets/types";
 import { getSnapshot } from "@/lib/snapshot";
+import { getIntelRaw } from "@/lib/intel-db";
+import { buildIntel } from "@/lib/intel";
+import { receiptOf, KIND_LABEL, type Receipt } from "@/lib/underneath";
+import { Underneath, ReceiptId } from "@/components/underneath";
+import type { Snapshot } from "@/lib/types";
 import { knownOf, holdingsOf } from "@/lib/assets/view";
 import { usd, pct, price } from "@/lib/format";
 
@@ -32,9 +37,21 @@ async function find(params: P["params"]): Promise<Asset | null> {
   return (await getAssets()).find((a) => a.id === id) ?? null;
 }
 
+/** A receipt token dawns does not list as an asset (deposit receipts, LP shares): its look-through page. */
+async function findReceipt(params: P["params"]): Promise<{ r: Receipt; s: Snapshot } | null> {
+  const { chain, standard, ref } = await params;
+  if (!CHAINS.includes(chain as AssetChain) || standard !== "erc20") return null;
+  const s = await getSnapshot();
+  const r = receiptOf(s, assetId(chain as AssetChain, "erc20", decodeURIComponent(ref)));
+  return r ? { r, s } : null;
+}
+
 export async function generateMetadata({ params }: P): Promise<Metadata> {
   const a = await find(params);
-  if (!a) return { title: "Asset not found" };
+  if (!a) {
+    const rc = await findReceipt(params);
+    return rc ? { title: `${rc.r.symbol} · ${KIND_LABEL[rc.r.kind]} on ${rc.r.chain}`, description: rc.r.claim.slice(0, 180) } : { title: "Asset not found" };
+  }
   return { title: `${a.symbol} · ${STANDARD_NAME[a.standard]} on ${CHAIN_NAME[a.chain]}`, description: analyse(a).what.slice(0, 180) };
 }
 
@@ -68,10 +85,31 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
+async function ReceiptView({ r, s }: { r: Receipt; s: Snapshot }) {
+  const opp = s.opportunities.filter((o) => o.id === r.opp);
+  const t = opp.length ? buildIntel(await getIntelRaw(), s).byOpp[opp[0].id] : undefined;
+  return (
+    <>
+      <Banner short crumb={[{ href: "/assets", label: "Assets" }, { label: `${KIND_LABEL[r.kind]} · ${r.chain}` }]}
+        title={r.symbol} lede={r.name} />
+      <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
+        <Underneath r={r} />
+        {opp.length > 0 && <div><h3 style={{ margin: "0 0 14px" }}>The opportunity it comes from</h3><OpportunityTable rows={opp} filters={false} trend={t ? { [opp[0].id]: t } : {}} /></div>}
+        <div className="card"><ReceiptId r={r} /><p className="muted" style={{ fontSize: 13, margin: "12px 0 0" }}>dawns lists receipt tokens by what they hold, not as assets of their own: their value is the value underneath.</p></div>
+      </div>
+    </>
+  );
+}
+
 export default async function AssetPage({ params }: P) {
   const a = await find(params);
-  if (!a) notFound();
+  if (!a) {
+    const rc = await findReceipt(params);
+    if (!rc) notFound();
+    return <ReceiptView r={rc.r} s={rc.s} />;
+  }
   const [s, hist] = await Promise.all([getSnapshot(), getAssetHistory(a.id)]);
+  const under = receiptOf(s, a.id);
   const r = analyse(a);
   const tiles = dimensions(a, r);
   const parts = supplyParts(a.topHolders, a.top10);
@@ -103,6 +141,8 @@ export default async function AssetPage({ params }: P) {
           <Stat label={a.standard === "native" ? "Market value" : "Value on chain"} value={a.mcap != null ? usd(a.mcap) : "—"} sub={`${whole(a.supply, a.symbol)} circulating${a.mcap != null && !valueCredible(a) ? " · not realizable: too little trading" : ""}`} />
           <Stat label="Holders" value={a.holders != null ? a.holders.toLocaleString("en-US") : a.chain === "zkas" ? "Shielded" : "—"} sub={a.chain === "zkas" ? "balances are private by design" : a.holdersAt ? `top holders read ${when(a.holdersAt)}` : null} />
         </div>
+
+        {under && <Underneath r={under} />}
 
         <div className="card">
           <div className="c-head"><h3>dawns&apos; reading</h3><Pill t={r.grade.t}>{r.grade.label}</Pill></div>

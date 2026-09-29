@@ -6,6 +6,8 @@ import { assetPath, valueCredible, STANDARD_NAME } from "@/lib/assets/types";
 import { getAssets } from "@/lib/assets";
 import { toAssetLite, significant } from "@/lib/assets/view";
 import { usd } from "@/lib/format";
+import { allReceipts } from "@/lib/receipts";
+import { ReceiptRow } from "@/components/underneath";
 
 export const metadata: Metadata = {
   title: "Assets",
@@ -14,7 +16,7 @@ export const metadata: Metadata = {
 export const revalidate = 300;
 
 export default async function AssetsPage() {
-  const all = await getAssets();
+  const [all, receipts] = await Promise.all([getAssets(), allReceipts()]);
   const rows = all.map(toAssetLite);
   const live = all.filter(significant);
   const inDefi = all.filter((a) => a.pools.length > 0).length;
@@ -60,6 +62,14 @@ export default async function AssetsPage() {
               </div>
             </div>
             <AssetTable rows={rows} />
+            {receipts.length > 0 && (
+              <div className="card" style={{ marginTop: 28 }}>
+                <div className="c-head"><h3>Receipt tokens: what&apos;s underneath</h3><span className="tag">{receipts.length}</span></div>
+                <p className="muted" style={{ margin: "-4px 0 12px" }}>Deposit receipts, LP shares, staking shares, wrapped coins and vault shares are claims on something else. dawns lists them by what they hold. The bar is the split underneath.</p>
+                <div className="rc-list">{receipts.slice(0, 8).map((r) => <ReceiptRow key={r.id} r={r} />)}</div>
+                {receipts.length > 8 && <details className="more"><summary>All {receipts.length} receipt tokens</summary><div className="rc-list">{receipts.slice(8).map((r) => <ReceiptRow key={r.id} r={r} />)}</div></details>}
+              </div>
+            )}
             <p className="muted" style={{ fontSize: 13.5, marginTop: 22, lineHeight: 1.6 }}>
               Sources: KaspaCom (KRC-20 prices, volume, holders), the KCC20 indexer (covenant tokens, validated from chain data), Igra Blockscout (tokens, holders), the Kaspa and ZKas REST APIs (supply, emission, hashrate), the ZKas OTC desk (price), and dawns&apos; own reads of every DEX pool and lending market. &ldquo;Value&rdquo; is price × circulating supply on that chain. &ldquo;Reading&rdquo; is dawns&apos; flags, never a buy or sell call. Updated {new Date(updated).toISOString().slice(11, 16)} UTC.
             </p>

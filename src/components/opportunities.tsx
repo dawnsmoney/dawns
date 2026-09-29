@@ -59,7 +59,7 @@ function Risk({ o }: { o: Opportunity }) {
   return <span>{pct(o.priceMove ?? 0, 0)} move<small className="muted" style={{ display: "block" }}>trails holding by {pct(o.ilAtMove, 1)} · {hrs(o.rangeHours)}</small></span>;
 }
 
-export function OpportunityTable({ rows, known: knownIds = [], trend = {} }: { rows: Opportunity[]; known?: string[]; trend?: Record<string, Trend> }) {
+export function OpportunityTable({ rows, known: knownIds = [], trend = {}, filters: showFilters = true }: { rows: Opportunity[]; known?: string[]; trend?: Record<string, Trend>; filters?: boolean }) {
   const known = new Set(knownIds);
   const [f, setF] = useState<Filter>("All");
   const [open, setOpen] = useState<string | null>(null);
@@ -67,11 +67,11 @@ export function OpportunityTable({ rows, known: knownIds = [], trend = {} }: { r
   const filters = (["All", "Lending", "Liquidity", "Farms"] as Filter[]).filter((x) => x !== "Farms" || rows.some((o) => o.farm));
   return (
     <>
-      <div className="filters" style={{ marginBottom: 20, justifyContent: "flex-end" }}>
+      {showFilters && <div className="filters" style={{ marginBottom: 20, justifyContent: "flex-end" }}>
         {filters.map((x) => (
           <button key={x} type="button" className={x === f ? "on" : ""} onClick={() => setF(x)}>{x} <span className="muted">{rows.filter((o) => inFilter(o, x)).length}</span></button>
         ))}
-      </div>
+      </div>}
       <div className="card flush"><div className="tbl-wrap"><table className="opps-tbl">
         <thead><tr><th>Opportunity</th><th>Native yield</th><th>Size</th><th>Exit now</th><th>Stability · 7 days</th><th>Dawns view</th><th>State</th></tr></thead>
         <tbody>
