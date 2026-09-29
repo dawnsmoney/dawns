@@ -23,7 +23,7 @@ export function axisUsd(v: number) {
   return usd(v, v >= 1e6 ? 1 : 0);
 }
 
-export type ValueFormat = "usd" | "usdFull" | "pct" | "num";
+export type ValueFormat = "usd" | "usdFull" | "pct" | "num" | "price";
 /** Plain quantities (supply, holders): 697M, 12.4K. */
 export const num = (v: number) => (Math.abs(v) >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(Math.abs(v) >= 1e8 ? 0 : 1)}M` : Math.abs(v) >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : v.toFixed(0));
 
@@ -31,10 +31,17 @@ export function formatValue(v: number, f: ValueFormat) {
   if (f === "num") return num(v);
   if (f === "pct") return pct(v);
   if (f === "usdFull") return usdFull(v);
+  if (f === "price") return price(v);
   return usd(v);
 }
 
-export function formatAxis(v: number, f: ValueFormat) {
+/** `step` is the gap between ticks: a price axis shows as many decimals as it takes to tell ticks apart. */
+export function formatAxis(v: number, f: ValueFormat, step?: number) {
+  if (f === "price") {
+    if (v === 0) return "$0";
+    const d = step && step > 0 ? Math.min(10, Math.max(0, -Math.floor(Math.log10(step)) + (step / Math.pow(10, Math.floor(Math.log10(step))) % 1 ? 1 : 0))) : 2;
+    return Math.abs(v) >= 1000 && d === 0 ? axisUsd(v) : "$" + v.toFixed(d);
+  }
   if (f === "num") return num(v);
   if (f === "pct") return Math.round(v * 100) + "%";
   return axisUsd(v);

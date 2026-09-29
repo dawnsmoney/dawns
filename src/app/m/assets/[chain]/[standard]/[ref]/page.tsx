@@ -22,6 +22,16 @@ import { DepthCard, MovesCard, UnlocksCard } from "@/components/asset-sections";
 import { usd, pct, price } from "@/lib/format";
 
 export const revalidate = 300;
+export const dynamicParams = true;
+
+/** Every listed asset is built ahead, so a click serves a ready page instead of reading on demand. */
+export async function generateStaticParams() {
+  try {
+    return (await getAssets()).map((a) => { const [chain, standard, ...ref] = a.id.split(":"); return { chain, standard, ref: ref.join(":") }; });
+  } catch {
+    return [];
+  }
+}
 type P = { params: Promise<{ chain: string; standard: string; ref: string }> };
 const CHAINS: AssetChain[] = ["kaspa", "igra", "kasplex", "zkas"];
 const STANDARDS: AssetStandard[] = ["native", "krc20", "erc20", "kcc20", "kron"];
@@ -76,7 +86,8 @@ export default async function MAsset({ params }: P) {
   const parts = supplyParts(a.topHolders, a.top10);
   const opps = s.opportunities.filter((o) => a.pools.includes(o.id));
   const held = holdingsOf(a, s);
-  const priced = hist.filter((d) => d.price != null).length >= 2;
+  const ph = hist.filter((d) => d.price != null);
+  const priced = ph.length >= 2;
   const holdersHist = hist.filter((d) => d.holders != null).length >= 3;
   const isKas = a.id === "kaspa:native:KAS";
   const twins = all.filter((x) => x.id !== a.id && (isKas ? /^(w?i?kas|wikas|ikas|wkas)$/i.test(x.symbol) : x.symbol.toUpperCase() === a.symbol.toUpperCase())).slice(0, 6);
@@ -112,7 +123,7 @@ export default async function MAsset({ params }: P) {
               <MCard title="Two prices"><Compare a={{ label: "Headline", value: a.price, display: price(a.price) }} b={{ label: `${CHAIN_NAME[a.chain]} pools`, value: a.poolPrice, display: price(a.poolPrice) }} /><MNote>What you could sell for on {CHAIN_NAME[a.chain]} is the pool price.</MNote></MCard>
             )}
             {a.depth && a.depth.d10 > 0 && <DepthCard a={a} />}
-            {priced && <MCard title="Price" tag="daily"><AreaChart label={`${a.symbol} price`} dates={hist.map((d) => Date.parse(d.day))} series={[{ name: "Price", color: "#8578E6", values: hist.map((d) => d.price ?? 0) }]} fmt="usdFull" height={180} /></MCard>}
+            {priced && <MCard title="Price" tag="daily"><AreaChart label={`${a.symbol} price`} dates={ph.map((d) => Date.parse(d.day))} series={[{ name: "Price", color: "#8578E6", values: ph.map((d) => d.price!) }]} fmt="price" height={180} /></MCard>}
             {holdersHist && <MCard title="Holders" tag="daily"><AreaChart label={`${a.symbol} holders`} dates={hist.filter((d) => d.holders != null).map((d) => Date.parse(d.day))} series={[{ name: "Holders", color: "#199e70", values: hist.filter((d) => d.holders != null).map((d) => d.holders!) }]} fmt="num" zero={false} height={170} /></MCard>}
             {!gap && !a.depth && !priced && !holdersHist && <MNote>No market readings for this asset yet.</MNote>}
           </div>

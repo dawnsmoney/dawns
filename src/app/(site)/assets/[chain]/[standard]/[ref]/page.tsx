@@ -28,6 +28,16 @@ import { knownOf, holdingsOf } from "@/lib/assets/view";
 import { usd, pct, price } from "@/lib/format";
 
 export const revalidate = 300;
+export const dynamicParams = true;
+
+/** Every listed asset is built ahead, so a click serves a ready page instead of reading on demand. */
+export async function generateStaticParams() {
+  try {
+    return (await getAssets()).map((a) => { const [chain, standard, ...ref] = a.id.split(":"); return { chain, standard, ref: ref.join(":") }; });
+  } catch {
+    return [];
+  }
+}
 
 type P = { params: Promise<{ chain: string; standard: string; ref: string }> };
 const CHAINS: AssetChain[] = ["kaspa", "igra", "kasplex", "zkas"];
@@ -120,7 +130,8 @@ export default async function AssetPage({ params }: P) {
     .sort((x, y) => (y.liquidity ?? y.mcap ?? 0) - (x.liquidity ?? x.mcap ?? 0));
   const dates = hist.map((d) => Date.parse(d.day));
   const flow = holderFlow(hist);
-  const priced = hist.filter((d) => d.price != null).length >= 2;
+  const ph = hist.filter((d) => d.price != null);
+  const priced = ph.length >= 2;
   const holdersHist = hist.filter((d) => d.holders != null).length >= 3;
   const explorer = a.standard === "kcc20" || a.standard === "kron" ? `https://kcc20.info/v1/tokens/${a.ref}` : a.chain === "igra" ? `https://explorer.igralabs.com/token/${a.ref}` : a.standard === "krc20" ? `https://kaspa.com/tokens/marketplace/token/${a.ref}` : a.chain === "kasplex" ? `https://explorer.kasplex.org/token/${a.ref}` : a.chain === "zkas" ? "https://explorer.zkas.info/analytics" : "https://explorer.kaspa.org";
 
@@ -170,7 +181,7 @@ export default async function AssetPage({ params }: P) {
         {priced && (
           <div className="card">
             <RangeChart title="Price, daily" label={`${a.symbol} price history`} dates={dates}
-              series={[{ name: "Price", color: "#8578E6", values: hist.map((d) => d.price ?? 0) }]} fmt="usdFull" area="first" />
+              series={[{ name: "Price", color: "#8578E6", values: ph.map((d) => d.price!) }]} fmt="price" area="first" />
           </div>
         )}
           </div>

@@ -68,7 +68,7 @@ export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "
 
   const W = Math.max(280, width || 600);
   const H = height ?? (W < 520 ? 220 : 280);
-  const padL = fmt === "pct" ? 44 : 54, padR = 14, padT = 14, padB = 26;
+  const padL = fmt === "pct" ? 44 : fmt === "price" ? 72 : 54, padR = 14, padT = 14, padB = 26;
   const n = dates.length, iw = W - padL - padR, ih = H - padT - padB;
 
   const tops: number[][] = [];
@@ -85,7 +85,11 @@ export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "
   const x = (i: number) => padL + (i * iw) / (n - 1);
   const y = (v: number) => padT + ih - ((v - lo) / (hi - lo)) * ih;
   const line = (arr: number[]) => arr.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("L");
-  const xt = [0, Math.round((n - 1) / 3), Math.round((2 * (n - 1)) / 3), n - 1];
+  // at most four date labels, never the same day twice (a short history has fewer points than labels)
+  const xt = [0, Math.round((n - 1) / 3), Math.round((2 * (n - 1)) / 3), n - 1]
+    .filter((i, j, a) => a.indexOf(i) === j)
+    .filter((i, j, a) => j === 0 || shortDate(dates[i]) !== shortDate(dates[a[j - 1]]));
+  const step = ticks.length > 1 ? ticks[1] - ticks[0] : 0;
   const gid = label.replace(/\W+/g, "");
 
   const onMove = (e: React.PointerEvent<SVGRectElement>) => {
@@ -112,11 +116,11 @@ export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "
             {ticks.map((t) => (
               <g key={t}>
                 <line className="grid-l" x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} />
-                <text x={padL - 10} y={y(t) + 4} textAnchor="end">{formatAxis(t, fmt)}</text>
+                <text x={padL - 10} y={y(t) + 4} textAnchor="end">{formatAxis(t, fmt, step)}</text>
               </g>
             ))}
             {xt.map((i, j) => (
-              <text key={j} x={x(i)} y={H - 6} textAnchor={j === 0 ? "start" : j === 3 ? "end" : "middle"}>{shortDate(dates[i])}{hourly && n < 60 ? ` ${hh(dates[i])}` : ""}</text>
+              <text key={j} x={x(i)} y={H - 6} textAnchor={j === 0 ? "start" : j === xt.length - 1 ? "end" : "middle"}>{shortDate(dates[i])}{hourly && n < 60 ? ` ${hh(dates[i])}` : ""}</text>
             ))}
           </g>
           {refLine != null && (
