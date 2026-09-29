@@ -1,6 +1,7 @@
 import "server-only";
 import { mandate as mm, ledger as ml, figures as mandateFigures, SOMPI } from "@/lib/vault";
 import { getNav, navFigures, FIRST_PRICE } from "./nav";
+import { getCredit, creditFigures } from "./credit";
 
 /**
  * Every vault dawns knows, whatever its state, and the managers who run them.
@@ -54,10 +55,21 @@ export async function vaults(): Promise<VaultCard[]> {
     { id: "fixed-term", kind: "fixed", name: "Fixed-term vault", href: null, manager: "dawns", network: "testnet-10", status: "designed",
       pitch: "The NAV covenant with a maturity date and a deposit window: the same code, two parameters.",
       figures: [], guarantees: ["No redemption before maturity", "Deposits only in the window", "Everything else as NAV"] },
-    { id: "credit", kind: "credit", name: "Credit vault", href: null, manager: "dawns", network: "testnet-10", status: "designed",
-      pitch: "Approved borrowers as destinations, each with an amount, a rate and a due date. Repayments return through the recall path.",
-      figures: [], guarantees: ["Only approved borrowers", "Per-borrower cap", "Overdue loans marked down on schedule"] },
   );
+  const { l: cl, m: cm } = await getCredit();
+  if (cl && cm) {
+    const f = creditFigures(cl, cm, null);
+    out.push({
+      id: "credit-tn10", kind: "credit", name: cm.name, href: "/vaults/credit-tn10", manager: cm.manager ?? "dawns", network: "testnet-10", status: "live",
+      pitch: "Loans to named borrowers. Repayments can only come back into the vault; a late loan loses value on a schedule nobody can stop.",
+      figures: [{ label: "NAV", value: kas(f.nav) }, { label: "Loans", value: `${f.loans.filter((x) => x.status !== "free").length} of ${f.loans.length}` }, { label: "Holders", value: String(f.holders) }],
+      guarantees: ["Only registered borrowers", "Repayments only into the vault", `Late loans −${cm.markdownStepBps / 100}% per period`],
+    });
+  } else {
+    out.push({ id: "credit", kind: "credit", name: "Credit vault", href: null, manager: "dawns", network: "testnet-10", status: "designed",
+      pitch: "Approved borrowers as destinations, each with an amount, a rate and a due date. Repayments can only come back into the vault.",
+      figures: [], guarantees: ["Only approved borrowers", "Per-borrower cap", "Overdue loans marked down on schedule"] });
+  }
   return out;
 }
 
@@ -83,7 +95,8 @@ export async function trackRecord(id: string) {
     + (navLedger?.moves.filter((x) => x.kind === "allocate").reduce((s, x) => s + (x.amount ?? 0), 0) ?? 0) / SOMPI;
   const back = ml.moves.filter((x) => x.kind === "recall").reduce((s, x) => s + (x.amount ?? 0), 0) / SOMPI
     + (navLedger?.moves.filter((x) => x.kind === "recall").reduce((s, x) => s + (x.amount ?? 0), 0) ?? 0) / SOMPI;
-  const moves = ml.moves.length + (navLedger?.moves.length ?? 0);
+  const { l: cl, m: cm } = await getCredit();
+  const moves = ml.moves.length + (navLedger?.moves.length ?? 0) + (cl?.moves.length ?? 0);
   const refusals = ml.refusals.length;
   const nav = navLedger && navMandate ? navFigures(navLedger, navMandate) : null;
   return {
@@ -96,6 +109,11 @@ export async function trackRecord(id: string) {
         { role: "Allocator", vault: "NAV vault", address: navMandate.roles.allocator },
         { role: "Valuer", vault: "NAV vault", address: navMandate.roles.valuer },
         { role: "Guardian", vault: "NAV vault", address: navMandate.roles.guardian },
+      ] : []),
+      ...(cm ? [
+        { role: "Allocator", vault: "Credit vault", address: cm.roles.allocator },
+        { role: "Valuer", vault: "Credit vault", address: cm.roles.valuer },
+        { role: "Guardian", vault: "Credit vault", address: cm.roles.guardian },
       ] : []),
     ],
   };

@@ -1,0 +1,51 @@
+{
+  "borrowers": [
+    {
+      "address": "kaspatest:qz8qwusvhjw0emz7pq0zly2kpqwxulvkjztexf58s22j8rrg98av7n90rqtj0",
+      "capBps": 4000,
+      "interestBps": 100,
+      "label": "Borrower A (test key)",
+      "termDaa": 864000
+    },
+    {
+      "address": "kaspatest:qzwauazd3jgxzhchpav6ry8snd4k0f9zs8jm7jzxwk8ea072d69mu4a2tnwau",
+      "capBps": 3000,
+      "interestBps": 300,
+      "label": "Borrower B (test key)",
+      "termDaa": 2592000
+    },
+    {
+      "address": "kaspatest:qq88cud3myuprznyd7qdurx2gsl0ca63sdpja33j3jn507jjar2x7x34vf05m",
+      "capBps": 2000,
+      "interestBps": 10,
+      "label": "Borrower C (test key)",
+      "termDaa": 36000
+    }
+  ],
+  "depositUntilDaa": 0,
+  "epochLengthDaa": 36000,
+  "epochLimitSompi": 10000000000,
+  "exitFeeBps": 25,
+  "graceDaa": 36000,
+  "manager": "dawns",
+  "markdownPeriodDaa": 36000,
+  "markdownStepBps": 2500,
+  "maturityDaa": 0,
+  "maxFeeSompi": 10000000,
+  "maxMarkStepBps": 500,
+  "maxPerMoveSompi": 5000000000,
+  "minDepositSompi": 500000000,
+  "minKeepSompi": 100000000,
+  "name": "Dawns TN10 credit vault",
+  "network": "testnet-10",
+  "notBeforeDaa": 583419448,
+  "noteValueSompi": 100000000,
+  "objective": "Open to anyone on testnet-10: deposit KAS, receive shares at NAV. Up to three fixed-term loans to named borrowers (Dawns-held test keys standing in for real institutions). Repayments come back through keyless repayment accounts; late loans are marked down on a schedule anyone can enforce.",
+  "reserveFloorBps": 2000,
+  "roles": {
+    "allocator": "kaspatest:qpgcqgcv689g740pfeefrdmkedv63prz8gx7h850qfrcxk7hz0yzs6p7dn7jl",
+    "guardian": "kaspatest:qpeyuz7mycyy9qm56ywt0dq2xd62xrdpgwekwxhsreg4kqy5lqhu7uzd03h43",
+    "valuer": "kaspatest:qznf709wl26lwe0spy7javw0sxjpw3s6al769gwjwz6f6xpsgjruj98sy96mf"
+  },
+  "standard": "dawns-credit/0"
+}

@@ -1,0 +1,124 @@
+{
+  "accountTemplate": {
+    "prefix": "6b",
+    "suffix": "6c7604e33b26fa87637500cf52798769b9519c69b4539c6976009c63b3539c696776519c69b3549c69687575755167760435eecca687637553798201419d7553795379ac697575757551676a6868"
+  },
+  "address": "kaspatest:pqetvkvmn4sq6axj7z7y2llh0xrtpwx9j3325d0enl5pyx7308c7kcezk83ta",
+  "covenant": "dawns-credit/0",
+  "covenantId": "baf9e099d5fed0b61613ca7fb1ced00cbf4811f5d71356d055752a47f1fbddd7",
+  "createdAt": 1790672837,
+  "genesisTx": "c8abafc5e709ee610126257e2cd462da1fbd49eec5bc1945d0f9978b6731d499",
+  "manager": "dawns",
+  "mandateHash": "accd062a6dc1b8a47dfde12d838a83b8e3770b0390c1d0db760e06d959efedbc",
+  "moves": [
+    {
+      "at": 1790673109,
+      "daa": 583422325,
+      "kind": "token",
+      "navAfter": 1790000000,
+      "shareCovid": "09b1abb0b0b21a1003735c77ef222b1548d255d94c1272ef5e8f3bc111b3bbdb",
+      "sharesAfter": 0,
+      "txid": "f6acd2d4ae8db47e5301896647e89db2655fead603d3fde3c91188d0fc5bcc34",
+      "valueAfter": 1890000000
+    },
+    {
+      "at": 1790673258,
+      "daa": 583423788,
+      "kind": "deposit",
+      "navAfter": 4680000000,
+      "owner": "kaspatest:qqg5hkjzee5vrmf778qu9dpalqrdj28prccslajaxemevmwpl0s2k8kcz70gv",
+      "paid": 3000000000,
+      "price": 1000000,
+      "shares": 2890,
+      "sharesAfter": 2890,
+      "txid": "ac742bd34b04d7ece19dba3ac5cd9db04aa50161c4009ceea1beee74224caaf1",
+      "valueAfter": 4780000000
+    },
+    {
+      "amount": 500000000,
+      "at": 1790673265,
+      "daa": 583423880,
+      "due": 583459780,
+      "kind": "lend",
+      "navAfter": 4670000000,
+      "sharesAfter": 2890,
+      "slot": 2,
+      "txid": "1a0edda8933b01289c14baffe0215727b03f0962195d97629e93ac09dcd96a6f",
+      "valueAfter": 4270000000
+    },
+    {
+      "amount": 500500000,
+      "at": 1790673687,
+      "daa": 583428153,
+      "kind": "repay",
+      "navAfter": 4660500000,
+      "sharesAfter": 2890,
+      "slot": 2,
+      "txid": "dad7e2d480418593b21bfd54675be41b3cfdce2602cc94ef8faa0417bb7e2485",
+      "valueAfter": 4760500000
+    },
+    {
+      "amount": 500000000,
+      "at": 1790673795,
+      "daa": 583429226,
+      "due": 583465126,
+      "kind": "lend",
+      "navAfter": 4650500000,
+      "sharesAfter": 2890,
+      "slot": 2,
+      "txid": "017decf91d1d96373a44fb75fbf61f1e0ec307268bf237550caff308b4a3f312",
+      "valueAfter": 4250500000
+    }
+  ],
+  "name": "Dawns TN10 credit vault",
+  "network": "testnet-10",
+  "notes": [
+    {
+      "at": 1790673258,
+      "index": 2,
+      "owner": "kaspatest:qqg5hkjzee5vrmf778qu9dpalqrdj28prccslajaxemevmwpl0s2k8kcz70gv",
+      "price": 1000000,
+      "shares": 2890,
+      "txid": "ac742bd34b04d7ece19dba3ac5cd9db04aa50161c4009ceea1beee74224caaf1",
+      "value": 100000000
+    }
+  ],
+  "pending": null,
+  "repayAddresses": [
+    "kaspatest:pzq6ks76rkctpf5kqzqxh8m0cumh6f38yxanlspyhwnxpgdnaf5lj4wqlj8qp",
+    "kaspatest:ppk79xk8krc6d5d03h7glksu2c8x6eqc6j8qk728hj7kmvx6g597sm0yjvqaw",
+    "kaspatest:pzcegm8puttulvac2pw528xkhux3y2glz8m5x6z3wu7htg38fjkmjd7pu7e62"
+  ],
+  "repayTemplate": {
+    "prefix": "6b",
+    "suffix": "6c7604e33b26fa87637500cf52798769b9519c69b3529c69b4519c697600a2697652a1697575755167760435eecca687637553798201419d7553795379ac697575757551676a6868"
+  },
+  "seed": 2000000000,
+  "shareCovid": "09b1abb0b0b21a1003735c77ef222b1548d255d94c1272ef5e8f3bc111b3bbdb",
+  "standard": "dawns-credit/0",
+  "state": {
+    "due": [
+      0,
+      0,
+      583465126
+    ],
+    "epochIndex": 0,
+    "epochSpent": 1000000000,
+    "halted": false,
+    "markEpoch": -1,
+    "marks": [
+      0,
+      0,
+      500000000
+    ],
+    "principal": [
+      0,
+      0,
+      500000000
+    ],
+    "shareCovid": "09b1abb0b0b21a1003735c77ef222b1548d255d94c1272ef5e8f3bc111b3bbdb",
+    "shares": 2890
+  },
+  "tokenTx": "f6acd2d4ae8db47e5301896647e89db2655fead603d3fde3c91188d0fc5bcc34",
+  "value": 4250500000
+}

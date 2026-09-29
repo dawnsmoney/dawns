@@ -88,12 +88,16 @@ export async function readNavLive(l: NavLedger): Promise<NavLive> {
 
 /** One person's position: their two account addresses, what sits in them now, their notes. */
 export async function positionOf(l: NavLedger, m: NavMandateDoc, address: string) {
+  return positionAt(l, navFigures(l, m).price, address);
+}
+/** The same for any vault that uses these accounts and notes (the credit vault), at a given share price. */
+export async function positionAt(l: { covenantId: string; accountTemplate: AccountTemplate; notes: NavNote[] }, price: number, address: string) {
   const { owner } = ownerOf(address);
   const cov = fromHex(l.covenantId);
   const deposit = accountAddress(l.accountTemplate, owner, cov, 0);
   const redeem = accountAddress(l.accountTemplate, owner, cov, 1);
   const [db, rb] = await Promise.all([get<{ balance: number }>(`/addresses/${deposit}/balance`), get<{ balance: number }>(`/addresses/${redeem}/balance`)]);
-  const f = navFigures(l, m);
+  const f = { price };
   const key = toHex(owner);
   const notes = l.notes.filter((n) => { try { return toHex(ownerOf(n.owner).owner) === key; } catch { return n.owner === address; } });
   const liveShares = notes.filter((n) => !n.redeemed).reduce((s, n) => s + n.shares, 0);

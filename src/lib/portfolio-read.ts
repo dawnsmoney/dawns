@@ -8,6 +8,7 @@ import type { Snapshot } from "./types";
 import { infinityShare } from "./underneath";
 import type { WalletRead, L1Read, Position } from "./portfolio";
 import { getNav, navFigures, SOMPI } from "./vaults/nav";
+import { getCredit, creditFigures } from "./vaults/credit";
 import { decodeKaspaAddress } from "./auth/kaspa";
 import { currentUser, accountOf } from "./auth/session";
 import { hasDb } from "./db";
@@ -136,6 +137,29 @@ const keyOf = (a: string) => { try { const d = decodeKaspaAddress(a.toLowerCase(
 export async function vaultPositions(addresses: string[]): Promise<Position[]> {
   const keys = new Set(addresses.map(keyOf).filter(Boolean));
   if (!keys.size) return [];
+  const [nav, credit] = await Promise.all([navPosition(keys), creditPosition(keys)]);
+  return [...nav, ...credit];
+}
+
+async function creditPosition(keys: Set<string | null>): Promise<Position[]> {
+  const { l, m } = await getCredit();
+  if (!l || !m) return [];
+  const f = creditFigures(l, m, null);
+  const mine = l.notes.filter((n) => !n.redeemed && keys.has(keyOf(n.owner)));
+  const shares = mine.reduce((a, n) => a + n.shares, 0);
+  if (!shares) return [];
+  const kas = shares * f.price;
+  const total = f.liquid + f.lent || 1;
+  const under = [{ sym: "KAS", amount: kas * (f.liquid / total), usd: null }, ...f.loans.map((x) => ({ sym: `Loan · ${x.label}`, amount: kas * (x.counts / total), usd: null }))].filter((u) => u.amount > 0);
+  return [{
+    key: `vault:credit-tn10`, kind: "vault", name: m.name, sub: `${shares.toLocaleString("en-US")} shares in ${mine.length} note${mine.length > 1 ? "s" : ""} · testnet-10`, chain: "Kaspa TN10",
+    usd: null, valueText: `${kas.toLocaleString("en-US", { maximumFractionDigits: 2 })} test KAS`, under,
+    exitNow: null, exitNote: `redeem at NAV (${f.price.toFixed(6)} KAS a share); loaned KAS returns as borrowers repay`, href: "/vaults/credit-tn10",
+    actions: [{ label: "Deposit", href: "/vaults/credit-tn10?do=deposit#position" }, { label: "Withdraw", href: "/vaults/credit-tn10?do=withdraw#position" }],
+  }];
+}
+
+async function navPosition(keys: Set<string | null>): Promise<Position[]> {
   const { l, m } = await getNav();
   if (!l || !m) return [];
   const f = navFigures(l, m);

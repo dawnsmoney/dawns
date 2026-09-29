@@ -63,7 +63,7 @@ export function NavPanel(p: NavPanelProps) {
     if (!addr || !accounts || "error" in accounts) return;
     let stop = false;
     const load = async () => {
-      const r = await fetch(`/api/vaults/position?address=${encodeURIComponent(addr)}`).then((x) => x.json()).catch(() => null);
+      const r = await fetch(`/api/vaults/position?address=${encodeURIComponent(addr)}&vault=${p.vault}`).then((x) => x.json()).catch(() => null);
       if (!stop && r && !r.error) setPos(r as Pos);
     };
     fetch("/api/vaults/accounts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ vault: p.vault, address: addr }) }).catch(() => {});
