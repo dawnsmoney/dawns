@@ -7,7 +7,8 @@ import { PositionTable, exposureParts, kindParts } from "@/components/portfolio"
 import { getSnapshot } from "@/lib/snapshot";
 import { getIntelRaw } from "@/lib/intel-db";
 import { buildIntel } from "@/lib/intel";
-import { readWallet, readL1, myWallet, vaultPositions } from "@/lib/portfolio-read";
+import { readWalletCached, readL1Cached, myWallet, vaultPositions } from "@/lib/portfolio-read";
+import { Suspense } from "react";
 import { getAssets } from "@/lib/assets";
 import { valueCredible } from "@/lib/assets/types";
 import { buildPortfolio, parseAddresses } from "@/lib/portfolio";
@@ -46,8 +47,35 @@ export default async function PortfolioPage({ searchParams }: P) {
     );
   }
 
+  return (
+    <>
+      <Banner short crumb={[{ href: "/portfolio", label: "Portfolio" }, { label: n > 1 ? `${n} addresses` : `${(q.evm[0] ?? q.l1[0]).slice(0, 10)}…${(q.evm[0] ?? q.l1[0]).slice(-4)}` }]} title="Portfolio" lede={lede} />
+      <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
+        <div className="card"><PortfolioConnect value={a} mine={mine} viewing={[...q.evm, ...q.l1]} />{bad && <p style={{ color: "var(--warn)", margin: "12px 0 0" }}>Skipped: {q.bad.join(", ")}</p>}</div>
+        <Suspense key={[...q.evm, ...q.l1].join(",")} fallback={<PfSkeleton n={n} />}>
+          <PfBody evm={q.evm} l1={q.l1} />
+        </Suspense>
+      </div>
+    </>
+  );
+}
+
+/** Reading wallets takes a few seconds: the page and the wallet bar show at once, positions stream in. */
+function PfSkeleton({ n }: { n: number }) {
+  return (
+    <div className="pf-skel" aria-busy="true" aria-label="Reading balances">
+      <p className="muted" style={{ margin: 0 }}><span className="pf-spin" />Reading {n > 1 ? `${n} wallets` : "the wallet"} on Igra, Kasplex and Kaspa L1…</p>
+      <div className="grid g4">{[0, 1, 2, 3].map((i) => <div key={i} className="card istat sk" />)}</div>
+      <div className="card sk tall" />
+    </div>
+  );
+}
+
+async function PfBody({ evm, l1 }: { evm: string[]; l1: string[] }) {
+  const q = { evm, l1 };
+  const n = evm.length + l1.length;
   const [s, assets] = await Promise.all([getSnapshot(), getAssets()]);
-  const [evmReads, l1Reads, raw, vault] = await Promise.all([Promise.all(q.evm.map((x) => readWallet(s, x))), Promise.all(q.l1.map((x) => readL1(x))), getIntelRaw(), vaultPositions(q.l1)]);
+  const [evmReads, l1Reads, raw, vault] = await Promise.all([Promise.all(q.evm.map((x) => readWalletCached(x))), Promise.all(q.l1.map((x) => readL1Cached(x))), getIntelRaw(), vaultPositions(q.l1)]);
   const px = new Map(assets.map((x) => [x.id, valueCredible(x) ? x.price : null]));
   const pf = buildPortfolio(s, evmReads, l1Reads, (id) => px.get(id) ?? null, vault);
   const intel = buildIntel(raw, s);
@@ -55,9 +83,6 @@ export default async function PortfolioPage({ searchParams }: P) {
   const top = pf.exposure[0];
   return (
     <>
-      <Banner short crumb={[{ href: "/portfolio", label: "Portfolio" }, { label: n > 1 ? `${n} addresses` : `${(q.evm[0] ?? q.l1[0]).slice(0, 10)}…${(q.evm[0] ?? q.l1[0]).slice(-4)}` }]} title="Portfolio" lede={lede} />
-      <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
-        <div className="card"><PortfolioConnect value={a} mine={mine} viewing={[...q.evm, ...q.l1]} />{bad && <p style={{ color: "var(--warn)", margin: "12px 0 0" }}>Skipped: {q.bad.join(", ")}</p>}</div>
         {!pf.positions.length ? (
           <div className="card"><p className="muted" style={{ margin: 0 }}>Nothing found for {n > 1 ? "these addresses" : "this address"}: no tokens on Igra (every ERC-20 the explorer lists), no lending, LP, farm or Infinity Pool positions on Igra or Kasplex{q.l1.length ? ", and no KAS or KRC-20 on Kaspa L1" : ""}.{pf.dust ? ` ${pf.dust} balances under $0.50 are not listed.` : ""}{pf.failed ? " Some reads did not answer; reload to try again." : ""} Is the wallet on another network, or is this its Kaspa L1 address? Add both above.</p></div>
         ) : (
@@ -78,7 +103,6 @@ export default async function PortfolioPage({ searchParams }: P) {
             </p>
           </>
         )}
-      </div>
     </>
   );
 }

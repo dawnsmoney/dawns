@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import { getSnapshot } from "@/lib/snapshot";
 import { getIntelRaw } from "@/lib/intel-db";
 import { buildIntel } from "@/lib/intel";
-import { readWallet, readL1, myWallet, vaultPositions } from "@/lib/portfolio-read";
+import { readWalletCached, readL1Cached, myWallet, vaultPositions } from "@/lib/portfolio-read";
 import { getAssets } from "@/lib/assets";
 import { valueCredible } from "@/lib/assets/types";
 import { buildPortfolio, parseAddresses, POS_COLOR, POS_LABEL } from "@/lib/portfolio";
 import { MCard, MHead, MNote, MStats } from "@/components/m/kit";
 import { MTabs } from "@/components/m/tabs";
-import { exposureParts, kindParts } from "@/components/portfolio";
+import { PosActions, exposureParts, kindParts } from "@/components/portfolio";
 import { Tags } from "@/components/intel";
 import { SplitBar } from "@/components/viz";
 import { PortfolioConnect } from "@/components/portfolio-connect";
@@ -41,7 +41,7 @@ export default async function MPortfolio({ searchParams }: P) {
     );
   }
   const [s, assets] = await Promise.all([getSnapshot(), getAssets()]);
-  const [evmReads, l1Reads, raw, vault] = await Promise.all([Promise.all(q.evm.map((x) => readWallet(s, x))), Promise.all(q.l1.map((x) => readL1(x))), getIntelRaw(), vaultPositions(q.l1)]);
+  const [evmReads, l1Reads, raw, vault] = await Promise.all([Promise.all(q.evm.map((x) => readWalletCached(x))), Promise.all(q.l1.map((x) => readL1Cached(x))), getIntelRaw(), vaultPositions(q.l1)]);
   const px = new Map(assets.map((x) => [x.id, valueCredible(x) ? x.price : null]));
   const pf = buildPortfolio(s, evmReads, l1Reads, (id) => px.get(id) ?? null, vault);
   const intel = buildIntel(raw, s).byOpp;
@@ -72,6 +72,7 @@ export default async function MPortfolio({ searchParams }: P) {
                       <div><dt>Leave today</dt><dd>{x.exitNow != null ? `${usd(x.exitNow)} · ${x.exitNote}` : x.exitNote}</dd></div>
                     </dl>
                     {x.opp && intel[x.opp] && <Tags tags={intel[x.opp].tags} max={2} />}
+                    {x.actions && <PosActions a={x.actions} />}
                   </MCard>
                 ))}
               </div>

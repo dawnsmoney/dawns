@@ -42,7 +42,7 @@ export function PositionTable({ rows, tags }: { rows: Position[]; tags: Record<s
       <tbody>
         {rows.map((x) => (
           <tr key={x.key}>
-            <td><span className="vt-name"><i style={{ background: POS_COLOR[x.kind] }} /><span>{x.href ? <Link href={x.href}><b>{x.name}</b></Link> : <b>{x.name}</b>}<small>{POS_LABEL[x.kind]} · {x.sub} · {x.chain}</small></span></span></td>
+            <td><span className="vt-name"><i style={{ background: POS_COLOR[x.kind] }} /><span>{x.href ? <Link href={x.href}><b>{x.name}</b></Link> : <b>{x.name}</b>}<small>{POS_LABEL[x.kind]} · {x.sub} · {x.chain}</small>{x.actions && <PosActions a={x.actions} />}</span></span></td>
             <td className={x.usd != null && x.usd < 0 ? "neg" : ""}><b>{x.usd != null ? `${x.usd < 0 ? "−" : ""}${usd(Math.abs(x.usd))}` : x.valueText ?? "no price"}</b></td>
             <td className="soft">{x.under.map((u) => `${amt(u.amount)} ${u.sym}`).join(" + ")}</td>
             <td className="soft">{x.exitNow != null ? usd(x.exitNow) : x.kind === "vault" ? "at NAV" : "—"}<small className="muted" style={{ display: "block" }}>{x.exitNote}</small></td>
@@ -51,5 +51,16 @@ export function PositionTable({ rows, tags }: { rows: Position[]; tags: Record<s
         ))}
       </tbody>
     </table></div></div>
+  );
+}
+
+/** Add to or take out of a position: in the protocol's own app, or on dawns' vault page. */
+export function PosActions({ a }: { a: NonNullable<Position["actions"]> }) {
+  return (
+    <span className="pf-acts">
+      {a.map((x) => x.ext
+        ? <a key={x.label} href={x.href} target="_blank" rel="noopener noreferrer">{x.label} ↗</a>
+        : <Link key={x.label} href={x.href}>{x.label}</Link>)}
+    </span>
   );
 }

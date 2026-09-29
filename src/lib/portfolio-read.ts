@@ -1,6 +1,8 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
+import { getSnapshot } from "./snapshot";
 import { parseAbi, type Address } from "viem";
-import { clients, pool as runPool, type ChainKey } from "./chain/clients";
+import { clients, type ChainKey } from "./chain/clients";
 import { ZEALOUS_FARM } from "./chain/farms";
 import type { Snapshot } from "./types";
 import { infinityShare } from "./underneath";
@@ -45,25 +47,34 @@ export async function readWallet(s: Snapshot, address: string): Promise<WalletRe
   const dec = new Map<string, number>();
   const heldP = (async () => {
     try {
-      const r = await fetch(`https://explorer.igralabs.com/api/v2/addresses/${who}/token-balances`, { cache: "no-store", signal: AbortSignal.timeout(10_000), headers: { accept: "application/json" } });
+      const r = await fetch(`https://explorer.igralabs.com/api/v2/addresses/${who}/token-balances`, { next: { revalidate: 60 }, signal: AbortSignal.timeout(10_000), headers: { accept: "application/json" } });
       if (!r.ok) return null;
       const j = (await r.json()) as { value: string; token: { address_hash?: string; address?: string; symbol?: string; decimals?: string; type?: string } }[];
       return j.filter((t) => t.token?.type === "ERC-20").map((t) => ({ address: String(t.token.address_hash ?? t.token.address ?? "").toLowerCase(), symbol: t.token.symbol ?? "?", amount: Number(t.value) / 10 ** (Number(t.token.decimals) || 18) }));
     } catch { return null; }
   })();
-  const [results, nIgra, nKas, farm, held] = await Promise.all([
-    runPool(jobs, 12, async (j) => {
-      const v = await clients[j.chain].readContract({ address: j.address, abi: erc20, functionName: j.fn, args: j.fn === "balanceOf" ? [who] : [] } as never) as bigint | number;
-      return { j, v };
-    }),
-    clients.igra.getBalance({ address: who }).catch(() => { failed++; return null; }),
-    clients.kasplex.getBalance({ address: who }).catch(() => { failed++; return null; }),
-    runPool(farmPools, 4, async (q) => {
-      const r = await clients[ZEALOUS_FARM.chain].readContract({ address: ZEALOUS_FARM.address, abi: farmAbi, functionName: "userInfo", args: [BigInt(q.pid!), who] });
-      return { pair: q.pair, amount: r[0] };
-    }),
+  // Igra: every read in one Multicall3 call. Kasplex has no Multicall3: parallel reads,
+  // each capped at 5 s, so one slow node cannot hold the page.
+  const cap = <T,>(p: Promise<T>, ms = 5000) => Promise.race([p, new Promise<never>((_, no) => setTimeout(() => no(new Error("timeout")), ms))]);
+  const ig = jobs.filter((j) => j.chain === "igra");
+  const kx = jobs.filter((j) => j.chain !== "igra");
+  const igraCalls = [
+    ...ig.map((j) => ({ address: j.address, abi: erc20, functionName: j.fn, args: j.fn === "balanceOf" ? [who] : [] })),
+    ...farmPools.map((q) => ({ address: ZEALOUS_FARM.address, abi: farmAbi, functionName: "userInfo", args: [BigInt(q.pid!), who] })),
+  ];
+  const [igraOut, kxOut, nIgra, nKas, held] = await Promise.all([
+    cap(clients.igra.multicall({ contracts: igraCalls as never, allowFailure: true, batchSize: 64_000 }), 8000).catch(() => null) as Promise<{ status: string; result?: unknown }[] | null>,
+    Promise.all(kx.map((j) => cap(clients[j.chain].readContract({ address: j.address, abi: erc20, functionName: j.fn, args: j.fn === "balanceOf" ? [who] : [] } as never) as Promise<bigint | number>).then((v) => ({ j, v })).catch(() => null))),
+    cap(clients.igra.getBalance({ address: who })).catch(() => { failed++; return null; }),
+    cap(clients.kasplex.getBalance({ address: who })).catch(() => { failed++; return null; }),
     heldP,
   ]);
+  if (!igraOut) failed++;
+  const results = [
+    ...ig.map((j, i) => { const o = igraOut?.[i]; return o && o.status === "success" ? { j, v: o.result as bigint | number } : null; }),
+    ...kxOut,
+  ];
+  const farm = farmPools.map((q, i) => { const o = igraOut?.[ig.length + i]; return o && o.status === "success" ? { pair: q.pair, amount: (o.result as readonly bigint[])[0] } : null; });
   for (const r of results) {
     if (!r) { failed++; continue; }
     if (r.j.into === "dec") dec.set(r.j.key, Number(r.v));
@@ -97,7 +108,7 @@ export async function myWallet(): Promise<string | null> {
 export async function readL1(address: string): Promise<L1Read> {
   const a = address.toLowerCase();
   if (a.startsWith("kaspatest:")) return { address: a, kas: 0, krc20: [], at: Date.now() };   // testnet: only vault shares count
-  const get = async <T,>(url: string) => { try { const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10_000), headers: { accept: "application/json" } }); return r.ok ? ((await r.json()) as T) : null; } catch { return null; } };
+  const get = async <T,>(url: string) => { try { const r = await fetch(url, { next: { revalidate: 60 }, signal: AbortSignal.timeout(10_000), headers: { accept: "application/json" } }); return r.ok ? ((await r.json()) as T) : null; } catch { return null; } };
   const bal = get<{ balance?: number | string }>(`https://api.kaspa.org/addresses/${a}/balance`);
   const krc = (async () => {
     const out: { tick: string; amount: number }[] = [];
@@ -139,5 +150,10 @@ export async function vaultPositions(addresses: string[]): Promise<Position[]> {
     key: `vault:nav-tn10`, kind: "vault", name: `${m.name}`, sub: `${shares.toLocaleString("en-US")} shares in ${mine.length} note${mine.length > 1 ? "s" : ""} · testnet-10`, chain: "Kaspa TN10",
     usd: null, valueText: `${kas.toLocaleString("en-US", { maximumFractionDigits: 2 })} test KAS`, under,
     exitNow: null, exitNote: `redeem at NAV (${f.price.toFixed(6)} KAS a share)${paid ? ` · paid ${paid.toLocaleString("en-US", { maximumFractionDigits: 2 })} KAS` : ""}`, href: "/vaults/nav-tn10",
+    actions: [{ label: "Deposit", href: "/vaults/nav-tn10?do=deposit#position" }, { label: "Withdraw", href: "/vaults/nav-tn10?do=withdraw#position" }],
   }];
 }
+
+/** The same reads, cached a minute per address: reloading or switching tabs is instant. */
+export const readWalletCached = unstable_cache(async (address: string) => readWallet(await getSnapshot(), address), ["pf-wallet-v1"], { revalidate: 60 });
+export const readL1Cached = unstable_cache(async (address: string) => readL1(address), ["pf-l1-v1"], { revalidate: 60 });

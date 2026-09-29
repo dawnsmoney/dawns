@@ -32,6 +32,8 @@ export interface Position {
   exitNow: number | null; exitNote: string;
   href: string | null; opp?: string;
   valueText?: string;                    // when there is no dollar value (testnet)
+  /** where to add or take out: the protocol's own app, or dawns' vault page. dawns never moves funds itself. */
+  actions?: { label: string; href: string; ext?: boolean }[];
 }
 export interface Portfolio {
   addresses: string[]; at: number;
@@ -51,6 +53,8 @@ const canon = (sym: string) => (/^(w?i?kas|wikas|ikas|wkas)$/i.test(sym) ? "KAS"
 
 /** A Kaspa L1 address: KAS and KRC-20 balances (null: the indexer did not answer). */
 export interface L1Read { address: string; kas: number | null; krc20: { tick: string; amount: number }[] | null; at: number }
+
+const manage = (p: { site: string | null; name: string }, add: string, take: string) => (p.site ? [{ label: add, href: p.site, ext: true }, { label: take, href: p.site, ext: true }] : undefined);
 
 function positionsOf(s: Snapshot, r: WalletRead, priceOf: (assetId: string) => number | null): { out: Position[]; hf: number | null } {
   const px = new Map<string, number | null>();
@@ -85,12 +89,12 @@ function positionsOf(s: Snapshot, r: WalletRead, priceOf: (assetId: string) => n
       if (sup) {
         const v = sup * m.price, out1 = Math.min(v, m.cashUsd);
         out.push({ key: `sup:${m.symbol}`, kind: "supply", name: `${m.symbol} supplied`, sub: p.name, chain: "Igra", usd: v, under: [{ sym: canon(m.symbol), amount: sup, usd: v }],
-          exitNow: out1, exitNote: out1 < v ? `market cash covers ${Math.round((out1 / v) * 100)}%` : "withdrawable now", href: `/assets/igra/erc20/${m.aToken.toLowerCase()}`, opp: `${p.id}:${m.symbol}` });
+          exitNow: out1, exitNote: out1 < v ? `market cash covers ${Math.round((out1 / v) * 100)}%` : "withdrawable now", href: `/assets/igra/erc20/${m.aToken.toLowerCase()}`, opp: `${p.id}:${m.symbol}`, actions: manage(p, "Supply more", "Withdraw") });
       }
       if (debt) {
         const v = debt * m.price;
         out.push({ key: `debt:${m.symbol}`, kind: "borrow", name: `${m.symbol} borrowed`, sub: p.name, chain: "Igra", usd: -v, under: [{ sym: canon(m.symbol), amount: -debt, usd: -v }],
-          exitNow: null, exitNote: `repay to free collateral · ${(m.borrowApr * 100).toFixed(1)}% a year`, href: `/protocols/${p.id}` });
+          exitNow: null, exitNote: `repay to free collateral · ${(m.borrowApr * 100).toFixed(1)}% a year`, href: `/protocols/${p.id}`, actions: manage(p, "Repay", "Borrow") });
       }
     }
     const me = p.lending?.positions?.top.find((x) => x.address.toLowerCase() === r.address);
@@ -107,7 +111,7 @@ function positionsOf(s: Snapshot, r: WalletRead, priceOf: (assetId: string) => n
         const under = pool.symbols.map((sy, i) => { const a = pool.reserves[i] * sh; return { sym: canon(sy), amount: a, usd: pool.tk[i].px != null ? a * pool.tk[i].px! : null }; });
         const v = pool.usd * sh;
         out.push({ key: `${kind}:${k}`, kind, name: `${pool.symbols.join(" / ")} ${kind === "farm" ? "staked LP" : "LP"}`, sub: `${p.name} · ${(sh * 100).toFixed(sh < 0.01 ? 3 : 2)}% of the pool`, chain: CH[pool.chain], usd: v, under,
-          exitNow: v, exitNote: kind === "farm" ? "unstake, then remove liquidity at the pool's mix" : "remove at the pool's current mix", href: `/assets/${pool.chain}/erc20/${pool.pair.toLowerCase()}`, opp: `${p.id}:${pool.pair.toLowerCase()}` });
+          exitNow: v, exitNote: kind === "farm" ? "unstake, then remove liquidity at the pool's mix" : "remove at the pool's current mix", href: `/assets/${pool.chain}/erc20/${pool.pair.toLowerCase()}`, opp: `${p.id}:${pool.pair.toLowerCase()}`, actions: manage(p, kind === "farm" ? "Stake more" : "Add liquidity", kind === "farm" ? "Unstake" : "Remove") });
       };
       lpFor(bal(k), "lp");
       lpFor(r.farm[pool.pair.toLowerCase()] ?? 0, "farm");
@@ -121,7 +125,7 @@ function positionsOf(s: Snapshot, r: WalletRead, priceOf: (assetId: string) => n
       const tk = `${v.chain}:${v.token.toLowerCase()}`;
       const u = val(tk, amt) ?? (v.usd != null && v.amount ? (v.usd / v.amount) * amt : null);
       out.push({ key: `stk:${k}`, kind: "staking", name: `x${v.symbol}`, sub: `${p.name} Infinity Pool · 1 x${v.symbol} = ${v.rate.toFixed(4)} ${v.symbol}`, chain: CH[v.chain], usd: u,
-        under: [{ sym: canon(v.symbol), amount: amt, usd: u }], exitNow: u, exitNote: `redeem for ${v.symbol} at the vault's rate`, href: `/assets/${v.chain}/erc20/${infinityShare(s, v)}` });
+        under: [{ sym: canon(v.symbol), amount: amt, usd: u }], exitNow: u, exitNote: `redeem for ${v.symbol} at the vault's rate`, href: `/assets/${v.chain}/erc20/${infinityShare(s, v)}`, actions: manage(p, "Stake more", "Redeem") });
     }
   }
 

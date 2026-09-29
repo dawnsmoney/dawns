@@ -44,7 +44,7 @@ export function NavPanel(p: NavPanelProps) {
   const [sent, setSent] = useState<string | null>(null);
   const [hasKw, setHasKw] = useState(false);
 
-  useEffect(() => { const t = setTimeout(() => { setHasKw(!!kw()); try { const v = localStorage.getItem(LS); if (v) setManual(v); } catch { /* private mode */ } }, 300); return () => clearTimeout(t); }, []);
+  useEffect(() => { const t = setTimeout(() => { setHasKw(!!kw()); if (new URLSearchParams(window.location.search).get("do") === "withdraw") setTab("out"); try { const v = localStorage.getItem(LS); if (v) setManual(v); } catch { /* private mode */ } }, 300); return () => clearTimeout(t); }, []);
   const fromAccount = account?.wallets.find((w) => w.address.startsWith("kaspatest:"))?.address ?? account?.wallets.find((w) => w.kind === "kaspa")?.address ?? null;
   const addr = toTestnet(manual ?? fromAccount);
 
@@ -96,7 +96,7 @@ export function NavPanel(p: NavPanelProps) {
 
   if (!addr || editing) {
     return (
-      <div className="navp navp-empty">
+      <div className="navp navp-empty" id="position">
         {!editing && <><b>See your position and deposit</b><small className="muted">Connect a Kaspa wallet (KasWare, Kastle). Testnet and mainnet addresses of the same key are the same owner.</small>
           <button type="button" className="btn iris" onClick={() => openConnect().catch(() => null)}>Connect wallet</button></>}
         <form className="navp-paste" onSubmit={(e) => { e.preventDefault(); choose(input); }}>
@@ -110,7 +110,7 @@ export function NavPanel(p: NavPanelProps) {
   }
 
   return (
-    <div className="navp">
+    <div className="navp" id="position">
       <div className="navp-id">
         <span className="acct-av" style={{ background: `conic-gradient(from ${parseInt(addr.slice(-4), 36) % 360}deg,#FFD27A,#F0679A,#8C7CF0,#FFD27A)` }} />
         <span className="mono">{addr.slice(0, 16)}…{addr.slice(-6)}</span>

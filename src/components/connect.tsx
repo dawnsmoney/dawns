@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { loadAccount, shortAddr, signInWith, signOut, useWalletOptions, type Account, type SignStep, type WalletOption } from "./wallet";
 
 /**
@@ -162,30 +163,40 @@ export function ConnectModal() {
 export function AccountButton({ compact }: { compact?: boolean }) {
   const { account } = useAccount();
   const [open, setOpen] = useState(false);
+  const [at, setAt] = useState<{ top: number; right: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
-    const d = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const d = (e: PointerEvent) => { const t = e.target as Node; if (!ref.current?.contains(t) && !menu.current?.contains(t)) setOpen(false); };
+    const c = () => setOpen(false);
     document.addEventListener("pointerdown", d);
-    return () => document.removeEventListener("pointerdown", d);
+    window.addEventListener("resize", c);
+    window.addEventListener("scroll", c, { passive: true });
+    return () => { document.removeEventListener("pointerdown", d); window.removeEventListener("resize", c); window.removeEventListener("scroll", c); };
   }, [open]);
   if (!account) return <button type="button" className={`acct-btn connect ${compact ? "sm" : ""}`} onClick={() => openConnect().catch(() => null)}>Connect</button>;
   const first = account.wallets[0]?.address ?? "";
   return (
     <div className="acct" ref={ref}>
-      <button type="button" className={`acct-btn ${compact ? "sm" : ""}`} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+      <button type="button" className={`acct-btn ${compact ? "sm" : ""}`} aria-expanded={open} aria-haspopup="menu" onClick={(e) => {
+        // the header nav scrolls sideways on small screens, which would clip an absolute menu: place it on the viewport
+        const r = e.currentTarget.getBoundingClientRect();
+        setAt({ top: r.bottom + 8, right: Math.max(8, window.innerWidth - r.right) }); setOpen((v) => !v);
+      }}>
         <span className="acct-av" style={{ background: `conic-gradient(from ${parseInt(first.slice(-4), 16) % 360}deg,#FFD27A,#F0679A,#8C7CF0,#FFD27A)` }} />
         {!compact && <span className="mono">{shortAddr(first)}</span>}
         {account.wallets.length > 1 && <em>+{account.wallets.length - 1}</em>}
       </button>
-      {open && (
-        <div className="acct-menu" role="menu">
+      {open && at && createPortal(
+        <div className="acct-menu" role="menu" ref={menu} style={at ? { position: "fixed", top: at.top, right: at.right } : undefined}>
           <div className="acct-ws">{account.wallets.map((w) => <span key={w.address}><i className={w.kind} />{w.kind === "kaspa" ? "Kaspa" : "EVM"} <span className="mono">{shortAddr(w.address)}</span></span>)}</div>
           <Link href="/portfolio" onClick={() => setOpen(false)}>Portfolio</Link>
           <Link href="/allocate" onClick={() => setOpen(false)}>Profile &amp; alerts</Link>
           <button type="button" onClick={() => { setOpen(false); openConnect().catch(() => null); }}>Add another wallet</button>
           <button type="button" className="out" onClick={async () => { setOpen(false); await signOut(); window.dispatchEvent(new Event("dawns:auth")); }}>Sign out</button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
