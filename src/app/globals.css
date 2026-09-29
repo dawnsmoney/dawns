@@ -1186,3 +1186,20 @@ table.pf-tbl .vt-name a{text-decoration:none}
 table.pf-tbl .vt-name a:hover b{text-decoration:underline}
 
 .split-legend span{min-width:0;overflow-wrap:anywhere}
+
+/* ---------- Kaspium sign-in ---------- */
+.modal.kx{z-index:61}
+.kx-in{font:14px var(--mono);color:var(--ink);background:rgba(255,255,255,.05);border:1px solid var(--line-2);border-radius:12px;padding:12px 14px;width:100%}
+.kx-err{color:var(--crit);margin:0}
+.kx-steps{margin:0;padding-left:20px;display:grid;gap:10px}
+.kx-steps li{padding-left:4px}
+.kx-copy{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin-top:6px;padding:10px 12px;border-radius:12px;border:1px solid var(--line-2);background:rgba(255,255,255,.05);text-align:left;overflow-wrap:anywhere}
+.kx-copy em{font:600 12px var(--body);font-style:normal;color:var(--ink-3);flex:none}
+.kx-amt{font:600 22px var(--display);font-variant-numeric:tabular-nums}
+.kx-row{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.kx-qr{border-radius:14px;background:#fff}
+.kx-side{display:grid;gap:10px;flex:1 1 200px;min-width:0}
+.kx-wait{display:flex;gap:10px;align-items:center;margin:0;color:var(--ink-2);font-size:14px}
+.kx-wait .dot{width:8px;height:8px;border-radius:50%;background:#FFD36A;flex:none;animation:kxp 1.4s ease-in-out infinite}
+@keyframes kxp{50%{opacity:.25}}
+.kx-scrim{z-index:60}

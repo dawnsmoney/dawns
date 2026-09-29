@@ -61,7 +61,12 @@ export async function verifyAndSignIn(kind: WalletKind, address: string, message
   const n = rows[0];
   if (!n || n.address !== addr || n.message !== message) throw new Error("This sign-in request expired. Please try again.");
   if (!(await checkSignature(kind, addr, message, signature))) throw new Error("The signature does not match this address.");
+  return startSession(kind, addr);
+}
 
+/** Sign in as a wallet whose control was just proven (or link it to the current user) and set the session cookie. */
+export async function startSession(kind: WalletKind, addr: string) {
+  const q = sql();
   const current = await currentUser();
   const existing = ((await q.query("select user_id from wallets where address = $1", [addr])) as { user_id: string }[])[0];
   let userId = existing?.user_id ?? current?.id ?? null;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { openKaspium } from "./kaspium";
 
 /* ---------- wallet shapes (only what dawns uses) ---------- */
 type Kasware = { requestAccounts(): Promise<string[]>; signMessage(msg: string, opts?: { type?: "auto" | "schnorr" | "ecdsa" }): Promise<string> };
@@ -35,6 +36,8 @@ export function useWalletOptions(): WalletOption[] {
   // a phone's own browser has no wallet: offer to open this page inside the wallet app instead
   if (kaspa.mobile && !evm.length && !kaspa.eth && !kaspa.kasware && !kaspa.kastle)
     return [...wc,
+      // Kaspium: a Kaspa phone wallet with no message signing; signs in by a self-send
+      { key: "kaspium", label: "Kaspium", kind: "kaspa", installed: true },
       // MetaMask SDK: from Safari or Chrome, hands the request to the MetaMask app and comes back
       { key: "metamask-sdk", label: "MetaMask", kind: "evm", installed: true },
       { key: "metamask-app", label: "MetaMask", kind: "evm", installed: false, open: kaspa.link, install: "https://metamask.io/download/" },
@@ -42,6 +45,7 @@ export function useWalletOptions(): WalletOption[] {
   const opts: WalletOption[] = [
     { key: "kasware", label: "KasWare", kind: "kaspa", installed: kaspa.kasware, install: "https://www.kasware.xyz" },
     { key: "kastle", label: "Kastle", kind: "kaspa", installed: kaspa.kastle, install: "https://kastle.cc" },
+    { key: "kaspium", label: "Kaspium (phone)", kind: "kaspa", installed: true },
     ...evm.map((d) => ({ key: `6963:${d.info.uuid}`, label: d.info.name, icon: d.info.icon, kind: "evm" as const, installed: true })),
   ];
   opts.push(...wc);
@@ -92,6 +96,7 @@ async function metamaskSdk(): Promise<Eip1193> {
 
 /** Connect a wallet, sign dawns' one-time message, and start a session. */
 export async function signInWith(key: string): Promise<Account> {
+  if (key === "kaspium") return openKaspium();
   let kind: "kaspa" | "evm", address: string, sign: (m: string) => Promise<string>;
   if (key === "kasware") {
     const w = window.kasware; if (!w) throw new Error("KasWare is not installed in this browser.");

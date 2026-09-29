@@ -8,6 +8,7 @@ import { tgLink } from "@/lib/tglink";
 import { usd } from "@/lib/format";
 import { Bell, Close, External } from "./icons";
 import { Pill, ProtocolCoin } from "./bits";
+import { KaspiumDialog } from "./kaspium";
 
 /* ---------- watch store (localStorage, per viewer) ---------- */
 export type RuleState = { on: boolean; v: number | null };
@@ -130,6 +131,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       {prov && registry.prov[prov] && <ProvDrawer d={registry.prov[prov]} onClose={close} />}
       {watch && registry.protocols[watch] && <WatchModal p={registry.protocols[watch]} onClose={close} toast={toast} />}
       {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
+      <KaspiumDialog />
     </UICtx.Provider>
   );
 }
