@@ -6,6 +6,7 @@ import { NavPanel } from "@/components/nav-panel";
 import { SharePriceChart } from "@/components/share-chart";
 import { BalanceSheet } from "@/components/balance-sheet";
 import { Basis, TokenFamily, type Stamp } from "@/components/research";
+import { CreditProof } from "@/components/credit-proof";
 import { sharePoints } from "@/lib/vaults/share-history";
 import { LoanCard, LOAN_COLORS, LIQUID, CREDIT_STEPS, kas, dur } from "@/components/credit-vault";
 import { creditFigures, readCreditLive, SOMPI, FIRST_PRICE, DAA_PER_SEC, type CreditLedger, type CreditMandateDoc } from "@/lib/vaults/credit";
@@ -50,7 +51,7 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
         {m.strategy && (
           <div className="card st-vcard current">
             <b>Launched from a strategy</b>
-            <small className="muted">This vault runs <Link href={`/strategies/${m.strategy.id}`}>v{m.strategy.version} of its strategy</Link>, committed by hash in the mandate ({m.strategy.hash.slice(0, 12)}…): its terms cannot change under depositors.{!reference ? " The ledger is published by the vault's allocator key; the chain check below says whether the chain agrees with it." : ""}</small>
+            <small className="muted">This vault runs <Link href={`/strategies/${m.strategy.id}`}>v{m.strategy.version} of its strategy</Link>, committed by hash in the mandate ({m.strategy.hash.slice(0, 12)}…): its terms cannot change under depositors. Anyone can launch one; dawns lists it because the checks below pass, not because it knows who runs it.</small>
           </div>
         )}
         <div className="card vault-hero">
@@ -58,12 +59,7 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
             <h2>{m.name}</h2>
             <div className="vault-tags"><Pill t="info">testnet-10</Pill><Pill t="warn">Not audited</Pill>{l.state.halted ? <Pill t="crit">Halted</Pill> : <Pill t="good">Open</Pill>}</div>
           </div>
-          <div className={`proof ${live.matches ? "" : "off"}`}>
-            <span className="dot" />
-            <span>{live.matches ? <><b>The chain agrees.</b> The vault&apos;s coin at <span className="mono">{short(l.address)}</span> holds {kas(live.coin!.amount / SOMPI)}, created by its last recorded move.</>
-              : !live.ok ? <><b>Chain check unavailable.</b> Figures below are the operator&apos;s ledger.</>
-              : <><b>The ledger is behind the chain.</b> The vault has moved since this page&apos;s ledger was published.</>}</span>
-          </div>
+          <CreditProof l={l} m={m} />
           <div className="depth-top depth-4" style={{ margin: 0 }}>
             <div><span className="eyebrow muted">NAV</span><b>{kas(f.nav)}</b><small>{kas(f.liquid)} liquid · {kas(f.lent)} in loans</small>
               <Basis stamp={vs} text={`KAS held by the vault's coin, less its ${kas(f.keep)} seed, plus each loan at the lower of the valuer's mark and the covenant's schedule. The same formula prices every deposit and withdrawal, inside the covenant.`} /></div>

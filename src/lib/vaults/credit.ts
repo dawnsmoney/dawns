@@ -5,6 +5,7 @@ import { blake2b } from "@noble/hashes/blake2b";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 import { readNavLive, SOMPI, FIRST_PRICE, type NavNote, type NavLive } from "./nav";
 import type { AccountTemplate } from "./account";
+import { codeCheck } from "./credit-verify";
 
 /**
  * The credit vault on testnet-10 (vault/credit/dawns_credit.sil). Shares,
@@ -22,6 +23,8 @@ export interface CreditMove { kind: string; txid: string; at: number; daa?: numb
 export interface CreditLedger {
   status?: "planned";
   name?: string; manager?: string; standard?: string; network?: string;
+  /** the covenant version the vault runs ("dawns-credit/0", "/0.1", "/0.2"); absent on the first TN10 vault (v0) */
+  covenant?: string;
   covenantId: string; shareCovid: string | null; mandateHash: string; genesisTx: string; tokenTx: string | null; createdAt: number; seed: number;
   state: CreditState; address: string; value: number; accountTemplate: AccountTemplate; repayAddresses: string[];
   /** the mandate itself, in vaults launched from a strategy (blake2b of it is mandateHash) */
@@ -82,7 +85,8 @@ export async function listCredit(): Promise<{ l: CreditLedger; m: CreditMandateD
   try {
     await ensureSchema();
     const r = (await sql().query("select doc from vault_ledgers where doc->>'standard' = 'dawns-credit/0' and doc->'mandate' is not null order by updated_at desc limit 200", [])) as { doc: CreditLedger }[];
-    for (const { doc } of r) if (doc.covenantId !== creditLedger?.covenantId && launchedOk(doc)) out.push({ l: doc, m: doc.mandate!, reference: false, href: `/vaults/credit/${doc.covenantId}` });
+    // listed whoever launched it: its mandate hashes right and its address is that mandate's code
+    for (const { doc } of r) if (doc.covenantId !== creditLedger?.covenantId && launchedOk(doc) && codeCheck(doc, doc.mandate).ok) out.push({ l: doc, m: doc.mandate!, reference: false, href: `/vaults/credit/${doc.covenantId}` });
   } catch { /* the reference vault still lists */ }
   return out;
 }

@@ -1,4 +1,5 @@
 import { creditFigures, readCreditLive, SOMPI, FIRST_PRICE, type CreditLedger, type CreditMandateDoc } from "@/lib/vaults/credit";
+import { CreditProof } from "@/components/credit-proof";
 import { MCard, MFlags, MHead, MHero, MKv, MList, MNote, MRow, MStats } from "@/components/m/kit";
 import { MMore, MTabs } from "@/components/m/tabs";
 import { NavPanel } from "@/components/nav-panel";
@@ -34,7 +35,7 @@ export async function CreditVaultMobile({ l, m }: { l: CreditLedger; m: CreditMa
       <MHead back={{ href: "/vaults", label: "Vaults" }} eyebrow="Credit · testnet-10 · not audited" title={m.name}
         right={l.state.halted ? <Pill t="crit">Halted</Pill> : <Pill t="good">Open</Pill>} />
       <div className="m-screen">
-        <MFlags flags={[[live.matches ? "good" : live.ok ? "warn" : "info", live.matches ? `The chain agrees: the vault's coin holds ${kas(live.coin!.amount / SOMPI)}, created by its last recorded move.` : live.ok ? "The ledger is behind the chain: the vault has moved since this ledger was published." : "Chain check unavailable: figures are the operator's ledger."]]} />
+        <CreditProof l={l} m={m} compact />
         <MHero label="NAV" value={kas(f.nav)} sub={`${kas(f.liquid)} liquid · ${kas(f.lent)} in loans`} />
         <MStats items={[
           { label: "Per share", value: f.price.toFixed(6), sub: f.shares ? `${since >= 0 ? "+" : "−"}${pct(Math.abs(since), 2)} since launch` : "launch price" },

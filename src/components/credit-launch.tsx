@@ -114,7 +114,7 @@ export function CreditLaunch({ doc, strategy, test }: {
         ),
       },
       {
-        key: "launch", title: "Launch", hint: "The mandate commits this strategy's hash: the vault is this version, for good. Save the file, then run the commands from your Terminal.",
+        key: "launch", title: "Launch", hint: "The mandate commits this strategy's hash, and the vault's address commits the mandate: the vault is this version, for good. Save the file, then run the commands from your Terminal.",
         body: d.mandate ? (
           <div className="wz-review">
             <div className="cl-actions">
@@ -124,7 +124,7 @@ export function CreditLaunch({ doc, strategy, test }: {
             <pre className="st-pre">{json}</pre>
             <span className="eyebrow muted">Then, in Terminal</span>
             <pre className="st-pre">{cmds}</pre>
-            <p className="foot" style={{ margin: 0 }}>Testnet-10 only, not audited. <code>genesis</code> seeds only what the vault must keep, so the first shares are minted at NAV; <code>keeper</code> sweeps deposits, withdrawals and repayments, writes late loans down on schedule, and publishes the vault&apos;s ledger to dawns. A vault whose allocator is an approved curator key (dawns&apos; for now) then appears under Vaults, on this page and in depositors&apos; Portfolio.</p>
+            <p className="foot" style={{ margin: 0 }}>Testnet-10 only, not audited. <code>genesis</code> seeds only what the vault must keep, so the first shares are minted at NAV; <code>keeper</code> sweeps deposits, withdrawals and repayments, writes late loans down on schedule, and publishes the vault&apos;s ledger to dawns. Anyone can launch: dawns rebuilds the covenant from your mandate, checks the vault&apos;s address is its hash and that a testnet node shows the coin there, and then lists it under Vaults, on this page and in depositors&apos; Portfolio. No approval.</p>
           </div>
         ) : <p className="muted">Fill in every address first.</p>,
       },

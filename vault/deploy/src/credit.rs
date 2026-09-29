@@ -18,6 +18,9 @@
 //!   credit writeoff <slot>       valuer closes a late loan already marked to zero
 //!   credit halt                  guardian stops new loans and deposits for good
 //!   credit publish               send credit.json to the site now (signed by the allocator key)
+//!   credit template [forms] [vectors]
+//!                                the covenant as a fill-in form, proven against the compiler; the site
+//!                                rebuilds each vault's address from its mandate with it
 //!
 //! Share token and personal accounts are the NAV vault's (same templates), so
 //! the site's account and position code reads them unchanged. Accounts come from
@@ -30,17 +33,19 @@ use super::nav::*;
 use super::*;
 
 /// The covenant a vault runs is part of its address, so each version stays:
-/// v0 is what the first TN10 credit vault runs; new vaults get v0.1.
-const CREDIT_V0: &str = include_str!("../../credit/dawns_credit_v0.sil");
-const CREDIT_V01: &str = include_str!("../../credit/dawns_credit.sil");
-const CREDIT_LATEST: &str = "dawns-credit/0.1";
+/// v0 is what the first TN10 credit vault runs; v0.1 adds the seed guards;
+/// new vaults get v0.2, whose address also commits to the mandate hash.
+pub(crate) const CREDIT_V0: &str = include_str!("../../credit/dawns_credit_v0.sil");
+pub(crate) const CREDIT_V01: &str = include_str!("../../credit/dawns_credit_v01.sil");
+pub(crate) const CREDIT_V02: &str = include_str!("../../credit/dawns_credit.sil");
+const CREDIT_LATEST: &str = "dawns-credit/0.2";
 static CREDIT_VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 fn credit_source() -> &'static str {
-    match CREDIT_VERSION.get().map(String::as_str) { Some("dawns-credit/0") => CREDIT_V0, _ => CREDIT_V01 }
+    match CREDIT_VERSION.get().map(String::as_str) { Some("dawns-credit/0") => CREDIT_V0, Some("dawns-credit/0.1") => CREDIT_V01, _ => CREDIT_V02 }
 }
 const REPAY_SOURCE: &str = include_str!("../../credit/dawns_repay.sil");
 const CREDIT_STANDARD: &str = "dawns-credit/0";
-const SLOTS: usize = 3;
+pub(crate) const SLOTS: usize = 3;
 /// Compute budgets (×10,000 script units), measured with the harness
 /// (DAWNS_UNITS=1): deposit 141k and redeem 147k units without a signature;
 /// lend, mark, write-off 98k plus one checksig (100k); repay and markdown 98k
@@ -57,7 +62,7 @@ const ACCOUNTS: &str = "credit-accounts.txt";
 // ---------------------------------------------------------------------------
 struct Borrower { label: String, address: Address, cap_bps: i64, term: i64, interest_bps: i64 }
 
-struct CreditMandate {
+pub(crate) struct CreditMandate {
     doc: Value,
     allocator: Address,
     valuer: Address,
@@ -99,7 +104,9 @@ impl CreditMandate {
 }
 
 fn read_credit_mandate() -> Res<CreditMandate> {
-    let doc: Value = serde_json::from_str(&std::fs::read_to_string(MANDATE).map_err(|_| format!("no {MANDATE} — run `credit init`"))?)?;
+    parse_credit_mandate(serde_json::from_str(&std::fs::read_to_string(MANDATE).map_err(|_| format!("no {MANDATE} — run `credit init`"))?)?)
+}
+pub(crate) fn parse_credit_mandate(doc: Value) -> Res<CreditMandate> {
     if doc["standard"] != CREDIT_STANDARD { return Err(format!("{MANDATE}: standard must be \"{CREDIT_STANDARD}\"").into()); }
     if doc["network"] != NETWORK { return Err(format!("{MANDATE}: network must be \"{NETWORK}\"").into()); }
     let role = |k: &str| -> Res<Address> { parse_addr(doc["roles"][k].as_str().ok_or(format!("roles.{k} missing"))?) };
@@ -156,10 +163,10 @@ fn read_credit_mandate() -> Res<CreditMandate> {
 // state and contracts
 // ---------------------------------------------------------------------------
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Credit { share_covid: [u8; 32], shares: i64, principal: [i64; SLOTS], due: [i64; SLOTS], marks: [i64; SLOTS], epoch_index: i64, epoch_spent: i64, mark_epoch: i64, halted: bool }
+pub(crate) struct Credit { pub(crate) share_covid: [u8; 32], pub(crate) shares: i64, pub(crate) principal: [i64; SLOTS], pub(crate) due: [i64; SLOTS], pub(crate) marks: [i64; SLOTS], pub(crate) epoch_index: i64, pub(crate) epoch_spent: i64, pub(crate) mark_epoch: i64, pub(crate) halted: bool }
 impl Credit {
-    fn fresh() -> Credit { Credit { share_covid: [0; 32], shares: 0, principal: [0; SLOTS], due: [0; SLOTS], marks: [0; SLOTS], epoch_index: 0, epoch_spent: 0, mark_epoch: -1, halted: false } }
-    fn to_json(self) -> Value {
+    pub(crate) fn fresh() -> Credit { Credit { share_covid: [0; 32], shares: 0, principal: [0; SLOTS], due: [0; SLOTS], marks: [0; SLOTS], epoch_index: 0, epoch_spent: 0, mark_epoch: -1, halted: false } }
+    pub(crate) fn to_json(self) -> Value {
         json!({ "shareCovid": hex(&self.share_covid), "shares": self.shares, "principal": self.principal, "due": self.due, "marks": self.marks,
                 "epochIndex": self.epoch_index, "epochSpent": self.epoch_spent, "markEpoch": self.mark_epoch, "halted": self.halted })
     }
@@ -191,17 +198,37 @@ fn repay_account(m: &CreditMandate, cov: &Hash, slot: usize) -> Res<(Address, Co
     Ok((p2sh_addr(&c)?, c))
 }
 
-fn credit_ctor(m: &CreditMandate, s: &Credit) -> Res<Vec<Expr<'static>>> {
+/// Everything the credit covenant is compiled with that comes from the mandate:
+/// the site rebuilds the same bytecode from the mandate and state (see `credit template`).
+#[derive(Clone)]
+pub(crate) struct CreditParams { pub(crate) keys: [[u8; 32]; 3], pub(crate) max_fee: i64, pub(crate) dests: [[u8; 32]; SLOTS], pub(crate) caps: [i64; SLOTS], pub(crate) terms: [i64; SLOTS], pub(crate) interests: [i64; SLOTS], pub(crate) ints: [i64; 15], pub(crate) mandate: [u8; 32] }
+/// Names of the mandate parameters, in constructor order (the template's slot names).
+pub(crate) const PARAM_INTS: [&str; 15] = ["graceDaa", "markdownStepBps", "markdownPeriodDaa", "reserveFloorBps", "maxPerMoveSompi", "epochLimitSompi", "epochLengthDaa", "notBeforeDaa", "maturityDaa", "depositUntilDaa", "minDepositSompi", "maxMarkStepBps", "noteValueSompi", "minKeepSompi", "exitFeeBps"];
+
+pub(crate) fn credit_params(m: &CreditMandate) -> Res<CreditParams> {
+    let b = |i: usize| m.borrowers.get(i);
+    let mut dests = [[0u8; 32]; SLOTS];
+    let (mut caps, mut terms, mut interests) = ([0i64; SLOTS], [0i64; SLOTS], [0i64; SLOTS]);
+    for i in 0..SLOTS {
+        if let Some(x) = b(i) { dests[i] = b2b(&spk_bytes(&pay_to_address_script(&x.address))); caps[i] = x.cap_bps; terms[i] = x.term; interests[i] = x.interest_bps; }
+    }
+    Ok(CreditParams {
+        keys: [xonly_of(&m.allocator)?, xonly_of(&m.valuer)?, xonly_of(&m.guardian)?], max_fee: m.max_fee, dests, caps, terms, interests,
+        ints: [m.grace, m.step_bps, m.period, m.reserve_floor_bps, m.max_per_move, m.epoch_limit, m.epoch_length, m.not_before, m.maturity, m.deposit_until, m.min_deposit, m.max_mark_step_bps, m.note_value, m.min_keep, m.exit_fee_bps],
+        mandate: mandate_hash(&m.doc),
+    })
+}
+
+fn credit_ctor_raw(p: &CreditParams, s: &Credit) -> Res<Vec<Expr<'static>>> {
     let (kp, ks, kh) = kcc_template()?;
     let (_ap, asuf, ah) = account_template()?;
     let (_rp, rsuf, rh) = repay_template()?;
-    let b = |i: usize| m.borrowers.get(i);
-    let mut v = vec![Expr::bytes(xonly_of(&m.allocator)?.to_vec()), Expr::bytes(xonly_of(&m.valuer)?.to_vec()), Expr::bytes(xonly_of(&m.guardian)?.to_vec()), Expr::int(m.max_fee)];
-    for i in 0..SLOTS { v.push(Expr::bytes(b(i).map(|x| b2b(&spk_bytes(&pay_to_address_script(&x.address)))).unwrap_or([0u8; 32]).to_vec())); }
-    for i in 0..SLOTS { v.push(Expr::int(b(i).map(|x| x.cap_bps).unwrap_or(0))); }
-    for i in 0..SLOTS { v.push(Expr::int(b(i).map(|x| x.term).unwrap_or(0))); }
-    for i in 0..SLOTS { v.push(Expr::int(b(i).map(|x| x.interest_bps).unwrap_or(0))); }
-    for x in [m.grace, m.step_bps, m.period, m.reserve_floor_bps, m.max_per_move, m.epoch_limit, m.epoch_length, m.not_before, m.maturity, m.deposit_until, m.min_deposit, m.max_mark_step_bps, m.note_value, m.min_keep, m.exit_fee_bps] { v.push(Expr::int(x)); }
+    let mut v = vec![Expr::bytes(p.keys[0].to_vec()), Expr::bytes(p.keys[1].to_vec()), Expr::bytes(p.keys[2].to_vec()), Expr::int(p.max_fee)];
+    for i in 0..SLOTS { v.push(Expr::bytes(p.dests[i].to_vec())); }
+    for i in 0..SLOTS { v.push(Expr::int(p.caps[i])); }
+    for i in 0..SLOTS { v.push(Expr::int(p.terms[i])); }
+    for i in 0..SLOTS { v.push(Expr::int(p.interests[i])); }
+    for x in p.ints { v.push(Expr::int(x)); }
     v.push(Expr::int(kp.len() as i64));
     v.push(Expr::int(ks.len() as i64));
     v.push(Expr::bytes(kh.to_vec()));
@@ -210,7 +237,7 @@ fn credit_ctor(m: &CreditMandate, s: &Credit) -> Res<Vec<Expr<'static>>> {
     v.push(Expr::dynamic_bytes(asuf));
     v.push(Expr::int(rsuf.len() as i64));
     v.push(Expr::bytes(rh.to_vec()));
-    v.push(Expr::bytes(mandate_hash(&m.doc).to_vec()));
+    v.push(Expr::bytes(p.mandate.to_vec()));
     v.push(Expr::bytes(s.share_covid.to_vec()));
     v.push(Expr::int(s.shares));
     for x in s.principal { v.push(Expr::int(x)); }
@@ -221,6 +248,10 @@ fn credit_ctor(m: &CreditMandate, s: &Credit) -> Res<Vec<Expr<'static>>> {
     v.push(Expr::int(s.mark_epoch));
     v.push(Expr::bool(s.halted));
     Ok(v)
+}
+fn credit_ctor(m: &CreditMandate, s: &Credit) -> Res<Vec<Expr<'static>>> { credit_ctor_raw(&credit_params(m)?, s) }
+pub(crate) fn compile_credit_src(src: &'static str, p: &CreditParams, s: &Credit) -> Res<CompiledContract<'static>> {
+    compile_contract(src, &credit_ctor_raw(p, s)?, CompileOptions::default()).map_err(|e| format!("compile: {e:?}").into())
 }
 fn compile_credit(m: &CreditMandate, s: &Credit) -> Res<CompiledContract<'static>> {
     compile_contract(credit_source(), &credit_ctor(m, s)?, CompileOptions::default()).map_err(|e| format!("compile: {e:?}").into())
@@ -566,6 +597,7 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
     let sub = args.get(2).map(String::as_str).unwrap_or("show");
     let arg = |i: usize| -> Res<&str> { args.get(i).map(String::as_str).ok_or_else(|| "usage: see the header of src/credit.rs".into()) };
     match sub {
+        "template" => return crate::template::run(args).await,
         "init" => {
             for r in ["allocator", "guardian", "valuer", "depositor", "borrower-0", "borrower-1", "borrower-2"] {
                 let made = make_key(r)?;

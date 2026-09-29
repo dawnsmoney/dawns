@@ -1,12 +1,7 @@
 pragma silverscript ^0.1.0;
 
-// Dawns — credit vault covenant, v0.2 (TESTNET-10 ONLY, NOT AUDITED)
+// Dawns — credit vault covenant, v0.1 (TESTNET-10 ONLY, NOT AUDITED)
 //
-// v0.2 over v0.1 (dawns_credit_v01.sil): the mandate hash is in the bytecode, so
-// the vault's address commits to the whole mandate document (name, strategy and
-// its hash, labels), not only to the terms the paths check. The compiler drops a
-// constructor argument no path reads; v0 and v0.1 addresses commit to the terms
-// alone.
 // v0.1 over v0 (dawns_credit_v0.sil, which the first TN10 credit vault runs):
 // no loan and no fee may take the vault below its seed (minKeep), whatever the
 // reserve floor; below it, deposits and NAV pricing would stop.
@@ -655,7 +650,6 @@ contract DawnsCredit(
         require(tx.inputs.length == 1);
         require(tx.outputs.length == 1);
         require(newState.halted);
-        require(mandateHash == mandateHash);              // binds the mandate document to the address
         require(newState.shares == prevState.shares);
         sameAccounting(prevState, newState);
         int inValue = tx.inputs[this.activeInputIndex].value;

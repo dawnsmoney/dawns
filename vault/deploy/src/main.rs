@@ -54,6 +54,7 @@ use std::time::Duration;
 
 mod nav;
 mod credit;
+mod template;
 
 type Res<T> = Result<T, Box<dyn Error>>;
 

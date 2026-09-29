@@ -100,6 +100,58 @@ fn lend_baseline_and_flips() {
     no(lend_run(&closed, prev, unused, 2, 10 * KAS, 1_500, 1_500, held, to_borrower(2), &allocator()), "lend from an unused slot (cap 0)");
 }
 
+/// A lend with the outputs spelled out, to try shapes the helper would never build.
+#[allow(clippy::too_many_arguments)]
+fn lend_outs(m: &CreditMandate, prev: Credit, next: Credit, slot: i64, amount: i64, claimed: i64, held: i64, outputs: impl Fn(&CompiledContract<'_>) -> Vec<TransactionOutput>) -> R {
+    let (cur, succ) = (compile_credit(m, &prev), compile_credit(m, &next));
+    signed(&cur, "lend", |s| vec![credit_state(&next), Expr::int(slot), Expr::int(amount), Expr::int(claimed), Expr::bytes(s)], vec![], held, outputs(&succ), claimed as u64, &allocator())
+}
+
+#[test]
+fn lend_limits_and_shapes() {
+    let m = CreditMandate::default();
+    let (prev, held) = funded();
+    let amt = 40 * KAS;
+    let n = lend_next(&m, prev, 0, amt, 1_500);
+    let good = |succ: &CompiledContract<'_>| vec![cov_out(succ, (held - amt - FEE) as u64, 0, VCOV), out_to(amt as u64, to_borrower(0))];
+    ok(lend_outs(&m, prev, n, 0, amt, 1_500, held, good), "baseline, outputs spelled out");
+    // per move and per epoch
+    let mut small = m.clone(); small.base.max_per_move = 30 * KAS;
+    no(lend_run(&small, prev, n, 0, amt, 1_500, 1_500, held, to_borrower(0), &allocator()), "a loan above the per-move limit");
+    let spent = Credit { epoch_spent: 20 * KAS, ..prev };
+    let mut tight = m.clone(); tight.base.epoch_limit = 50 * KAS;
+    no(lend_run(&tight, spent, lend_next(&tight, spent, 0, amt, 1_500), 0, amt, 1_500, 1_500, held, to_borrower(0), &allocator()), "a loan past the epoch's limit");
+    tight.base.epoch_limit = 60 * KAS;
+    ok(lend_run(&tight, spent, lend_next(&tight, spent, 0, amt, 1_500), 0, amt, 1_500, 1_500, held, to_borrower(0), &allocator()), "a loan that fills the epoch's limit exactly");
+    ok(lend_run(&tight, spent, lend_next(&tight, spent, 0, amt, 2_500), 0, amt, 2_500, 2_500, held, to_borrower(0), &allocator()), "a new epoch starts from zero");
+    // a slot that does not exist would book nothing while paying slot 0's borrower
+    let unbooked = Credit { epoch_index: 0, epoch_spent: amt, ..prev };
+    for bad in [3i64, -1] {
+        no(lend_outs(&m, prev, unbooked, bad, amt, 1_500, held, good), &format!("lend from slot {bad}"));
+    }
+    // the borrower gets exactly the loan, and the vault pays at most the fee
+    no(lend_outs(&m, prev, n, 0, amt, 1_500, held, |succ| vec![cov_out(succ, (held - amt - FEE) as u64, 0, VCOV), out_to((amt + FEE / 2) as u64, to_borrower(0))]), "pays the borrower more than it books");
+    no(lend_outs(&m, prev, n, 0, amt, 1_500, held, |succ| vec![cov_out(succ, (held - amt - MAX_FEE - KAS) as u64, 0, VCOV), out_to(amt as u64, to_borrower(0))]), "the vault keeps less than value less loan less fee");
+}
+
+#[test]
+fn markdown_and_marks_keep_their_bounds() {
+    let m = CreditMandate::default();
+    let (prev, held) = lent();
+    let at = 13_700;
+    let cap = m.limit(0, &prev, at);
+    let n = Credit { marks: [cap, 20 * KAS, 0], ..prev };
+    for bad in [3usize, 7] {
+        no(md_run(&m, prev, n, bad, at, at as u64, held, held - FEE), &format!("markdown slot {bad}"));
+        no(md_run(&m, prev, prev, bad, at, at as u64, held, held - FEE), &format!("markdown slot {bad}, state untouched"));
+    }
+    // one mark per epoch
+    let up = Credit { marks: [41 * KAS, 20 * KAS, 0], mark_epoch: 1, ..prev };
+    ok(mark_run(&m, prev, up, 2_500, 2_500, held, &valuer()), "the epoch's mark");
+    no(mark_run(&m, up, Credit { marks: [40 * KAS, 20 * KAS, 0], ..up }, 2_600, 2_600, held, &valuer()), "a second mark in the same epoch");
+    ok(mark_run(&m, up, Credit { marks: [40 * KAS, 20 * KAS, 0], mark_epoch: 2, ..up }, 3_500, 3_500, held, &valuer()), "the next epoch's mark");
+}
+
 // ---------------------------------------------------------------------------
 // repay: a borrower's payment, swept in with no key
 // ---------------------------------------------------------------------------

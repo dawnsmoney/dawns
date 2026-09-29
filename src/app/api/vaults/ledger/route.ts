@@ -2,7 +2,8 @@ import { schnorr } from "@noble/curves/secp256k1";
 import { blake2b } from "@noble/hashes/blake2b";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 import { navLedger, navMandate } from "@/lib/vaults/nav";
-import { creditLedger, creditMandate, launchedOk } from "@/lib/vaults/credit";
+import { creditLedger, creditMandate, launchedOk, type CreditMandateDoc } from "@/lib/vaults/credit";
+import { codeCheck } from "@/lib/vaults/credit-verify";
 import { decodeKaspaAddress } from "@/lib/auth/kaspa";
 
 export const dynamic = "force-dynamic";
@@ -11,14 +12,15 @@ export const dynamic = "force-dynamic";
  * The keeper publishes the NAV vault's ledger after each move, so the site does
  * not wait for a git push. The body is the ledger JSON exactly as signed;
  * x-dawns-sig is a BIP-340 signature by the vault's allocator key over
- * blake2b-256(body). Accepted only for a known vault and mandate (or a credit
- * vault launched from a strategy, carrying its mandate), never with fewer moves
- * than what is stored.
+ * blake2b-256(body). Accepted only for a known vault and mandate, or a credit
+ * vault launched from a strategy that carries its mandate and whose address is
+ * that mandate's covenant (rebuilt and hashed here), never with fewer moves than
+ * what is stored.
  */
 export async function POST(req: Request) {
   // ?kind=credit: a credit vault's ledger, signed by its own allocator key: the
   // reference vault's (mandate in git), or one launched from a strategy, whose
-  // ledger carries its mandate (hash-checked against the covenant's mandateHash)
+  // ledger carries its mandate (hash-checked, and its covenant rebuilt from it)
   const credit = new URL(req.url).searchParams.get("kind") === "credit";
   const body = await req.text();
   if (body.length > 2_000_000) return Response.json({ error: "Too large" }, { status: 413 });
@@ -38,12 +40,12 @@ export async function POST(req: Request) {
   } else {
     if (!launchedOk(doc as never)) return Response.json({ error: "A launched vault's ledger must carry its testnet mandate, hashing to its mandateHash" }, { status: 400 });
     allocator = doc.mandate?.roles?.allocator ?? null; launched = true;
-    // The site cannot compile a covenant to check that the vault's address is this
-    // mandate's code, so it lists launched vaults only from approved curators: a
-    // ledger could otherwise point depositors at any script. dawns' own keys, plus
-    // CURATOR_ALLOCATORS (comma-separated addresses).
-    const approved = new Set([creditMandate?.roles.allocator, navMandate?.roles.allocator, ...(process.env.CURATOR_ALLOCATORS ?? "").split(",").map((x) => x.trim().toLowerCase())].filter(Boolean));
-    if (!allocator || !approved.has(allocator.toLowerCase())) return Response.json({ error: "Launched vaults are listed from approved curators only (the allocator key is not one)" }, { status: 403 });
+    // Anyone may list a vault: the site rebuilds the covenant from the mandate and
+    // state and hashes it, and the address must be that hash. A ledger cannot point
+    // depositors at any other script. (Whether the coin is live there is checked
+    // on every page view, from a testnet node.)
+    const code = codeCheck(doc as never, (doc as { mandate: CreditMandateDoc }).mandate);
+    if (!code.ok) return Response.json({ error: `The vault's address is not this mandate's covenant: ${code.why}` }, { status: 400 });
   }
   if (!Array.isArray(doc.moves) || !allocator) return Response.json({ error: "Not a ledger" }, { status: 400 });
   let key: Uint8Array;
