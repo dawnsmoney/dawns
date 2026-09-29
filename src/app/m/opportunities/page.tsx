@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { getSnapshot } from "@/lib/snapshot";
 import { infinityHistory } from "@/lib/infinity";
+import { getIntelRaw } from "@/lib/intel-db";
+import { buildIntel } from "@/lib/intel";
 import { MCard, MHead, MLinkButton, MNote, MStats } from "@/components/m/kit";
 import { MTabs } from "@/components/m/tabs";
 import { MOpp } from "@/components/m/opps";
@@ -11,7 +13,8 @@ export const metadata: Metadata = { title: "Opportunities", description: "Native
 export const revalidate = 120;
 
 export default async function MOpportunities() {
-  const [s, rates] = await Promise.all([getSnapshot(), infinityHistory()]);
+  const [s, rates, raw] = await Promise.all([getSnapshot(), infinityHistory(), getIntelRaw()]);
+  const intel = buildIntel(raw, s).byOpp;
   const rows = s.opportunities;
   const lend = rows.filter((o) => o.kind === "supply");
   const lp = rows.filter((o) => o.kind === "lp" && !o.farm);
@@ -21,7 +24,7 @@ export default async function MOpportunities() {
   const blocked = lend.filter((o) => o.status === "crit");
   const farm = s.protocols.flatMap((p) => (p.dex?.farms ?? []).map((f) => ({ p, f })))[0] ?? null;
   const inf = s.protocols.filter((p) => p.dex?.infinity?.length).map((p) => ({ p, rows: p.dex!.infinity!.map((v) => { const h = rates.get(`${v.chain}:${v.vault}`); return { ...v, apy7: h?.apy7 ?? null, apy30: h?.apy30 ?? null, since: h?.points[0]?.day ?? null }; }) }))[0] ?? null;
-  const list = (xs: typeof rows) => <div className="m-opps">{xs.map((o) => <MOpp key={o.id} o={o} />)}</div>;
+  const list = (xs: typeof rows) => <div className="m-opps">{xs.map((o) => <MOpp key={o.id} o={o} t={intel[o.id]} />)}</div>;
   return (
     <>
       <MHead eyebrow="Kaspa DeFi" title="Yield" sub="Native yield only, paid by borrowers or traders, next to what it costs to leave. Tap one for the reading." />

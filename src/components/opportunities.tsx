@@ -6,6 +6,16 @@ import { Fragment, useState } from "react";
 import { AssetCoin, Pill } from "./bits";
 import { usd, pct } from "@/lib/format";
 import type { FarmView, InfinityView, Opportunity, Status } from "@/lib/types";
+import type { Tag } from "@/lib/intel";
+import { Tags } from "./intel";
+
+/** What the table needs from Intelligence, per opportunity id. */
+export type Trend = { apy7: number | null; apy30: number | null; apyDays: number; tags: Tag[] };
+const y = (v: number) => pct(v, v < 0.1 ? 2 : 1);
+function TrendLine({ t }: { t?: Trend }) {
+  if (!t || t.apy7 == null) return null;
+  return <small className="trend" title={`Average of daily native yield: last ${Math.min(7, t.apyDays)} days${t.apyDays > 7 ? `, last ${Math.min(30, t.apyDays)} days` : ""}`}>7D {y(t.apy7)}{t.apyDays > 7 && t.apy30 != null ? ` · ${Math.min(30, t.apyDays)}D ${y(t.apy30)}` : ""}</small>;
+}
 
 type Filter = "All" | "Lending" | "Liquidity" | "Farms";
 const inFilter = (o: Opportunity, f: Filter) => f === "All" || (f === "Lending" ? o.kind === "supply" : f === "Farms" ? !!o.farm : o.kind === "lp" && !o.farm);
@@ -49,7 +59,7 @@ function Risk({ o }: { o: Opportunity }) {
   return <span>{pct(o.priceMove ?? 0, 0)} move<small className="muted" style={{ display: "block" }}>trails holding by {pct(o.ilAtMove, 1)} · {hrs(o.rangeHours)}</small></span>;
 }
 
-export function OpportunityTable({ rows, known: knownIds = [] }: { rows: Opportunity[]; known?: string[] }) {
+export function OpportunityTable({ rows, known: knownIds = [], trend = {} }: { rows: Opportunity[]; known?: string[]; trend?: Record<string, Trend> }) {
   const known = new Set(knownIds);
   const [f, setF] = useState<Filter>("All");
   const [open, setOpen] = useState<string | null>(null);
@@ -63,7 +73,7 @@ export function OpportunityTable({ rows, known: knownIds = [] }: { rows: Opportu
         ))}
       </div>
       <div className="card flush"><div className="tbl-wrap"><table className="opps-tbl">
-        <thead><tr><th>Opportunity</th><th>Native yield</th><th>Size</th><th>Exit now</th><th>Stability · 7 days</th><th>State</th></tr></thead>
+        <thead><tr><th>Opportunity</th><th>Native yield</th><th>Size</th><th>Exit now</th><th>Stability · 7 days</th><th>Dawns view</th><th>State</th></tr></thead>
         <tbody>
           {shown.map((o) => (
             <Fragment key={o.id}>
@@ -74,18 +84,21 @@ export function OpportunityTable({ rows, known: knownIds = [] }: { rows: Opportu
                 <td>
                   <b style={{ font: "600 18px var(--display)" }}>{o.apy != null ? pct(o.apy, o.apy < 0.1 ? 2 : 1) : "—"}</b>
                   <small className="muted" style={{ display: "block", whiteSpace: "nowrap" }} title={o.apyBasis}>{o.apyShort}</small>
+                  <TrendLine t={trend[o.id]} />
                   {o.farm && <small style={{ display: "block", whiteSpace: "nowrap", color: o.farm.on ? "var(--ink-2)" : "var(--warn)" }} title="Paid in the protocol's token: shown, never added to native yield">{o.farm.on ? `+ ${o.farm.apr != null ? pct(o.farm.apr, 1) : "?"} ${o.farm.reward}, not added` : `${o.farm.reward} rewards off`}</small>}
                 </td>
                 <td>{usd(o.size)}{o.vol24 != null && <small className="muted" style={{ display: "block" }}>{usd(o.vol24)} traded 24h</small>}</td>
                 <td><Exit o={o} /></td>
                 <td className="soft"><Risk o={o} /></td>
+                <td className="dv">{trend[o.id] ? <Tags tags={trend[o.id].tags} /> : <span className="muted">—</span>}</td>
                 <td><Pill t={o.status}>{o.statusText}</Pill><small className="muted" style={{ display: "block", marginTop: 6 }}>{open === o.id ? "Less ▴" : `${o.notes.length} notes ▾`}</small></td>
               </tr>
               {open === o.id && (
                 <tr>
-                  <td colSpan={6} className="wrap" style={{ background: "rgba(255,255,255,.03)" }}>
+                  <td colSpan={7} className="wrap" style={{ background: "rgba(255,255,255,.03)" }}>
                     <ul style={{ margin: "4px 0", paddingLeft: 18, display: "grid", gap: 6, color: "var(--ink-2)", fontSize: 14.5 }}>
                       {o.notes.map((n) => <li key={n}>{n}</li>)}
+                      {trend[o.id]?.tags.filter((t) => t.key !== "new").map((t) => <li key={t.key}>Dawns view · {t.text}: {t.why}.</li>)}
                       {o.assetIds?.some((id) => known.has(id)) && (
                         <li>Assets: {o.assets.map((a, i) => { const id = o.assetIds[i]; return <Fragment key={a + i}>{i ? " · " : ""}{id && known.has(id) ? <Link href={pathOf(id)}>{a} profile</Link> : a}</Fragment>; })}</li>
                       )}

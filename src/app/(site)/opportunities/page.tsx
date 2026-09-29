@@ -4,6 +4,8 @@ import { Banner } from "@/components/Banner";
 import { DataBridge } from "@/components/providers";
 import { FarmPanel, InfinityPanel, OpportunityTable, YieldLadder } from "@/components/opportunities";
 import { infinityHistory } from "@/lib/infinity";
+import { getIntelRaw } from "@/lib/intel-db";
+import { buildIntel } from "@/lib/intel";
 import { getSnapshot } from "@/lib/snapshot";
 import { getAssets } from "@/lib/assets";
 import { knownOf } from "@/lib/assets/view";
@@ -17,7 +19,9 @@ export const metadata: Metadata = {
 export const revalidate = 120;
 
 export default async function OpportunitiesPage() {
-  const [s, assets, rates] = await Promise.all([getSnapshot(), getAssets(), infinityHistory()]);
+  const [s, assets, rates, raw] = await Promise.all([getSnapshot(), getAssets(), infinityHistory(), getIntelRaw()]);
+  const intel = buildIntel(raw, s);
+  const trend = Object.fromEntries(Object.entries(intel.byOpp).map(([k, v]) => [k, { apy7: v.apy7, apy30: v.apy30, apyDays: v.apyDays, tags: v.tags }]));
   const rows = s.opportunities;
   const known = knownOf(assets, rows.flatMap((o) => o.assetIds ?? []));
   const lend = rows.filter((o) => o.kind === "supply");
@@ -63,7 +67,7 @@ export default async function OpportunitiesPage() {
         {farm && <div style={{ marginBottom: 28 }}><FarmPanel p={{ id: farm.p.id, name: farm.p.name }} f={farm.f} opps={farms} now={s.asOf} /></div>}
         {inf && <div style={{ marginBottom: 28 }}><InfinityPanel p={{ id: inf.p.id, name: inf.p.name }} rows={inf.rows} /></div>}
 
-        <OpportunityTable rows={rows} known={known} />
+        <OpportunityTable rows={rows} known={known} trend={trend} />
 
         <div className="grid gA" style={{ marginTop: 28 }}>
           <div className="card">

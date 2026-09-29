@@ -15,6 +15,7 @@ const TABS = [
   { href: "/vaults", label: "Vaults", icon: "vault" },
 ] as const;
 const MORE = [
+  { href: "/intelligence", label: "Intelligence", sub: "Where capital and yield moved this week" },
   { href: "/assets", label: "Assets", sub: "Every Kaspa token, who holds it, how deep it trades" },
   { href: "/protocols", label: "Protocols", sub: "Health of every Kaspa DeFi protocol" },
   { href: "/bridge", label: "Igra bridge", sub: "KAS locked vs iKAS, exits and payouts" },
