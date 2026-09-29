@@ -152,6 +152,40 @@ fn markdown_and_marks_keep_their_bounds() {
     ok(mark_run(&m, up, Credit { marks: [40 * KAS, 20 * KAS, 0], mark_epoch: 2, ..up }, 3_500, 3_500, held, &valuer()), "the next epoch's mark");
 }
 
+/// Markdown and write-off with any slot number, to try the ones that do not exist.
+fn md_any(m: &CreditMandate, prev: Credit, next: Credit, slot: i64, at: i64, held: i64) -> R {
+    let (cur, succ) = (compile_credit(m, &prev), compile_credit(m, &next));
+    unsigned(&cur, "markdown", vec![credit_state(&next), Expr::int(slot), Expr::int(at)], vec![], held, vec![cov_out(&succ, (held - FEE) as u64, 0, VCOV)], at as u64)
+}
+fn wo_any(m: &CreditMandate, prev: Credit, next: Credit, slot: i64, at: i64, held: i64) -> R {
+    let (cur, succ) = (compile_credit(m, &prev), compile_credit(m, &next));
+    signed(&cur, "writeOff", |s| vec![credit_state(&next), Expr::int(slot), Expr::int(at), Expr::bytes(s)], vec![], held, vec![cov_out(&succ, (held - FEE) as u64, 0, VCOV)], at as u64, &valuer())
+}
+
+#[test]
+fn slots_outside_0_to_2_are_refused() {
+    let m = CreditMandate::default();
+    let (prev, held) = lent();
+    let at = 13_700;
+    let cap = m.limit(0, &prev, at);
+    let md = Credit { marks: [cap, 20 * KAS, 0], ..prev };
+    ok(md_any(&m, prev, md, 0, at, held), "markdown slot 0");
+    let zero = Credit { marks: [0, 20 * KAS, 0], ..prev };
+    let off = Credit { principal: [0, 20 * KAS, 0], due: [0, 11_500, 0], ..zero };
+    ok(wo_any(&m, zero, off, 0, 20_000, held), "write off slot 0");
+    let pay = 10 * KAS;
+    ok(repay_run(&m, prev, repay_next(prev, 0, pay), 0, VCOV, pay, held, held + pay - FEE), "repay slot 0");
+    for bad in [-1i64, 3] {
+        // a slot that does not exist must not fall through to slot 0's figures, nor change nothing and pass
+        no(md_any(&m, prev, md, bad, at, held), &format!("markdown slot {bad}, as slot 0"));
+        no(md_any(&m, prev, prev, bad, at, held), &format!("markdown slot {bad}, state untouched"));
+        no(wo_any(&m, zero, off, bad, 20_000, held), &format!("write off slot {bad}, as slot 0"));
+        no(wo_any(&m, zero, zero, bad, 20_000, held), &format!("write off slot {bad}, state untouched"));
+        no(repay_run(&m, prev, repay_next(prev, 0, pay), bad, VCOV, pay, held, held + pay - FEE), &format!("repay from a slot {bad} account, as slot 0"));
+        no(repay_run(&m, prev, prev, bad, VCOV, pay, held, held + pay - FEE), &format!("repay from a slot {bad} account, state untouched"));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // repay: a borrower's payment, swept in with no key
 // ---------------------------------------------------------------------------

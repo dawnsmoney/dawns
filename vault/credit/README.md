@@ -2,8 +2,28 @@
 
 A NAV vault whose three slots are fixed-term loans to named borrowers.
 
-- `dawns_credit.sil`: the vault. Shares, personal accounts, deposit and redeem work as in the NAV vault (`../nav`).
+- `dawns_credit.sil`: the vault, v0.2. Shares, personal accounts, deposit and redeem work as in the NAV vault (`../nav`).
+- `dawns_credit_v01.sil`, `dawns_credit_v0.sil`: earlier versions, kept byte for byte because vaults run them (the first TN10 vault runs v0).
 - `dawns_repay.sil`: a borrower's repayment account.
+- `credit-vectors.json`: mandates and states with the bytecode and address the compiler gives them (see Verifying a vault).
+
+## Versions
+
+| Version | Adds |
+|---|---|
+| v0 | The first TN10 credit vault |
+| v0.1 | No loan and no fee may take the vault below its seed (`minKeep`) |
+| v0.2 | The address commits to the mandate hash. The compiler drops a constructor argument no path reads, so v0 and v0.1 addresses commit to the terms the covenant checks (keys, borrowers, caps, schedule, limits) but not to the mandate document (name, strategy, labels). v0.2 reads `mandateHash` in `halt`. |
+
+New vaults launch on v0.2 (`credit genesis` writes `"covenant": "dawns-credit/0.2"` into the ledger).
+
+## Verifying a vault
+
+A vault's address is blake2b-256 of its bytecode, so anyone who can rebuild the bytecode from the mandate and state can check it.
+
+`cargo run --release -- credit template [forms.json] [vectors.json]` compiles each version once with a unique sentinel in every mandate argument and cuts the bytecode into literal bytes and named slots. Slots are filled as: `b32` (0x20 + 32 bytes), `num` (a minimal script number), `i64` (a state field: 0x08 + 8 bytes little-endian sign-magnitude), `bool` (0x01 + 00/01), and `len` (the code's own lengths, which the script pushes inside itself; the filler repeats until they settle). Each form is checked against the compiler on 200 random mandates and states per version before it is written.
+
+The site keeps the forms in `src/lib/vaults/credit-forms.json` and fills them in `src/lib/vaults/verify-credit.ts`, which reproduces every vector here and the live TN10 vault's address. On every vault page it checks the mandate hash, the address, and (through a testnet-10 node's wRPC) that the coin at the address carries the vault's covenant id. A ledger publish from anyone is accepted if the address check passes: there is no curator list.
 
 ## What the network enforces
 
@@ -34,7 +54,7 @@ Deposit, redeem, repay and markdown need no key.
 
 ## Tests
 
-`vault/harness/tests/credit.rs` has 7 tests: every path, the flipped conditions on each, and exact successor state. Run them with `cargo test --offline --release --test credit`.
+`vault/harness/tests/credit.rs` has 13 tests: every path, the flipped conditions on each, exact successor state, the lending limits, output shapes, slots that do not exist, and one mark per epoch. Run them with `cargo test --offline --release --test credit`.
 
 `DAWNS_UNITS=1` prints script units per input. The results:
 
@@ -50,12 +70,19 @@ The deploy tool uses budget 28.
 
 ### Mutation test
 
-The mutation test replaces each `require` with `require(true)` and reruns the suite. The run was partial when this was written.
+The mutation test replaces one `require` at a time with `require(1 == 1)` and runs the suite against the mutated covenant (`DAWNS_CREDIT_SIL` points the harness at it). A mutant the suite still passes is a condition no test depends on.
 
-Survivors so far:
+The first full run (v0.1, 200 conditions) caught 133. The 67 survivors split into two kinds.
 
-- **The `bounded()` range checks** (shares, principal, due, mark ≥ 0 and ≤ bounds). These are defensive: every path computes the successor exactly from the previous state, so none can go out of range. The tests don't construct a malformed previous state, which only genesis could create.
-- **`claimedDaa >= notBefore`, `epochLength > 0`, `e >= prevEpoch`, `inValue >= minKeep`, `markdownPeriod > 0`.** These are constructor constants or monotonic values the tests never violate. They stay as belt and braces.
+**Real gaps, now tested and caught:** the per-move limit, the per-epoch limit, the loan paid to the borrower being exactly the amount booked, the vault keeping all but the fee on a loan, one mark per epoch, and slot numbers outside 0 to 2 in `lend`, `markdown` and `writeOff`. A slot outside 0 to 2 would otherwise have fallen through to slot 0's destination while booking nothing.
+
+**Redundant, kept as belt and braces:**
+
+- `OpAuthOutputIdx(...) == 0` on every path: `#[covenant.singleton]` already binds the continuation output.
+- Input and output counts on paths whose accounts pin the same shape (`dawns_account.sil`, `dawns_repay.sil` check them too).
+- Slot bounds in `repay`: an account for a slot outside 0 to 2 is refused by the other repay checks before the bound matters.
+- `MAX_VALUE` caps, `cap > 0` and `cap <= BPS`, `term > 0`, the reserve-floor range, `epochLength > 0`, `markdownPeriod > 0`: constructor constants the deploy tool validates, or conditions implied by others (`amount * BPS <= cap * nav` already refuses a zero cap).
+- The `bounded()` range checks: every path computes the successor exactly from the previous state, so none can go out of range; only a malformed genesis could, and `out_of_range_state_is_refused` covers that.
 
 ## Deploy
 
