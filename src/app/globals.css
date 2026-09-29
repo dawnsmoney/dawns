@@ -1348,3 +1348,12 @@ table.pf-tbl .vt-name a:hover b{text-decoration:underline}
 .navp-alt>div{display:grid;gap:8px;margin-top:8px}
 @media (max-width:900px){.navp-grid{grid-template-columns:1fr}}
 .navp-alt>div{justify-items:start}
+/* strategy map */
+.smap svg{display:block;overflow:visible}
+.smap-pt{cursor:pointer;transition:opacity .15s}
+.smap-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 18px;margin-top:10px;font-size:13.5px}
+.smap-legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--ink-2)}
+.smap-legend span{display:inline-flex;align-items:center;gap:7px}
+.smap-legend i{width:9px;height:9px;border-radius:50%}
+.smap-tip{color:var(--ink-2)}
+.coin.logo{border-radius:50%;object-fit:cover;background:rgba(255,255,255,.06);flex:none;display:inline-block}

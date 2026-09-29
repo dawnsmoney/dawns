@@ -160,30 +160,73 @@ export function StrategyCard({ id, doc, ev, strategist, by, version = 1, next = 
 }
 
 /** Every strategy on one plane: what it pays against how much of it can leave now. */
+const ST_COLOR = { good: "#4ADE9B", warn: "#FFC061", crit: "#FF7A7A", info: "#9085e9" } as const;
+const ST_WORD = { good: "Holds its rules", warn: "Watch", crit: "Breaks a rule", info: "Measuring" } as const;
+
+/**
+ * Yield against the way out: each strategy as a point, net APY up, share that can leave
+ * today to the right. The top-right corner is where you want to be; labels carry the
+ * number, colour says whether the strategy holds its own rules today (with the word).
+ */
 export function StrategyMap({ rows }: { rows: { id: string; name: string; net: number | null; exit: number; status: Evaluation["status"] }[] }) {
   const [on, setOn] = useState<string | null>(null);
   const pts = rows.filter((r) => r.net != null);
-  const maxY = Math.max(0.05, ...pts.map((r) => r.net!)) * 1.15;
-  const W = 640, H = 260, L = 44, B = 30, T = 12, R = 12;
+  const top = Math.max(0.05, ...pts.map((r) => r.net!));
+  const step = top > 0.4 ? 0.1 : top > 0.2 ? 0.05 : top > 0.08 ? 0.02 : 0.01;
+  const maxY = Math.ceil((top * 1.12) / step) * step;
+  const W = 720, H = 330, L = 52, B = 44, T = 18, R = 20;
   const x = (v: number) => L + v * (W - L - R), y = (v: number) => T + (1 - Math.max(0, v) / maxY) * (H - T - B);
+  const yt = Array.from({ length: Math.round(maxY / step) + 1 }, (_, i) => i * step).filter((_, i, a) => a.length <= 6 || i % 2 === 0);
+  // labels: to the side with room, nudged apart vertically so none overlap
+  const lab = pts.map((r) => ({ r, px: x(r.exit), py: y(r.net!), left: r.exit > 0.62, ly: y(r.net!) })).sort((a, b) => a.py - b.py);
+  for (const side of [true, false]) {
+    const g = lab.filter((l) => l.left === side);
+    for (let i = 1; i < g.length; i++) if (g[i].ly - g[i - 1].ly < 34) g[i].ly = g[i - 1].ly + 34;
+    // keep pills inside the plot: push the stack up from the bottom edge if needed
+    let floor = H - B - 18;
+    for (let i = g.length - 1; i >= 0; i--) { g[i].ly = Math.min(g[i].ly, floor); floor = g[i].ly - 34; }
+    for (const l of g) l.ly = Math.max(l.ly, T + 16);
+  }
   const hit = pts.find((r) => r.id === on);
-  const ticks = [0, maxY / 2, maxY];
   return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Net APY against share that can leave now: ${pts.map((r) => `${r.name} ${p1(r.net!, 1)}, ${p1(r.exit, 0)}`).join("; ")}`}>
-        {ticks.map((t) => <g key={t}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="rgba(255,255,255,.08)" /><text x={L - 8} y={y(t)} textAnchor="end" dominantBaseline="central" fill="var(--ink-3)" fontSize="11">{p1(t, 0)}</text></g>)}
-        {[0, 0.5, 1].map((t) => <text key={t} x={x(t)} y={H - 10} textAnchor="middle" fill="var(--ink-3)" fontSize="11">{p1(t, 0)}</text>)}
-        <text x={W - R} y={H - 22} textAnchor="end" fill="var(--ink-3)" fontSize="11">can leave now →</text>
-        <text x={L + 6} y={T + 8} fill="var(--ink-3)" fontSize="11">↑ net APY</text>
-        {pts.map((r) => (
-          <a key={r.id} href={`/strategies/${r.id}`} onMouseEnter={() => setOn(r.id)} onMouseLeave={() => setOn(null)} onFocus={() => setOn(r.id)} onBlur={() => setOn(null)}>
-            <circle cx={x(r.exit)} cy={y(r.net!)} r={16} fill="transparent" />
-            <circle cx={x(r.exit)} cy={y(r.net!)} r={on === r.id ? 8 : 6} fill={r.status === "crit" ? "#FF7A7A" : r.status === "warn" ? "#FFC061" : "#4ADE9B"} stroke="var(--card)" strokeWidth={2} />
-            {pts.length <= 8 && <text x={x(r.exit) + (r.exit > 0.7 ? -12 : 12)} y={y(r.net!)} textAnchor={r.exit > 0.7 ? "end" : "start"} dominantBaseline="central" fill="var(--ink-2)" fontSize="12">{r.name}</text>}
-          </a>
-        ))}
+    <div className="smap">
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Net APY against share that can leave now: ${pts.map((r) => `${r.name} ${p1(r.net!, 1)}, ${p1(r.exit, 0)} out now, ${ST_WORD[r.status]}`).join("; ")}`}>
+        <defs>
+          <radialGradient id="smap-sweet" cx="100%" cy="0%" r="75%"><stop offset="0" stopColor="#4ADE9B" stopOpacity=".16" /><stop offset="1" stopColor="#4ADE9B" stopOpacity="0" /></radialGradient>
+          <radialGradient id="smap-poor" cx="0%" cy="100%" r="60%"><stop offset="0" stopColor="#FF7A7A" stopOpacity=".09" /><stop offset="1" stopColor="#FF7A7A" stopOpacity="0" /></radialGradient>
+          <filter id="smap-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" /></filter>
+        </defs>
+        <rect x={L} y={T} width={W - L - R} height={H - T - B} rx="14" fill="rgba(255,255,255,.02)" />
+        <rect x={L} y={T} width={W - L - R} height={H - T - B} rx="14" fill="url(#smap-sweet)" />
+        <rect x={L} y={T} width={W - L - R} height={H - T - B} rx="14" fill="url(#smap-poor)" />
+        <line x1={x(0.5)} x2={x(0.5)} y1={T} y2={H - B} stroke="rgba(255,255,255,.07)" strokeDasharray="3 5" />
+        {yt.map((t) => <g key={t}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="rgba(255,255,255,.06)" /><text x={L - 10} y={y(t)} textAnchor="end" dominantBaseline="central" fill="var(--ink-3)" fontSize="11.5">{p1(t, 0)}</text></g>)}
+        {[0, 0.25, 0.5, 0.75, 1].map((t) => <text key={t} x={x(t)} y={H - B + 18} textAnchor="middle" fill="var(--ink-3)" fontSize="11.5">{p1(t, 0)}</text>)}
+        <text x={(L + W - R) / 2} y={H - 6} textAnchor="middle" fill="var(--ink-2)" fontSize="12">Share that can leave today →</text>
+        <text transform={`translate(14 ${(T + H - B) / 2}) rotate(-90)`} textAnchor="middle" fill="var(--ink-2)" fontSize="12">Net APY →</text>
+        <text x={W - R - 12} y={T + 18} textAnchor="end" fill="#7EF0BD" fontSize="11" letterSpacing=".06em" opacity=".8">MORE YIELD · EASY TO LEAVE</text>
+        {lab.map(({ r, px, py, left, ly }) => {
+          const c = ST_COLOR[r.status], act = on === r.id, lx = left ? px - 16 : px + 16;
+          const text = `${r.name}`, val = p1(r.net!, 1);
+          const w = Math.min(260, 16 + text.length * 6.7 + val.length * 7.4 + 14);
+          return (
+            <a key={r.id} href={`/strategies/${r.id}`} className="smap-pt" onMouseEnter={() => setOn(r.id)} onMouseLeave={() => setOn(null)} onFocus={() => setOn(r.id)} onBlur={() => setOn(null)} style={{ opacity: on && !act ? 0.45 : 1 }}>
+              {Math.abs(ly - py) > 2 && <path d={`M${px} ${py} L${lx} ${ly}`} stroke="rgba(255,255,255,.2)" fill="none" />}
+              <circle cx={px} cy={py} r={act ? 14 : 11} fill={c} opacity=".35" filter="url(#smap-glow)" />
+              <circle cx={px} cy={py} r={act ? 8 : 6.5} fill={c} stroke="#1C1642" strokeWidth={2.5} />
+              <g transform={`translate(${left ? lx - w : lx} ${ly - 13})`}>
+                <rect width={w} height={26} rx={13} fill={act ? "#2E2573" : "rgba(28,22,66,.92)"} stroke={act ? c : "rgba(255,255,255,.14)"} />
+                <text x={12} y={13} dominantBaseline="central" fill="var(--ink)" fontSize="12.5">{text.length > 34 ? text.slice(0, 33) + "…" : text}</text>
+                <text x={w - 12} y={13} textAnchor="end" dominantBaseline="central" fill={c} fontSize="12.5" fontWeight="600">{val}</text>
+              </g>
+            </a>
+          );
+        })}
       </svg>
-      <div className="split-tip">{hit ? <span><b>{hit.name}</b> · net {p1(hit.net!, 1)} · {p1(hit.exit, 0)} can leave now</span> : <span className="muted">Up is more yield, right is easier to leave. Colour is whether the strategy holds its own rules today.</span>}</div>
+      <div className="smap-foot">
+        <span className="smap-legend">{(["good", "warn", "crit"] as const).map((k) => <span key={k}><i style={{ background: ST_COLOR[k] }} />{ST_WORD[k]}</span>)}</span>
+        <span className="smap-tip">{hit ? <><b>{hit.name}</b> · net {p1(hit.net!, 1)} · {p1(hit.exit, 0)} can leave today · {ST_WORD[hit.status]}</> : <span className="muted">At full capacity, on live data. Hover a strategy; click to open it.</span>}</span>
+      </div>
     </div>
   );
 }

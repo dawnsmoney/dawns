@@ -36,7 +36,7 @@ export default async function StrategiesPage() {
 
         <div className="grid gA">
           <div className="card">
-            <div className="c-head"><h3>Yield against the way out</h3><span className="tag">at full capacity, live data</span></div>
+            <div className="c-head"><h3>Yield against the way out</h3><span className="tag">{rows.length} strategies</span></div>
             <StrategyMap rows={rows.map((r) => ({ id: r.id, name: r.doc.name, net: r.ev.net, exit: r.ev.exitNow, status: r.ev.status }))} />
           </div>
           <div className="card st-cta">

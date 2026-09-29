@@ -54,8 +54,8 @@ export const COIN: Record<string, [string, string]> = {
 };
 const FALLBACK: [string, string][] = [["#B9B3D6", "#6E6788"], ["#A8E0FF", "#3F7FD8"], ["#FFC9A3", "#D9733A"], ["#C9F28B", "#5E9E2A"], ["#F5B3E8", "#A8479A"]];
 const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
-const coinColors = (k: string) => COIN[k] ?? COIN[k.toUpperCase()] ?? FALLBACK[hash(k) % FALLBACK.length];
-const GLYPH: Record<string, string> = { KAS: "K", USDC: "$", USDT: "₮", WETH: "Ξ", ETH: "Ξ", BTC: "₿" };
+export const coinColors = (k: string) => COIN[k] ?? COIN[k.toUpperCase()] ?? FALLBACK[hash(k) % FALLBACK.length];
+export const GLYPH: Record<string, string> = { KAS: "K", USDC: "$", USDT: "₮", WETH: "Ξ", ETH: "Ξ", BTC: "₿" };
 export const symbolKey = (s: string) => (/^(w?i?kas|wikas|ikas|wkas)$/i.test(s) ? "KAS" : /^(cbbtc|wbtc)$/i.test(s) ? "BTC" : s.toUpperCase());
 
 export function Coin({ size, k, glyph }: { size: number; k: string; glyph: string }) {
@@ -78,10 +78,19 @@ export function Coin({ size, k, glyph }: { size: number; k: string; glyph: strin
     </svg>
   );
 }
-export const ProtocolCoin = ({ p, size }: { p: { id: string; letter: string }; size: number }) => <Coin size={size} k={p.id} glyph={p.letter} />;
+/**
+ * Real logos: /api/logo serves the token's or protocol's own icon (Blockscout, KaspaCom,
+ * DefiLlama, CoinGecko for the majors), cached, and falls back to dawns' drawn coin, so
+ * an <img> is always safe to render.
+ */
+export const ProtocolCoin = ({ p, size }: { p: { id: string; letter: string }; size: number }) => (
+  // eslint-disable-next-line @next/next/no-img-element -- small cached logos from our own route
+  <img className="coin logo" src={`/api/logo/protocol/${encodeURIComponent(p.id)}?l=${encodeURIComponent(p.letter)}`} width={size} height={size} alt="" loading="lazy" decoding="async" />
+);
 export function AssetCoin({ a, size }: { a: string; size: number }) {
   const k = symbolKey(a);
-  return <Coin size={size} k={k} glyph={GLYPH[k] ?? k.slice(0, 1)} />;
+  // eslint-disable-next-line @next/next/no-img-element -- small cached logos from our own route
+  return <img className="coin logo" src={`/api/logo/token/${encodeURIComponent(k)}`} width={size} height={size} alt="" loading="lazy" decoding="async" />;
 }
 
 export function Sparkline({ values }: { values: number[] }) {
