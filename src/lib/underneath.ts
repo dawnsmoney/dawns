@@ -35,6 +35,19 @@ const CHAIN: Record<string, string> = { igra: "Igra", kasplex: "Kasplex L2" };
 const amt = (v: number, sym: string) => `${v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : v >= 1e3 ? (v / 1e3).toFixed(1) + "K" : v >= 1 ? v.toFixed(2) : v.toPrecision(3)} ${sym}`;
 const day = (t: number | null) => (t ? new Date(t).toISOString().slice(0, 10) : null);
 
+/**
+ * The share token of an Infinity Pool: a separate ERC-20 (xZEAL, xNACHO…) from the vault
+ * contract. Found among the pool tokens dawns reads by its symbol; the vault if not traded.
+ */
+export function infinityShare(s: Snapshot, v: { chain: string; symbol: string; vault: string }): string {
+  for (const p of s.protocols) for (const pool of p.dex?.pools ?? []) {
+    if (pool.chain !== v.chain) continue;
+    const i = pool.symbols.findIndex((x) => x.toLowerCase() === `x${v.symbol}`.toLowerCase());
+    if (i >= 0) return pool.tk[i].a.toLowerCase();
+  }
+  return v.vault.toLowerCase();
+}
+
 export function receiptsFrom(s: Snapshot): Receipt[] {
   const out: Receipt[] = [];
   for (const p of s.protocols) {
@@ -112,7 +125,7 @@ export function receiptsFrom(s: Snapshot): Receipt[] {
     /* ---- staking: the Infinity Pool share ---- */
     for (const v of p.dex?.infinity ?? []) {
       if (!/^0x[0-9a-f]{40}$/i.test(v.vault)) continue;
-      const a = v.vault.toLowerCase();
+      const a = infinityShare(s, v);
       const e = v.emissions;
       const flags: [Status, string][] = [];
       if (e?.paused) flags.push(["warn", `Reward emissions are paused${e.lastAt ? ` since ${day(e.lastAt)}` : ""}: the rate only grows if the owner turns them back on.`]);

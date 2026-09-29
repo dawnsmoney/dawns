@@ -3,7 +3,8 @@ import { parseAbi, type Address } from "viem";
 import { clients, pool as runPool, type ChainKey } from "./chain/clients";
 import { ZEALOUS_FARM } from "./chain/farms";
 import type { Snapshot } from "./types";
-import type { WalletRead } from "./portfolio";
+import { infinityShare } from "./underneath";
+import type { WalletRead, L1Read } from "./portfolio";
 import { currentUser, accountOf } from "./auth/session";
 import { hasDb } from "./db";
 
@@ -33,7 +34,7 @@ export async function readWallet(s: Snapshot, address: string): Promise<WalletRe
       if (pool.kind === "v2") add(pool.chain, pool.pair, 18, "supply");
     }
     for (const m of p.lending?.markets ?? []) { add("igra", m.asset, m.decimals); add("igra", m.aToken, m.decimals); add("igra", m.debtToken, m.decimals); }
-    for (const v of p.dex?.infinity ?? []) add(v.chain, v.vault, undefined);
+    for (const v of p.dex?.infinity ?? []) add(v.chain, infinityShare(s, v), undefined);
   }
   const farmPools = s.protocols.flatMap((p) => p.dex?.farms ?? []).flatMap((f) => f.pools).filter((q) => q.pid != null);
 
@@ -72,8 +73,32 @@ export async function readWallet(s: Snapshot, address: string): Promise<WalletRe
   };
 }
 
-/** The signed-in user's first EVM wallet, to offer as a one-tap portfolio. */
+/** The signed-in user's wallets (EVM and Kaspa), comma-separated, to offer as a one-tap portfolio. */
 export async function myWallet(): Promise<string | null> {
   if (!hasDb()) return null;
-  try { const u = await currentUser(); if (!u) return null; return (await accountOf(u.id)).wallets.find((w) => w.kind === "evm")?.address ?? null; } catch { return null; }
+  try { const u = await currentUser(); if (!u) return null; const w = (await accountOf(u.id)).wallets; return w.length ? w.map((x) => x.address).join(",") : null; } catch { return null; }
+}
+
+/**
+ * A Kaspa L1 address: KAS from the Kaspa REST API, KRC-20 from the Kasplex indexer.
+ * Either can be unavailable; the page says so rather than showing zero.
+ */
+export async function readL1(address: string): Promise<L1Read> {
+  const a = address.toLowerCase();
+  const get = async <T,>(url: string) => { try { const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10_000), headers: { accept: "application/json" } }); return r.ok ? ((await r.json()) as T) : null; } catch { return null; } };
+  const bal = get<{ balance?: number | string }>(`https://api.kaspa.org/addresses/${a}/balance`);
+  const krc = (async () => {
+    const out: { tick: string; amount: number }[] = [];
+    let next = "";
+    for (let i = 0; i < 5; i++) {
+      const r = await get<{ result?: { tick: string; balance: string; locked?: string; dec: string }[]; next?: string | null }>(`https://api.kasplex.org/v1/krc20/address/${a}/tokenlist${next ? `?next=${encodeURIComponent(next)}` : ""}`);
+      if (!r || !Array.isArray(r.result)) return i === 0 ? null : out;
+      for (const t of r.result) { const d = Number(t.dec) || 8; const amt = (Number(t.balance) + Number(t.locked ?? 0)) / 10 ** d; if (amt > 0) out.push({ tick: t.tick.toUpperCase(), amount: amt }); }
+      if (!r.next) break;
+      next = r.next;
+    }
+    return out;
+  })();
+  const [b, k] = await Promise.all([bal, krc]);
+  return { address: a, kas: b?.balance != null ? Number(b.balance) / 1e8 : null, krc20: k, at: Date.now() };
 }

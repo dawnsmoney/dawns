@@ -23,13 +23,13 @@ export const kindParts = (p: Portfolio) => p.byKind.map((k) => ({ key: k.kind, l
 export function AddressForm({ value, mine }: { value?: string; mine?: string | null }) {
   return (
     <form className="pf-form" action="/portfolio" method="get">
-      <label htmlFor="pf-a" className="eyebrow muted">An Igra or Kasplex address</label>
+      <label htmlFor="pf-a" className="eyebrow muted">Addresses: Igra or Kasplex (0x…) and Kaspa (kaspa:…)</label>
       <div className="pf-row">
-        <input id="pf-a" name="a" defaultValue={value} placeholder="0x…" spellCheck={false} autoComplete="off" pattern="0x[0-9a-fA-F]{40}" required />
+        <input id="pf-a" name="a" defaultValue={value} placeholder="0x… , kaspa:q…" spellCheck={false} autoComplete="off" required />
         <button className="btn iris" type="submit">Look through</button>
       </div>
-      {mine && mine.toLowerCase() !== value?.toLowerCase() && <Link className="pf-mine" href={`/portfolio?a=${mine}`}>Use my signed-in wallet {mine.slice(0, 6)}…{mine.slice(-4)}</Link>}
-      <small className="muted">Read-only: dawns reads public balances and stores nothing. No signature, no connection needed.</small>
+      {mine && mine.toLowerCase() !== value?.toLowerCase() && <Link className="pf-mine" href={`/portfolio?a=${encodeURIComponent(mine)}`}>Use my signed-in wallet{mine.includes(",") ? "s" : ""}</Link>}
+      <small className="muted">Up to five, separated by commas. Read-only: dawns reads public balances and stores nothing.</small>
     </form>
   );
 }

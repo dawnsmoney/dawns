@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { getSnapshot } from "@/lib/snapshot";
 import { getIntelRaw } from "@/lib/intel-db";
 import { buildIntel } from "@/lib/intel";
-import { readWallet, myWallet } from "@/lib/portfolio-read";
-import { buildPortfolio, POS_COLOR, POS_LABEL } from "@/lib/portfolio";
+import { readWallet, readL1, myWallet } from "@/lib/portfolio-read";
+import { getAssets } from "@/lib/assets";
+import { valueCredible } from "@/lib/assets/types";
+import { buildPortfolio, parseAddresses, POS_COLOR, POS_LABEL } from "@/lib/portfolio";
 import { MCard, MHead, MNote, MStats } from "@/components/m/kit";
 import { MTabs } from "@/components/m/tabs";
 import { AddressForm, exposureParts, kindParts } from "@/components/portfolio";
@@ -24,21 +26,23 @@ export default async function MPortfolio({ searchParams }: P) {
   const sp = await searchParams;
   const a = Array.isArray(sp.a) ? sp.a[0] : sp.a;
   const mine = await myWallet();
-  const ok = typeof a === "string" && /^0x[0-9a-fA-F]{40}$/.test(a);
-  const head = <MHead eyebrow="Look-through" title="Portfolio" clamp sub="Any wallet's positions on Igra and Kasplex, broken down to what they hold, with what could leave today. Read-only." />;
+  const q = parseAddresses(a);
+  const ok = q.evm.length + q.l1.length > 0;
+  const head = <MHead eyebrow="Look-through" title="Portfolio" clamp sub="Any wallet's positions on Igra, Kasplex and Kaspa L1, broken down to what they hold, with what could leave today. Read-only." />;
   if (!ok) {
     return (
       <>
         {head}
         <div className="m-screen">
-          <MCard><AddressForm value={a} mine={mine} />{a && <MNote>That is not an EVM address: 0x followed by 40 hex characters.</MNote>}</MCard>
+          <MCard><AddressForm value={a} mine={mine} />{a && <MNote>Not an address dawns can read: use 0x… (Igra, Kasplex) or kaspa:q….</MNote>}</MCard>
         </div>
       </>
     );
   }
-  const s = await getSnapshot();
-  const [r, raw] = await Promise.all([readWallet(s, a), getIntelRaw()]);
-  const pf = buildPortfolio(s, r);
+  const [s, assets] = await Promise.all([getSnapshot(), getAssets()]);
+  const [evmReads, l1Reads, raw] = await Promise.all([Promise.all(q.evm.map((x) => readWallet(s, x))), Promise.all(q.l1.map((x) => readL1(x))), getIntelRaw()]);
+  const krc = new Map(assets.filter((x) => x.standard === "krc20").map((x) => [x.ref.toUpperCase(), valueCredible(x) ? x.price : null]));
+  const pf = buildPortfolio(s, evmReads, l1Reads, (t) => krc.get(t.toUpperCase()) ?? null);
   const intel = buildIntel(raw, s).byOpp;
   const top = pf.exposure[0];
   return (
@@ -73,7 +77,7 @@ export default async function MPortfolio({ searchParams }: P) {
               <div className="m-panel">
                 <MCard title="What you hold underneath"><SplitBar label="Exposure by underlying asset" parts={exposureParts(pf)} height={24} /></MCard>
                 <MCard title="Where it sits"><SplitBar label="Value by position type" parts={kindParts(pf)} height={24} /></MCard>
-                <MNote>Not included: V3 positions, KRC-20 and KAS on Kaspa L1, tokens outside the pools and markets dawns reads.</MNote>
+                <MNote>Not included: V3 positions, covenant tokens (KCC-20), tokens outside the pools and markets dawns reads.</MNote>
               </div>
             </MTabs>
           </>

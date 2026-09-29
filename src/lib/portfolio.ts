@@ -1,4 +1,5 @@
 import type { Snapshot } from "./types";
+import { infinityShare } from "./underneath";
 
 /**
  * Portfolio: one wallet's positions in Kaspa DeFi, looked through to what they hold.
@@ -30,13 +31,14 @@ export interface Position {
   href: string | null; opp?: string;
 }
 export interface Portfolio {
-  address: string; at: number;
+  addresses: string[]; at: number;
   gross: number; debt: number; net: number;
   byKind: { kind: PosKind; usd: number }[];
   exposure: { sym: string; usd: number; share: number }[];
   exitNow: number; exitShare: number | null;
   positions: Position[];
   unpriced: number;
+  dust: number;
   hf: number | null;
   failed: number;
 }
@@ -44,7 +46,10 @@ export interface Portfolio {
 const CH: Record<string, string> = { igra: "Igra", kasplex: "Kasplex L2" };
 const canon = (sym: string) => (/^(w?i?kas|wikas|ikas|wkas)$/i.test(sym) ? "KAS" : sym.replace(/^w(eth|btc)$/i, "$1").toUpperCase());
 
-export function buildPortfolio(s: Snapshot, r: WalletRead): Portfolio {
+/** A Kaspa L1 address: KAS and KRC-20 balances (null: the indexer did not answer). */
+export interface L1Read { address: string; kas: number | null; krc20: { tick: string; amount: number }[] | null; at: number }
+
+function positionsOf(s: Snapshot, r: WalletRead): { out: Position[]; hf: number | null } {
   const px = new Map<string, number | null>();
   const sym = new Map<string, string>();
   for (const p of s.protocols) {
@@ -59,8 +64,10 @@ export function buildPortfolio(s: Snapshot, r: WalletRead): Portfolio {
   if (r.native.igra) out.push({ key: "igra:native", kind: "wallet", name: "iKAS", sub: "Igra's coin", chain: "Igra", usd: s.kasUsd != null ? r.native.igra * s.kasUsd : null, under: [{ sym: "KAS", amount: r.native.igra, usd: s.kasUsd != null ? r.native.igra * s.kasUsd : null }], exitNow: s.kasUsd != null ? r.native.igra * s.kasUsd : null, exitNote: "in the wallet", href: "/bridge" });
   if (r.native.kasplex) out.push({ key: "kasplex:native", kind: "wallet", name: "KAS", sub: "Kasplex L2 coin", chain: "Kasplex L2", usd: s.kasUsd != null ? r.native.kasplex * s.kasUsd : null, under: [{ sym: "KAS", amount: r.native.kasplex, usd: s.kasUsd != null ? r.native.kasplex * s.kasUsd : null }], exitNow: s.kasUsd != null ? r.native.kasplex * s.kasUsd : null, exitNote: "in the wallet", href: null });
 
-  /* plain tokens */
+  /* plain tokens (Infinity shares are shown as staking below) */
+  const shares = new Set(s.protocols.flatMap((p) => (p.dex?.infinity ?? []).map((v) => `${v.chain}:${infinityShare(s, v)}`)));
   for (const [k, name] of sym) {
+    if (shares.has(k)) continue;
     const a = bal(k); if (!a) continue;
     const [chain, addr] = k.split(":");
     const v = val(k, a);
@@ -105,16 +112,41 @@ export function buildPortfolio(s: Snapshot, r: WalletRead): Portfolio {
 
     /* staking: Infinity Pool shares */
     for (const v of p.dex?.infinity ?? []) {
-      const k = `${v.chain}:${v.vault.toLowerCase()}`;
+      const k = `${v.chain}:${infinityShare(s, v)}`;
       const sh = bal(k); if (!sh || v.rate == null) continue;
       const amt = sh * v.rate;
       const tk = `${v.chain}:${v.token.toLowerCase()}`;
       const u = val(tk, amt) ?? (v.usd != null && v.amount ? (v.usd / v.amount) * amt : null);
       out.push({ key: `stk:${k}`, kind: "staking", name: `x${v.symbol}`, sub: `${p.name} Infinity Pool · 1 x${v.symbol} = ${v.rate.toFixed(4)} ${v.symbol}`, chain: CH[v.chain], usd: u,
-        under: [{ sym: canon(v.symbol), amount: amt, usd: u }], exitNow: u, exitNote: `redeem for ${v.symbol} at the vault's rate`, href: `/assets/${v.chain}/erc20/${v.vault.toLowerCase()}` });
+        under: [{ sym: canon(v.symbol), amount: amt, usd: u }], exitNow: u, exitNote: `redeem for ${v.symbol} at the vault's rate`, href: `/assets/${v.chain}/erc20/${infinityShare(s, v)}` });
     }
   }
 
+  return { out, hf };
+}
+
+/**
+ * One portfolio across any mix of EVM addresses (Igra, Kasplex) and Kaspa L1 addresses.
+ * `krcPrice` gives a KRC-20 tick's USD price when it is credible (traded, not stale), else null.
+ */
+export function buildPortfolio(s: Snapshot, evm: WalletRead[], l1: L1Read[] = [], krcPrice: (tick: string) => number | null = () => null): Portfolio {
+  const out: Position[] = [];
+  let hf: number | null = null, failed = 0, at = 0;
+  for (const r of evm) { const x = positionsOf(s, r); out.push(...x.out); hf = hf ?? x.hf; failed += r.failed; at = Math.max(at, r.at); }
+  for (const r of l1) {
+    at = Math.max(at, r.at);
+    const short = `${r.address.slice(0, 12)}…${r.address.slice(-4)}`;
+    if (r.kas == null) failed++;
+    else if (r.kas > 0) { const v = s.kasUsd != null ? r.kas * s.kasUsd : null; out.push({ key: `l1:${r.address}`, kind: "wallet", name: "KAS", sub: `Kaspa L1 · ${short}`, chain: "Kaspa", usd: v, under: [{ sym: "KAS", amount: r.kas, usd: v }], exitNow: v, exitNote: "in the wallet", href: "/assets/kaspa/native/KAS" }); }
+    if (r.krc20 == null) failed++;
+    for (const t of r.krc20 ?? []) {
+      if (!t.amount) continue;
+      const p = krcPrice(t.tick), v = p != null ? p * t.amount : null;
+      out.push({ key: `krc:${r.address}:${t.tick}`, kind: "wallet", name: t.tick, sub: `KRC-20 · ${short}`, chain: "Kaspa", usd: v, under: [{ sym: t.tick.toUpperCase(), amount: t.amount, usd: v }], exitNow: v, exitNote: v != null ? "sell on a KRC-20 market" : "no reliable price", href: `/assets/kaspa/krc20/${t.tick.toUpperCase()}` });
+    }
+  }
+  // dust: priced balances under 50 cents stay out of the list (they are still in the totals)
+  const dust = out.filter((x) => x.usd != null && Math.abs(x.usd) < 0.5);
   const priced = out.filter((x) => x.usd != null);
   const gross = priced.filter((x) => x.usd! > 0).reduce((a, x) => a + x.usd!, 0);
   const debt = -priced.filter((x) => x.usd! < 0).reduce((a, x) => a + x.usd!, 0);
@@ -126,10 +158,23 @@ export function buildPortfolio(s: Snapshot, r: WalletRead): Portfolio {
   const exTotal = exPos.reduce((a, [, v]) => a + v, 0) || 1;
   const exitNow = out.filter((x) => x.kind !== "borrow").reduce((a, x) => a + (x.exitNow ?? 0), 0);
   return {
-    address: r.address, at: r.at, gross, debt, net: gross - debt, byKind,
+    addresses: [...evm.map((r) => r.address), ...l1.map((r) => r.address)], at, gross, debt, net: gross - debt, byKind,
     exposure: exPos.map(([sym, usd]) => ({ sym, usd, share: usd / exTotal })),
     exitNow, exitShare: gross ? exitNow / gross : null,
-    positions: out.sort((a, b) => Math.abs(b.usd ?? 0) - Math.abs(a.usd ?? 0)),
-    unpriced: out.filter((x) => x.usd == null).length, hf, failed: r.failed,
+    positions: out.filter((x) => !dust.includes(x)).sort((a, b) => Math.abs(b.usd ?? 0) - Math.abs(a.usd ?? 0)),
+    dust: dust.length,
+    unpriced: out.filter((x) => x.usd == null).length, hf, failed,
   };
+}
+
+/** Split a pasted list into EVM and Kaspa L1 addresses (up to 5 in all). */
+export function parseAddresses(input: string | undefined | null): { evm: string[]; l1: string[]; bad: string[] } {
+  const parts = [...new Set((input ?? "").split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean))].slice(0, 5);
+  const evm: string[] = [], l1: string[] = [], bad: string[] = [];
+  for (const p of parts) {
+    if (/^0x[0-9a-fA-F]{40}$/.test(p)) evm.push(p.toLowerCase());
+    else if (/^kaspa:[a-z0-9]{61,63}$/i.test(p)) l1.push(p.toLowerCase());
+    else bad.push(p);
+  }
+  return { evm, l1, bad };
 }
