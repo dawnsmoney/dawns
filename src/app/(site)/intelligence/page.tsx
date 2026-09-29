@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Banner } from "@/components/Banner";
 import { AreaChart, Bars as DayBars } from "@/components/charts";
-import { FlowBars, Movers, Stat, Tags, signedUsd, pp, FLOW_IN, FLOW_OUT } from "@/components/intel";
+import { FlowBalance, FlowBars, Movers, Stat, Tags, signedUsd, pp } from "@/components/intel";
 import { Pill } from "@/components/bits";
 import { getSnapshot } from "@/lib/snapshot";
 import { getIntelRaw } from "@/lib/intel-db";
@@ -51,10 +51,9 @@ export default async function IntelligencePage() {
 
         <div className="card" style={{ marginBottom: 28 }}>
           <div className="c-head"><h3>Capital is moving</h3>
-            <div className="split-legend" style={{ marginTop: 0 }}><span><i style={{ background: FLOW_IN }} />Arriving</span><span><i style={{ background: FLOW_OUT }} />Leaving</span><span><i className="hatch-key" />TVL only, incl. price</span></div>
+            <span className="muted">{within} · in tokens, at today&apos;s prices</span>
           </div>
-          <p className="muted" style={{ margin: "-4px 0 16px" }}>Net change in each protocol over {within}: tokens supplied to lending markets and tokens added to pools, valued at today&apos;s prices.</p>
-          {I.flows.byProtocol.length ? <FlowBars rows={I.flows.byProtocol} span={I.span} /> : <p className="muted">No readings yet.</p>}
+          {I.flows.byProtocol.length ? <><FlowBalance rows={I.flows.byProtocol} /><FlowBars rows={I.flows.byProtocol} span={I.span} /></> : <p className="muted">No readings yet.</p>}
           <div className="grid g2" style={{ marginTop: 26 }}>
             <div><h4 className="ihead">Arriving</h4><Movers rows={I.flows.into} kind="flow" empty="No opportunity gained more than $500." /></div>
             <div><h4 className="ihead">Leaving</h4><Movers rows={I.flows.out} kind="flow" empty="No opportunity lost more than $500." /></div>

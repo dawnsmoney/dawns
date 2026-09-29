@@ -8,9 +8,10 @@ import { valueCredible } from "@/lib/assets/types";
 import { buildPortfolio, parseAddresses, POS_COLOR, POS_LABEL } from "@/lib/portfolio";
 import { MCard, MHead, MNote, MStats } from "@/components/m/kit";
 import { MTabs } from "@/components/m/tabs";
-import { AddressForm, exposureParts, kindParts } from "@/components/portfolio";
+import { exposureParts, kindParts } from "@/components/portfolio";
 import { Tags } from "@/components/intel";
 import { SplitBar } from "@/components/viz";
+import { PortfolioConnect } from "@/components/portfolio-connect";
 import Link from "next/link";
 import { usd, pct } from "@/lib/format";
 
@@ -34,23 +35,23 @@ export default async function MPortfolio({ searchParams }: P) {
       <>
         {head}
         <div className="m-screen">
-          <MCard><AddressForm value={a} mine={mine} />{a && <MNote>Not an address dawns can read: use 0x… (Igra, Kasplex) or kaspa:q….</MNote>}</MCard>
+          <MCard><PortfolioConnect value={a} mine={mine} />{a && <MNote>Not an address dawns can read: use 0x… (Igra, Kasplex) or kaspa:q….</MNote>}</MCard>
         </div>
       </>
     );
   }
   const [s, assets] = await Promise.all([getSnapshot(), getAssets()]);
   const [evmReads, l1Reads, raw] = await Promise.all([Promise.all(q.evm.map((x) => readWallet(s, x))), Promise.all(q.l1.map((x) => readL1(x))), getIntelRaw()]);
-  const krc = new Map(assets.filter((x) => x.standard === "krc20").map((x) => [x.ref.toUpperCase(), valueCredible(x) ? x.price : null]));
-  const pf = buildPortfolio(s, evmReads, l1Reads, (t) => krc.get(t.toUpperCase()) ?? null);
+  const px = new Map(assets.map((x) => [x.id, valueCredible(x) ? x.price : null]));
+  const pf = buildPortfolio(s, evmReads, l1Reads, (id) => px.get(id) ?? null);
   const intel = buildIntel(raw, s).byOpp;
   const top = pf.exposure[0];
   return (
     <>
       {head}
       <div className="m-screen">
-        <MCard><AddressForm value={a} mine={mine} /></MCard>
-        {!pf.positions.length ? <MNote>No positions dawns can read for this address{pf.failed ? `; ${pf.failed} reads did not answer` : ""}.</MNote> : (
+        <MCard><PortfolioConnect value={a} mine={mine} /></MCard>
+        {!pf.positions.length ? <MNote>Nothing found{pf.dust ? ` (${pf.dust} balances under $0.50 not listed)` : ""}{pf.failed ? "; some reads did not answer, reload to try again" : ""}. Add your other wallet above.</MNote> : (
           <>
             <MStats items={[
               { label: "Net value", value: usd(pf.net), sub: pf.debt ? `${usd(pf.debt)} borrowed` : `${pf.positions.length} positions` },

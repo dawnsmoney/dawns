@@ -41,7 +41,15 @@ export async function readWallet(s: Snapshot, address: string): Promise<WalletRe
   let failed = 0;
   const raw = new Map<string, bigint>();
   const dec = new Map<string, number>();
-  const [results, nIgra, nKas, farm] = await Promise.all([
+  const heldP = (async () => {
+    try {
+      const r = await fetch(`https://explorer.igralabs.com/api/v2/addresses/${who}/token-balances`, { cache: "no-store", signal: AbortSignal.timeout(10_000), headers: { accept: "application/json" } });
+      if (!r.ok) return null;
+      const j = (await r.json()) as { value: string; token: { address_hash?: string; address?: string; symbol?: string; decimals?: string; type?: string } }[];
+      return j.filter((t) => t.token?.type === "ERC-20").map((t) => ({ address: String(t.token.address_hash ?? t.token.address ?? "").toLowerCase(), symbol: t.token.symbol ?? "?", amount: Number(t.value) / 10 ** (Number(t.token.decimals) || 18) }));
+    } catch { return null; }
+  })();
+  const [results, nIgra, nKas, farm, held] = await Promise.all([
     runPool(jobs, 12, async (j) => {
       const v = await clients[j.chain].readContract({ address: j.address, abi: erc20, functionName: j.fn, args: j.fn === "balanceOf" ? [who] : [] } as never) as bigint | number;
       return { j, v };
@@ -52,6 +60,7 @@ export async function readWallet(s: Snapshot, address: string): Promise<WalletRe
       const r = await clients[ZEALOUS_FARM.chain].readContract({ address: ZEALOUS_FARM.address, abi: farmAbi, functionName: "userInfo", args: [BigInt(q.pid!), who] });
       return { pair: q.pair, amount: r[0] };
     }),
+    heldP,
   ]);
   for (const r of results) {
     if (!r) { failed++; continue; }
@@ -68,7 +77,7 @@ export async function readWallet(s: Snapshot, address: string): Promise<WalletRe
   }
   for (const f of farm) { if (!f) { failed++; continue; } if (f.amount > BigInt(0)) farmOut[f.pair] = Number(f.amount) / 1e18; }
   return {
-    address: who, bal, lpSupply, farm: farmOut, failed, at: Date.now(),
+    address: who, bal, lpSupply, farm: farmOut, failed, at: Date.now(), held,
     native: { igra: nIgra != null ? Number(nIgra) / 1e18 : null, kasplex: nKas != null ? Number(nKas) / 1e18 : null },
   };
 }

@@ -5,7 +5,7 @@ import { buildIntel } from "@/lib/intel";
 import { MCard, MHead, MLinkButton, MNote, MStats } from "@/components/m/kit";
 import { MTabs } from "@/components/m/tabs";
 import { MOpp } from "@/components/m/opps";
-import { FlowBars, Movers, signedUsd, pp } from "@/components/intel";
+import { FlowBalance, FlowBars, Movers, signedUsd, pp } from "@/components/intel";
 import { AreaChart, Bars as DayBars } from "@/components/charts";
 import { usd, pct } from "@/lib/format";
 
@@ -37,8 +37,8 @@ export default async function MIntelligence() {
         <MTabs tabs={[{ key: "f", label: "Capital" }, { key: "y", label: "Yield" }, { key: "e", label: "Emerging", badge: emerging.length || null }, { key: "m", label: "Market" }]}>
           <div className="m-panel">
             <MCard title="Net by protocol" tag={within}>
-              {I.flows.byProtocol.length ? <FlowBars rows={I.flows.byProtocol} span={I.span} /> : <MNote>No readings yet.</MNote>}
-              <MNote>Tokens supplied and added to pools, valued at today&apos;s prices. Hatched: TVL only, which includes price.</MNote>
+              {I.flows.byProtocol.length ? <><FlowBalance rows={I.flows.byProtocol} /><FlowBars rows={I.flows.byProtocol} span={I.span} /></> : <MNote>No readings yet.</MNote>}
+              <MNote>Tokens supplied and added to pools, valued at today&apos;s prices.</MNote>
             </MCard>
             <MCard title="Arriving"><Movers rows={I.flows.into} kind="flow" empty="No opportunity gained more than $500." /></MCard>
             <MCard title="Leaving"><Movers rows={I.flows.out} kind="flow" empty="No opportunity lost more than $500." /></MCard>

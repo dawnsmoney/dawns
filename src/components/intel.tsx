@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Sparkline } from "./bits";
+import { AssetCoin, ProtocolCoin } from "./bits";
 import { usd, pct } from "@/lib/format";
 import type { Mover, ProtoFlow, Tag } from "@/lib/intel";
 
@@ -25,51 +25,83 @@ export function Tags({ tags, max = 3 }: { tags: Tag[]; max?: number }) {
   );
 }
 
-/**
- * Net capital in or out of each protocol, one diverging bar each around a zero line.
- * Lending and liquidity are measured in token quantities; a protocol dawns can only see
- * as a TVL total gets a hatched bar, because its change includes price.
- */
-export function FlowBars({ rows, span }: { rows: ProtoFlow[]; span: number }) {
-  const val = (r: ProtoFlow) => (r.measured ? r.lending + r.liquidity : r.tvlChange ?? 0);
-  const m = Math.max(...rows.map((r) => Math.abs(val(r))), 1);
+/** The week in one line: everything that arrived against everything that left, measured in tokens. */
+export function FlowBalance({ rows }: { rows: ProtoFlow[] }) {
+  const m = rows.filter((r) => r.measured);
+  const parts = m.flatMap((r) => [r.lending, r.liquidity]);
+  const inn = parts.filter((v) => v > 0).reduce((a, v) => a + v, 0);
+  const out = -parts.filter((v) => v < 0).reduce((a, v) => a + v, 0);
+  const max = Math.max(inn, out, 1);
   return (
-    <div className="fbars" role="img" aria-label={`Net capital by protocol, ${Math.round(span)} days: ${rows.map((r) => `${r.name} ${signedUsd(val(r))}`).join(", ")}`}>
-      <div className="fbar fbar-axis" aria-hidden><span /><span className="fbar-t"><em>Leaving</em><em>Arriving</em></span><span /></div>
-      {rows.map((r) => {
-        const v = val(r);
-        const w = Math.max(0.8, (Math.abs(v) / m) * 50);
-        const parts = [r.lending ? `lending ${signedUsd(r.lending)}` : "", r.liquidity ? `liquidity ${signedUsd(r.liquidity)}` : ""].filter(Boolean).join(" · ");
-        const tip = r.measured ? `${r.name}: ${signedUsd(v)} (${parts || "no change"}), valued at today's prices` : `${r.name}: TVL ${signedUsd(v)}, includes price moves`;
-        return (
-          <div key={r.id} className="fbar" title={tip}>
-            <span className="fbar-l"><Link href={`/protocols/${r.id}`}>{r.name}</Link><small>{r.measured ? parts || "no change" : "TVL change, incl. price"}</small></span>
-            <span className="fbar-t">
-              <i className={r.measured ? "" : "fhatch"} style={{ width: `${w}%`, [v >= 0 ? "left" : "right"]: "50%", background: r.measured ? (v >= 0 ? FLOW_IN : FLOW_OUT) : undefined, color: v >= 0 ? FLOW_IN : FLOW_OUT }} />
-            </span>
-            <b>{signedUsd(v)}</b>
-          </div>
-        );
-      })}
+    <div className="fbal">
+      <div className="fbal-side out"><span>Left</span><b>{usd(out)}</b></div>
+      <div className="fbal-track" role="img" aria-label={`Left ${usd(out)}, arrived ${usd(inn)}, net ${signedUsd(inn - out)}`}>
+        <i className="o" style={{ width: `${(out / max) * 50}%` }} />
+        <i className="i" style={{ width: `${(inn / max) * 50}%` }} />
+        <em className={inn - out >= 0 ? "pos" : "neg"}>net {signedUsd(inn - out)}</em>
+      </div>
+      <div className="fbal-side in"><span>Arrived</span><b>{usd(inn)}</b></div>
     </div>
   );
 }
 
-/** A ranked list of opportunities that moved, with the daily yield behind the move. */
+/**
+ * Net capital in or out of each protocol, one diverging bar each around a zero line.
+ * Lending and liquidity are measured in token quantities. Protocols dawns can only see as
+ * a TVL total are listed apart, on their own scale, because their change includes price.
+ */
+export function FlowBars({ rows, span }: { rows: ProtoFlow[]; span: number }) {
+  const measured = rows.filter((r) => r.measured);
+  const tvlOnly = rows.filter((r) => !r.measured);
+  const row = (r: ProtoFlow, m: number) => {
+    const v = r.measured ? r.lending + r.liquidity : r.tvlChange ?? 0;
+    const w = Math.max(1.2, (Math.abs(v) / m) * 50);
+    const parts = [r.lending ? `lending ${signedUsd(r.lending)}` : "", r.liquidity ? `pools ${signedUsd(r.liquidity)}` : ""].filter(Boolean).join(" · ");
+    const tip = r.measured ? `${parts || "no change"} · valued at today's prices` : "TVL change, includes price moves";
+    return (
+      <Link key={r.id} href={`/protocols/${r.id}`} className={`fbar ${r.measured ? "" : "soft"}`} data-tip={tip}>
+        <span className="fbar-l"><ProtocolCoin p={{ id: r.id, letter: r.letter }} size={28} /><span><b>{r.name}</b><small>{r.measured ? parts || "no change" : "TVL only, incl. price"}</small></span></span>
+        <span className="fbar-t"><i className={`${v >= 0 ? "pos" : "neg"} ${r.measured ? "" : "fhatch"}`} style={{ width: `${w}%`, [v >= 0 ? "left" : "right"]: "50%" }} /></span>
+        <b className={`fbar-v ${v >= 0 ? "pos" : "neg"}`}>{signedUsd(v)}</b>
+      </Link>
+    );
+  };
+  const mM = Math.max(...measured.map((r) => Math.abs(r.lending + r.liquidity)), 1);
+  const mT = Math.max(...tvlOnly.map((r) => Math.abs(r.tvlChange ?? 0)), 1);
+  return (
+    <div className="fbars" role="img" aria-label={`Net capital by protocol, ${Math.round(span)} days: ${rows.map((r) => `${r.name} ${signedUsd(r.measured ? r.lending + r.liquidity : r.tvlChange ?? 0)}`).join(", ")}`}>
+      <div className="fbar-axis" aria-hidden><span /><span className="fbar-t"><em>← Leaving</em><em>Arriving →</em></span><span /></div>
+      {measured.map((r) => row(r, mM))}
+      {tvlOnly.length > 0 && (
+        <details className="fbar-more">
+          <summary>{tvlOnly.length} more seen only as a TVL total <span className="muted">· includes price, on their own scale</span></summary>
+          {tvlOnly.map((r) => row(r, mT))}
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** Opportunities that moved, as cards: the pair, the move, its size against the whole. */
 export function Movers({ rows, kind, empty }: { rows: Mover[]; kind: "flow" | "yield"; empty: string }) {
   if (!rows.length) return <p className="muted" style={{ margin: "6px 0 0" }}>{empty}</p>;
   return (
     <div className="movers">
-      {rows.map((r) => (
-        <div key={r.id} className="mover">
-          <span className="mover-n"><b>{r.name.replace(/ liquidity$/, "")}</b><small>{r.pname} · {r.kind === "supply" ? "lending" : "liquidity"} · {usd(r.size)}</small></span>
-          <span className="mover-s" title={r.series.length ? `Daily native yield, ${r.series.length} days: ${r.series.map((v) => yld(v)).join(", ")}` : "No daily history yet"}><Sparkline values={r.series} /></span>
-          <span className="mover-v">
-            <b style={{ color: r.value >= 0 ? FLOW_IN : FLOW_OUT }}>{kind === "flow" ? signedUsd(r.value) : pp(r.value)}</b>
-            <small>{kind === "flow" ? `yield ${yld(r.now)}` : `${yld(r.then)} → ${yld(r.now)}`}</small>
-          </span>
-        </div>
-      ))}
+      {rows.map((r) => {
+        const up = r.value >= 0;
+        const rel = kind === "flow" ? (r.size ? r.value / r.size : 0) : r.then ? r.value / r.then : 0;
+        return (
+          <div key={r.id} className={`mover ${up ? "pos" : "neg"}`} data-tip={kind === "flow" ? `${signedUsd(r.value)} in tokens, at today's prices · now ${usd(r.size)}` : `${yld(r.then)} → ${yld(r.now)} native yield`}>
+            <span className="mover-i">{r.assets.slice(0, 2).map((a, i) => <span key={a + i} style={{ marginLeft: i ? -10 : 0 }}><AssetCoin a={a} size={26} /></span>)}</span>
+            <span className="mover-n"><b>{r.name.replace(/ liquidity$/, "")}</b><small>{r.pname} · {r.kind === "supply" ? "lending" : "liquidity"}</small></span>
+            <span className="mover-v">
+              <b>{kind === "flow" ? signedUsd(r.value) : pp(r.value)}</b>
+              <small>{kind === "flow" ? `${up ? "+" : "−"}${pct(Math.abs(rel), Math.abs(rel) < 0.1 ? 1 : 0)} of its size` : `${yld(r.then)} → ${yld(r.now)}`}</small>
+            </span>
+            <span className="mover-bar"><i style={{ width: `${Math.min(100, Math.max(3, Math.abs(rel) * 100))}%` }} /></span>
+          </div>
+        );
+      })}
     </div>
   );
 }

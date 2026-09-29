@@ -19,6 +19,8 @@ export interface WalletRead {
   lpSupply: Record<string, number>;
   farm: Record<string, number>;          // pair → LP staked in the farm
   failed: number;                        // reads that did not answer
+  /** every ERC-20 the Igra explorer lists for the address, tracked or not (null: the explorer did not answer) */
+  held?: { address: string; symbol: string; amount: number }[] | null;
   at: number;
 }
 
@@ -49,7 +51,7 @@ const canon = (sym: string) => (/^(w?i?kas|wikas|ikas|wkas)$/i.test(sym) ? "KAS"
 /** A Kaspa L1 address: KAS and KRC-20 balances (null: the indexer did not answer). */
 export interface L1Read { address: string; kas: number | null; krc20: { tick: string; amount: number }[] | null; at: number }
 
-function positionsOf(s: Snapshot, r: WalletRead): { out: Position[]; hf: number | null } {
+function positionsOf(s: Snapshot, r: WalletRead, priceOf: (assetId: string) => number | null): { out: Position[]; hf: number | null } {
   const px = new Map<string, number | null>();
   const sym = new Map<string, string>();
   for (const p of s.protocols) {
@@ -122,17 +124,27 @@ function positionsOf(s: Snapshot, r: WalletRead): { out: Position[]; hf: number 
     }
   }
 
+  /* anything else the Igra explorer lists: priced from dawns' asset index when its price is credible */
+  const seen = new Set(out.flatMap((x) => [x.key, x.href ?? ""]).map((k) => k.toLowerCase()));
+  const receipts = new Set(s.protocols.flatMap((p) => [...(p.lending?.markets ?? []).flatMap((m) => [m.aToken, m.debtToken]), ...(p.dex?.pools ?? []).map((q) => q.pair)]).map((x) => x.toLowerCase()));
+  for (const t of r.held ?? []) {
+    const k = `igra:${t.address}`;
+    if (!t.amount || sym.has(k) || receipts.has(t.address) || seen.has(k) || seen.has(`/assets/igra/erc20/${t.address}`)) continue;
+    if (/\bLP\b|-LP|UNI-V2/i.test(t.symbol)) continue;           // LP shares of pools dawns does not read
+    const p = priceOf(`igra:erc20:${t.address}`), v = p != null ? p * t.amount : null;
+    out.push({ key: k, kind: "wallet", name: t.symbol, sub: "token", chain: "Igra", usd: v, under: [{ sym: canon(t.symbol), amount: t.amount, usd: v }], exitNow: v, exitNote: v != null ? "in the wallet" : "no reliable price", href: `/assets/igra/erc20/${t.address}` });
+  }
   return { out, hf };
 }
 
 /**
  * One portfolio across any mix of EVM addresses (Igra, Kasplex) and Kaspa L1 addresses.
- * `krcPrice` gives a KRC-20 tick's USD price when it is credible (traded, not stale), else null.
+ * `priceOf` gives an asset's USD price from dawns' asset index when it is credible (traded, not stale), else null.
  */
-export function buildPortfolio(s: Snapshot, evm: WalletRead[], l1: L1Read[] = [], krcPrice: (tick: string) => number | null = () => null): Portfolio {
+export function buildPortfolio(s: Snapshot, evm: WalletRead[], l1: L1Read[] = [], priceOf: (assetId: string) => number | null = () => null): Portfolio {
   const out: Position[] = [];
   let hf: number | null = null, failed = 0, at = 0;
-  for (const r of evm) { const x = positionsOf(s, r); out.push(...x.out); hf = hf ?? x.hf; failed += r.failed; at = Math.max(at, r.at); }
+  for (const r of evm) { const x = positionsOf(s, r, priceOf); out.push(...x.out); hf = hf ?? x.hf; failed += r.failed; at = Math.max(at, r.at); }
   for (const r of l1) {
     at = Math.max(at, r.at);
     const short = `${r.address.slice(0, 12)}…${r.address.slice(-4)}`;
@@ -141,7 +153,7 @@ export function buildPortfolio(s: Snapshot, evm: WalletRead[], l1: L1Read[] = []
     if (r.krc20 == null) failed++;
     for (const t of r.krc20 ?? []) {
       if (!t.amount) continue;
-      const p = krcPrice(t.tick), v = p != null ? p * t.amount : null;
+      const p = priceOf(`kaspa:krc20:${t.tick.toUpperCase()}`), v = p != null ? p * t.amount : null;
       out.push({ key: `krc:${r.address}:${t.tick}`, kind: "wallet", name: t.tick, sub: `KRC-20 · ${short}`, chain: "Kaspa", usd: v, under: [{ sym: t.tick.toUpperCase(), amount: t.amount, usd: v }], exitNow: v, exitNote: v != null ? "sell on a KRC-20 market" : "no reliable price", href: `/assets/kaspa/krc20/${t.tick.toUpperCase()}` });
     }
   }

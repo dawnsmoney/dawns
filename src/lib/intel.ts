@@ -35,8 +35,8 @@ export interface OppIntel {
   span: number;                      // days between "then" and now
   tags: Tag[];
 }
-export interface ProtoFlow { id: string; name: string; lending: number; liquidity: number; tvlChange: number | null; tvlNow: number; measured: boolean }
-export interface Mover { id: string; name: string; pname: string; kind: Opportunity["kind"]; value: number; size: number; then: number | null; now: number | null; series: number[] }
+export interface ProtoFlow { id: string; name: string; letter: string; lending: number; liquidity: number; tvlChange: number | null; tvlNow: number; measured: boolean }
+export interface Mover { id: string; name: string; pname: string; assets: string[]; kind: Opportunity["kind"]; value: number; size: number; then: number | null; now: number | null; series: number[] }
 
 export interface Intel {
   asOf: number;
@@ -140,7 +140,7 @@ export function buildIntel(raw: IntelRaw, s: Snapshot): Intel {
   const byProtocol: ProtoFlow[] = s.protocols.map((p) => {
     const then = pickThen(tv.get(p.id) ?? [], today);
     const measured = protoLend.has(p.id) || protoLiq.has(p.id);
-    return { id: p.id, name: p.name, lending: protoLend.get(p.id) ?? 0, liquidity: protoLiq.get(p.id) ?? 0, tvlChange: then ? p.tvl - then.v : null, tvlNow: p.tvl, measured };
+    return { id: p.id, name: p.name, letter: p.letter, lending: protoLend.get(p.id) ?? 0, liquidity: protoLiq.get(p.id) ?? 0, tvlChange: then ? p.tvl - then.v : null, tvlNow: p.tvl, measured };
   }).filter((x) => Math.abs(x.measured ? x.lending + x.liquidity : x.tvlChange ?? 0) >= 50)
     .sort((a, b) => Math.abs(b.measured ? b.lending + b.liquidity : b.tvlChange ?? 0) - Math.abs(a.measured ? a.lending + a.liquidity : a.tvlChange ?? 0));
   const lending = [...protoLend.values()].reduce((a, b) => a + b, 0);
@@ -148,7 +148,7 @@ export function buildIntel(raw: IntelRaw, s: Snapshot): Intel {
 
   /* ---- movers among listed opportunities (farms are the same pool) ---- */
   const opps = s.opportunities.filter((o) => !o.farm);
-  const mover = (o: Opportunity, value: number): Mover => { const x = byOpp[o.id]; return { id: o.id, name: o.name, pname: o.pname, kind: o.kind, value, size: o.size, then: x?.apyThen ?? null, now: x?.apyNow ?? null, series: x?.series ?? [] }; };
+  const mover = (o: Opportunity, value: number): Mover => { const x = byOpp[o.id]; return { id: o.id, name: o.name, pname: o.pname, assets: o.assets, kind: o.kind, value, size: o.size, then: x?.apyThen ?? null, now: x?.apyNow ?? null, series: x?.series ?? [] }; };
   const withFlow = opps.filter((o) => byOpp[o.id]?.flow != null && Math.abs(byOpp[o.id].flow!) >= 500);
   const into = withFlow.filter((o) => byOpp[o.id].flow! > 0).sort((a, b) => byOpp[b.id].flow! - byOpp[a.id].flow!).slice(0, 6).map((o) => mover(o, byOpp[o.id].flow!));
   const out = withFlow.filter((o) => byOpp[o.id].flow! < 0).sort((a, b) => byOpp[a.id].flow! - byOpp[b.id].flow!).slice(0, 6).map((o) => mover(o, byOpp[o.id].flow!));

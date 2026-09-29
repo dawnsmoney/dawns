@@ -94,9 +94,8 @@ async function metamaskSdk(): Promise<Eip1193> {
   return sdkProvider;
 }
 
-/** Connect a wallet, sign dawns' one-time message, and start a session. */
-export async function signInWith(key: string): Promise<Account> {
-  if (key === "kaspium") return openKaspium();
+/** Connect a wallet: its address, and how to sign with it. Kaspium cannot connect (no dApp link). */
+export async function connectWith(key: string): Promise<{ kind: "kaspa" | "evm"; address: string; sign: (m: string) => Promise<string> }> {
   let kind: "kaspa" | "evm", address: string, sign: (m: string) => Promise<string>;
   if (key === "kasware") {
     const w = window.kasware; if (!w) throw new Error("KasWare is not installed in this browser.");
@@ -122,6 +121,13 @@ export async function signInWith(key: string): Promise<Account> {
     sign = (m) => prov.request({ method: "personal_sign", params: [toHex(m), address] }) as Promise<string>;
   }
   if (!address) throw new Error("The wallet did not share an address.");
+  return { kind, address, sign };
+}
+
+/** Connect a wallet, sign dawns' one-time message, and start a session. */
+export async function signInWith(key: string): Promise<Account> {
+  if (key === "kaspium") return openKaspium();
+  const { kind, address, sign } = await connectWith(key);
   const { message, address: canonical } = await post<{ message: string; address: string }>("/api/auth/nonce", { kind, address });
   const signature = await sign(message);
   return post<Account>("/api/auth/verify", { kind, address: canonical, message, signature });

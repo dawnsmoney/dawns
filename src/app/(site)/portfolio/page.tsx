@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Banner } from "@/components/Banner";
 import { SplitBar } from "@/components/viz";
-import { AddressForm, PositionTable, exposureParts, kindParts } from "@/components/portfolio";
+import { PortfolioConnect } from "@/components/portfolio-connect";
+import { PositionTable, exposureParts, kindParts } from "@/components/portfolio";
 import { getSnapshot } from "@/lib/snapshot";
 import { getIntelRaw } from "@/lib/intel-db";
 import { buildIntel } from "@/lib/intel";
@@ -32,7 +33,7 @@ export default async function PortfolioPage({ searchParams }: P) {
       <>
         <Banner short crumb={[{ label: "Beta" }]} title="Portfolio" lede={lede} />
         <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
-          <div className="card"><AddressForm value={a} mine={mine} />{bad && <p style={{ color: "var(--crit)", margin: "12px 0 0" }}>Not an address dawns can read: use 0x… (Igra, Kasplex) or kaspa:q….</p>}</div>
+          <div className="card"><PortfolioConnect value={a} mine={mine} />{bad && <p style={{ color: "var(--crit)", margin: "12px 0 0" }}>Not an address dawns can read: use 0x… (Igra, Kasplex) or kaspa:q….</p>}</div>
           <div className="grid g3">
             {[["Look-through", "Every position broken down to the assets underneath, so two receipts on the same token show as one exposure."],
               ["What can leave", "Lending counts only what the market's cash can pay today; LP and staking shares count in full, at the pool's price."],
@@ -47,8 +48,8 @@ export default async function PortfolioPage({ searchParams }: P) {
 
   const [s, assets] = await Promise.all([getSnapshot(), getAssets()]);
   const [evmReads, l1Reads, raw] = await Promise.all([Promise.all(q.evm.map((x) => readWallet(s, x))), Promise.all(q.l1.map((x) => readL1(x))), getIntelRaw()]);
-  const krc = new Map(assets.filter((x) => x.standard === "krc20").map((x) => [x.ref.toUpperCase(), valueCredible(x) ? x.price : null]));
-  const pf = buildPortfolio(s, evmReads, l1Reads, (t) => krc.get(t.toUpperCase()) ?? null);
+  const px = new Map(assets.map((x) => [x.id, valueCredible(x) ? x.price : null]));
+  const pf = buildPortfolio(s, evmReads, l1Reads, (id) => px.get(id) ?? null);
   const intel = buildIntel(raw, s);
   const tags = Object.fromEntries(Object.entries(intel.byOpp).map(([k, v]) => [k, v.tags]));
   const top = pf.exposure[0];
@@ -56,9 +57,9 @@ export default async function PortfolioPage({ searchParams }: P) {
     <>
       <Banner short crumb={[{ href: "/portfolio", label: "Portfolio" }, { label: n > 1 ? `${n} addresses` : `${(q.evm[0] ?? q.l1[0]).slice(0, 10)}…${(q.evm[0] ?? q.l1[0]).slice(-4)}` }]} title="Portfolio" lede={lede} />
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
-        <div className="card"><AddressForm value={a} mine={mine} />{bad && <p style={{ color: "var(--warn)", margin: "12px 0 0" }}>Skipped: {q.bad.join(", ")}</p>}</div>
+        <div className="card"><PortfolioConnect value={a} mine={mine} />{bad && <p style={{ color: "var(--warn)", margin: "12px 0 0" }}>Skipped: {q.bad.join(", ")}</p>}</div>
         {!pf.positions.length ? (
-          <div className="card"><p className="muted" style={{ margin: 0 }}>No positions dawns can read for {n > 1 ? "these addresses" : "this address"}{pf.failed ? ` (${pf.failed} reads did not answer; try again shortly)` : ""}. dawns reads the tokens, lending markets, V2 pools, the ZealousSwap farm and Infinity Pools it tracks.</p></div>
+          <div className="card"><p className="muted" style={{ margin: 0 }}>Nothing found for {n > 1 ? "these addresses" : "this address"}: no tokens on Igra (every ERC-20 the explorer lists), no lending, LP, farm or Infinity Pool positions on Igra or Kasplex{q.l1.length ? ", and no KAS or KRC-20 on Kaspa L1" : ""}.{pf.dust ? ` ${pf.dust} balances under $0.50 are not listed.` : ""}{pf.failed ? " Some reads did not answer; reload to try again." : ""} Is the wallet on another network, or is this its Kaspa L1 address? Add both above.</p></div>
         ) : (
           <>
             <div className="grid g4">
