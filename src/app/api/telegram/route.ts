@@ -144,6 +144,8 @@ async function handleCommand(c: Chat, text: string) {
       await sql().query("update telegram_chats set daily = $2 where chat_id = $1", [c.id, on]);
       return send(c.id, on ? "☀️ You'll get the dawns report here every morning at 07:00 Athens time. /daily off to stop." : "Morning report off.");
     }
+    // this chat's id, for TELEGRAM_ADMIN_CHAT_ID (the operator's private report feed)
+    case "/id": return send(c.id, `This chat's id: <code>${c.id}</code>`);
     case "/stop": {
       await sql().query("delete from telegram_chats where chat_id = $1", [c.id]);
       return send(c.id, "Removed this chat from dawns. Send /start any time to come back.");

@@ -2,6 +2,7 @@ import { currentUser, sameOrigin } from "@/lib/auth/session";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 import { visitorId } from "@/lib/visitor";
 import { award } from "@/lib/pioneer";
+import { notifyAdmin } from "@/lib/notify-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -51,5 +52,7 @@ export async function POST(req: Request) {
   const text = clean(b.text, 2000);
   if (text.length < 10) return Response.json({ error: "Say a little more: what did you do, and what happened?" }, { status: 400 });
   await q.query("insert into feedback (id, user_id, kind, path, text, contact, device, vid) values ($1, $2, $3, $4, $5, $6, $7, $8)", [id, u?.id ?? null, kind, path, text, contact, device, vid]);
+  const who = u ? ((await q.query("select address from wallets where user_id = $1 order by created_at limit 1", [u.id])) as { address: string }[])[0]?.address ?? "signed in" : contact ? `anonymous, reply to ${contact}` : "anonymous";
+  await notifyAdmin(`New report · ${kind === "bug" ? "something broke" : kind}`, [`On ${path ?? "?"} · ${who}`, text, device], "/admin/testing");
   return Response.json({ ok: true, id });
 }

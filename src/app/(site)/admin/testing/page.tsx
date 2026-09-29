@@ -34,6 +34,9 @@ export default async function TestingAdmin() {
     <>
       <Banner short crumb={[{ href: "/admin", label: "Admin" }, { label: "Testing" }]} title="Testers" lede="How far people get on /test, what they report, and what they answer. Confirming a report pays its signed-in reporter 500 points once." />
       <div className="wrap" style={{ paddingTop: 32, display: "grid", gap: 20 }}>
+        {!process.env.TELEGRAM_ADMIN_CHAT_ID && (
+          <div className="card test-why"><b>Get reports in Telegram</b><p>Send <code>/id</code> to the dawns bot in a private chat, then set <code>TELEGRAM_ADMIN_CHAT_ID</code> to that number in Vercel. Every new report and find then arrives there too, never in the public channel.</p></div>
+        )}
         <div className="card">
           <div className="c-head"><h3>The funnel</h3><span className="tag">accounts at each step, all time</span></div>
           <div className="adm-fun">

@@ -1,5 +1,6 @@
 import { currentUser, sameOrigin } from "@/lib/auth/session";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
+import { notifyAdmin } from "@/lib/notify-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -23,5 +24,6 @@ export async function POST(req: Request) {
   if ((open?.d ?? 0) >= 5) return Response.json({ error: "Five finds a day at most." }, { status: 429 });
   const id = `f_${[...crypto.getRandomValues(new Uint8Array(8))].map((x) => x.toString(16).padStart(2, "0")).join("")}`;
   await q.query("insert into finds (id, user_id, protocol, target, asset, link, why) values ($1, $2, $3, $4, $5, $6, $7)", [id, u.id, protocol, target, asset || null, link || null, why]);
+  await notifyAdmin(`New find · ${protocol} · ${target}`, [asset ? `Asset ${asset}` : null, link, why], "/admin/finds");
   return Response.json({ ok: true, id });
 }
