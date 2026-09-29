@@ -1,7 +1,9 @@
 //! `credit …` — the credit vault (vault/credit/dawns_credit.sil) on testnet-10.
 //!
 //!   credit init                  role and borrower keys + draft credit-mandate.json
-//!   credit genesis <kas>         seed the vault (the seed stays the vault's own)
+//!   credit genesis [kas] [--donate]
+//!                                seed exactly minKeep + token dust + one fee (NAV 0 until the first
+//!                                deposit); more only with --donate (it goes to the first holders)
 //!   credit token                 guardian creates the share token (KCC-20) bound to the vault
 //!   credit show                  the vault, its loans, NAV and share price
 //!   credit verify                offline: this build compiles to the address credit.json records
@@ -284,6 +286,7 @@ async fn open_credit() -> Res<CCtx> {
 /// Broadcast a vault move and record the new state. The ledger is written
 /// before broadcasting (with the move marked pending).
 async fn commit(c: &mut CCtx, kind: &str, tx: Transaction, entries: Vec<UtxoEntry>, next: Credit, value_after: i64, extra: Value) -> Res<String> {
+    if value_after < c.m.min_keep { return Err(format!("{kind} would leave the vault {} — below the {} it must always keep; not broadcast", kas(value_after), kas(c.m.min_keep)).into()); }
     let used = validate(&tx, &entries).map_err(|e| format!("local engine refused {kind}: {e:?} — not broadcast"))?;
     println!("local engine   : ACCEPTED (script units per input {used:?})");
     if std::env::var("DAWNS_DRY").is_ok() { println!("dry run        : not broadcast (txid would be {})", tx.id()); return Ok(tx.id().to_string()); }
@@ -584,13 +587,23 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
 
         "genesis" => {
             if Ledger::read().is_ok() { return Err(format!("{LEDGER} exists: one credit vault per directory").into()); }
-            let seed = parse_kas(arg(3)?)?;
+            let asked = args.get(3).filter(|x| !x.starts_with("--")).map(|x| parse_kas(x)).transpose()?;
             let client = connect().await?;
             let daa = ready(&client).await?;
             let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(MANDATE)?)?;
             if doc["notBeforeDaa"].as_i64() == Some(0) { doc["notBeforeDaa"] = json!(daa - DAA_BACKOFF); std::fs::write(MANDATE, serde_json::to_string_pretty(&doc)? + "\n")?; }
             let m = read_credit_mandate()?;
-            if seed < m.min_keep + MINTER_DUST + 2 * m.max_fee { return Err(format!("seed at least {}", kas(m.min_keep + MINTER_DUST + 2 * m.max_fee)).into()); }
+            // The seed is exactly what the vault must keep (minKeep), the share token's
+            // minter dust and the token transaction's fee: after `token` the vault holds
+            // minKeep and its NAV is 0. Anything more would count in NAV before the first
+            // share exists, and the first depositor (minted at the launch price) would
+            // receive it. A larger seed is a donation to the first holders: --donate.
+            let minimum = m.min_keep + MINTER_DUST + m.max_fee;
+            let donate = args.iter().any(|a| a == "--donate");
+            let seed = asked.unwrap_or(minimum);
+            if seed < minimum { return Err(format!("the seed must be at least {} (minKeep {} + token dust {} + one vault fee {})", kas(minimum), kas(m.min_keep), kas(MINTER_DUST), kas(m.max_fee)).into()); }
+            if seed > minimum && !donate { return Err(format!("a seed above {} counts in NAV before any share exists and goes to the first depositor. Leave the amount out to seed exactly {}, or add --donate if that is the intent", kas(minimum), kas(minimum)).into()); }
+            println!("seed           : {}{}", kas(seed), if seed > minimum { format!(" ({} donated to the first holders)", kas(seed - minimum)) } else { " (NAV is 0 until the first deposit)".to_string() });
             let payer = load_key("depositor")?;
             let from = address_of(&payer);
             let funding = largest(&client, &from, (seed + FEE as i64) as u64).await?;
@@ -781,6 +794,9 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
             let mins = |daa: i64| (daa - at).max(0) / 600; // 10 DAA a second
             let steps = (10_000 + c.m.step_bps - 1) / c.m.step_bps.max(1);
             let zero_at = s.due[slot] + c.m.grace + (steps - 1) * c.m.period;
+            if at < s.due[slot] + c.m.grace && s.marks[slot] == 0 {
+                return Err(format!("slot {slot} is already marked to zero; the covenant allows the write-off once its grace ends at DAA {} (about {} min from now, chain at {}).", s.due[slot] + c.m.grace, mins(s.due[slot] + c.m.grace), c.daa).into());
+            }
             if at < s.due[slot] + c.m.grace {
                 return Err(format!("slot {slot} is not past its grace yet: that is DAA {} (about {} min from now, chain at {}). A loan can be written off only once it counts for nothing: the schedule reaches zero at DAA {zero_at} (about {} min), or the valuer marks it to zero after the grace (`credit mark`).",
                     s.due[slot] + c.m.grace, mins(s.due[slot] + c.m.grace), c.daa, mins(zero_at)).into());

@@ -1,7 +1,9 @@
 //! `nav …` — the NAV vault (vault/nav/dawns_nav.sil) on testnet-10.
 //!
 //!   nav init                  valuer key + draft nav-mandate.json
-//!   nav genesis <kas>         seed the vault (the seed stays the vault's own: minKeep + token dust)
+//!   nav genesis [kas] [--donate]
+//!                             seed the vault with exactly minKeep + token dust + one fee (NAV 0 until
+//!                             the first deposit); more only with --donate (it goes to the first holders)
 //!   nav token                 guardian creates the share token (KCC-20) bound to the vault
 //!   nav show                  the vault, its NAV and share price, notes outstanding
 //!   nav accounts <address>    a user's deposit and redeem addresses
@@ -268,6 +270,7 @@ async fn open_nav() -> Res<NCtx> {
 /// Broadcast a vault move and record the new state. The ledger is written
 /// before broadcasting (with the move marked pending), as for the v0 vault.
 async fn commit(c: &mut NCtx, kind: &str, tx: Transaction, entries: Vec<UtxoEntry>, next: Nav, value_after: i64, extra: Value) -> Res<String> {
+    if value_after < c.m.min_keep { return Err(format!("{kind} would leave the vault {} — below the {} it must always keep; not broadcast", kas(value_after), kas(c.m.min_keep)).into()); }
     let used = validate(&tx, &entries).map_err(|e| format!("local engine refused {kind}: {e:?} — not broadcast"))?;
     println!("local engine   : ACCEPTED (script units per input {used:?})");
     if std::env::var("DAWNS_DRY").is_ok() { println!("dry run        : not broadcast (txid would be {})", tx.id()); return Ok(tx.id().to_string()); }
@@ -497,13 +500,23 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
 
         "genesis" => {
             if Ledger::read().is_ok() { return Err("nav.json exists: one NAV vault per directory".into()); }
-            let seed = parse_kas(arg(3)?)?;
+            let asked = args.get(3).filter(|x| !x.starts_with("--")).map(|x| parse_kas(x)).transpose()?;
             let client = connect().await?;
             let daa = ready(&client).await?;
             let mut doc: Value = serde_json::from_str(&std::fs::read_to_string("nav-mandate.json")?)?;
             if doc["notBeforeDaa"].as_i64() == Some(0) { doc["notBeforeDaa"] = json!(daa - DAA_BACKOFF); std::fs::write("nav-mandate.json", serde_json::to_string_pretty(&doc)? + "\n")?; }
             let m = read_nav_mandate()?;
-            if seed < m.min_keep + MINTER_DUST + 2 * FEE as i64 { return Err(format!("seed at least {}", kas(m.min_keep + MINTER_DUST + 2 * FEE as i64)).into()); }
+            // The seed is exactly what the vault must keep (minKeep), the share token's
+            // minter dust and the token transaction's fee: after `token` the vault holds
+            // minKeep and its NAV is 0. Anything more would count in NAV before the first
+            // share exists, and the first depositor (minted at the launch price) would
+            // receive it. A larger seed is a donation to the first holders: --donate.
+            let minimum = m.min_keep + MINTER_DUST + m.max_fee;
+            let donate = args.iter().any(|a| a == "--donate");
+            let seed = asked.unwrap_or(minimum);
+            if seed < minimum { return Err(format!("the seed must be at least {} (minKeep {} + token dust {} + one vault fee {})", kas(minimum), kas(m.min_keep), kas(MINTER_DUST), kas(m.max_fee)).into()); }
+            if seed > minimum && !donate { return Err(format!("a seed above {} counts in NAV before any share exists and goes to the first depositor. Leave the amount out to seed exactly {}, or add --donate if that is the intent", kas(minimum), kas(minimum)).into()); }
+            println!("seed           : {}{}", kas(seed), if seed > minimum { format!(" ({} donated to the first holders)", kas(seed - minimum)) } else { " (NAV is 0 until the first deposit)".to_string() });
             let payer = load_key("depositor")?;
             let from = address_of(&payer);
             let funding = largest(&client, &from, (seed + FEE as i64) as u64).await?;

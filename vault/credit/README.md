@@ -63,7 +63,7 @@ The TN10 deploy runs from your own Terminal, in `vault/deploy`, using the `cargo
 
 1. `credit init`
 2. Fund the depositor key.
-3. `credit genesis 20`
+3. `credit genesis` (seeds exactly what the vault must keep, so NAV is 0 until the first deposit)
 4. `credit token`
 5. `credit keeper`
 
