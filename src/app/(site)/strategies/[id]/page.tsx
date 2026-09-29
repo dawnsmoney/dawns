@@ -107,7 +107,7 @@ export default async function StrategyPage({ params }: { params: Promise<{ id: s
             <div className="st-checks">
               {(Object.keys(PAUSE) as (keyof typeof PAUSE)[]).map((k) => {
                 const on = doc.pause.includes(k);
-                const hit = ev.legs.filter((l) => l.paused.includes(k)).map((l) => l.o?.name);
+                const hit = ev.legs.filter((l) => l.paused.includes(k)).map((l) => l.name);
                 return <div key={k} className={`st-check ${!on ? "off" : hit.length ? "warn" : "ok"}`}><i aria-hidden>{!on ? "–" : hit.length ? "!" : "✓"}</i><span><b>{PAUSE[k].label}{!on ? " · off" : hit.length ? ` · pausing ${hit.join(", ")}` : ""}</b><small>{PAUSE[k].why}</small></span></div>;
               })}
               <div className="st-check ok"><i aria-hidden>↻</i><span><b>Rebalance at {bp(doc.driftBps)} drift</b><small>At most {bp(doc.maxProtocolBps)} in one protocol; lending legs covered {doc.exitCover}× by the market&apos;s cash.</small></span></div>

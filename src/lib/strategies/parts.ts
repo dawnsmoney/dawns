@@ -10,7 +10,7 @@ const bp = (b: number) => `${(b / 100).toFixed(b % 100 ? 1 : 0)}%`;
 export interface SplitPart { key: string; label: string; color: string; share: number; note?: string }
 export function splitParts(doc: StrategyDoc, ev: Evaluation): SplitPart[] {
   return [
-    ...ev.legs.map((l, i) => ({ key: l.leg.opp, label: legName(l.leg.opp, l.o?.name), color: LEG_COLORS[i], share: l.share, note: `${l.o?.pname ?? "not listed"} · cap ${bp(l.leg.cap)}` })),
+    ...ev.legs.map((l, i) => ({ key: l.leg.opp, label: l.name, color: LEG_COLORS[i], share: l.share, note: `${l.credit ? `${l.credit.termDays}-day loan` : l.o?.pname ?? "not listed"} · cap ${bp(l.leg.cap)}` })),
     ...(doc.reserveBps ? [{ key: "reserve", label: "Reserve (KAS in the vault)", color: RESERVE_COLOR, share: doc.reserveBps / 10_000, note: "pays redemptions at once" }] : []),
   ];
 }

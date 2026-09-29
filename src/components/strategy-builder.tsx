@@ -6,7 +6,7 @@ import { Pill } from "./bits";
 import { SplitBar } from "./viz";
 import { ApyWaterfall, ExitStack } from "./strategy";
 import { LEG_COLORS, splitParts } from "@/lib/strategies/parts";
-import { DEFAULT_DOC, MAX_LEGS, PAUSE, evaluate, parseDoc, strategyId, type PauseRule, type StrategyDoc } from "@/lib/strategies/model";
+import { BORROWER, DEFAULT_DOC, MAX_LEGS, PAUSE, creditId, evaluate, parseDoc, strategyId, type BorrowerKind, type CreditTerms, type PauseRule, type StrategyDoc } from "@/lib/strategies/model";
 import type { Opportunity } from "@/lib/types";
 import { pct, usd } from "@/lib/format";
 import { loadAccount, shortAddr, type Account } from "./wallet";
@@ -43,7 +43,7 @@ function Slide({ value, max, onChange, color, cap, label }: { value: number; max
 export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportunity[]; kasUsd: number | null; from?: { id: string; version: number; doc: StrategyDoc } | null; start?: StrategyDoc | null }) {
   const router = useRouter();
   const [doc, setDoc] = useState<StrategyDoc>(from ? from.doc : start ?? { ...DEFAULT_DOC, name: "", thesis: "" });
-  const [kind, setKind] = useState<"all" | "supply" | "lp">("all");
+  const [kind, setKind] = useState<"all" | "supply" | "lp" | "credit">("all");
   const [account, setAccount] = useState<Account | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -72,6 +72,12 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
     legs[i].cap = Math.max(legs[i].cap, legs[i].target);
     withLegs(legs);
   };
+  const addCredit = (c: CreditTerms) => {
+    const opp = creditId(c.borrower);
+    if (doc.legs.length >= MAX_LEGS || doc.legs.some((l) => l.opp === opp)) return;
+    const room = Math.max(100, Math.min(3_000, 10_000 - legSum - 1_000));
+    withLegs([...doc.legs, { opp, target: room, cap: Math.min(10_000, room + 1_000), credit: c }]);
+  };
   const drop = (i: number) => withLegs(doc.legs.filter((_, j) => j !== i));
   const togglePause = (p: PauseRule) => set({ pause: doc.pause.includes(p) ? doc.pause.filter((x) => x !== p) : [...doc.pause, p] });
 
@@ -95,7 +101,7 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(null); }
   };
 
-  const list = opps.filter((o) => kind === "all" || o.kind === kind);
+  const list = kind === "credit" ? [] : opps.filter((o) => kind === "all" || o.kind === kind);
   return (
     <div className="st-build">
       <div className="st-form">
@@ -115,7 +121,8 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
 
         <div className="card">
           <div className="c-head"><h3>2 · Opportunities</h3><span className="tag">{doc.legs.length} of {MAX_LEGS} slots</span></div>
-          <Seg label="Kind" items={[["all", "All"], ["supply", "Lending"], ["lp", "Liquidity"]]} value={kind} onPick={setKind} />
+          <Seg label="Kind" items={[["all", "All"], ["supply", "Lending"], ["lp", "Liquidity"], ["credit", "Private credit"]]} value={kind} onPick={setKind} />
+          {kind === "credit" && <CreditForm full={doc.legs.length >= MAX_LEGS} taken={doc.legs.map((l) => l.opp)} onAdd={addCredit} />}
           <div className="st-opps">
             {list.map((o) => {
               const inIt = doc.legs.findIndex((l) => l.opp === o.id);
@@ -138,7 +145,7 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
                 const o = opps.find((x) => x.id === l.opp);
                 return (
                   <div key={l.opp} className="st-legedit">
-                    <span className="st-leg-n"><i style={{ background: LEG_COLORS[i] }} /><span><b>{o?.name ?? l.opp}</b><small>{o?.pname}</small></span></span>
+                    <span className="st-leg-n"><i style={{ background: LEG_COLORS[i] }} /><span><b>{l.credit ? `Loan to ${l.credit.borrower}` : o?.name ?? l.opp}</b><small>{l.credit ? `${(l.credit.rateBps / 100).toFixed(1)}% · ${l.credit.termDays} days · ${l.credit.collateral}` : o?.pname}</small></span></span>
                     <Slide label={`${o?.name} target`} value={l.target} max={10_000} color={LEG_COLORS[i]} cap={l.cap} onChange={(v) => setLeg(i, { target: v })} />
                     <label>Target <b>{bp(l.target)}</b></label>
                     <Slide label={`${o?.name} cap`} value={l.cap} max={10_000} color="rgba(255,255,255,.28)" onChange={(v) => setLeg(i, { cap: Math.max(v, l.target) })} />
@@ -218,7 +225,7 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
               <ExitStack doc={doc} ev={ev} />
               <div className="st-checks sm">
                 {ev.checks.filter((c) => !c.ok).map((c) => <div key={c.key} className={`st-check ${c.t}`}><i aria-hidden>{c.t === "crit" ? "✕" : "!"}</i><span><b>{c.label}</b><small>{c.detail}</small></span></div>)}
-                {ev.legs.flatMap((l) => l.flags.filter((f) => f.t !== "info").map((f) => <div key={l.leg.opp + f.text} className={`st-check ${f.t}`}><i aria-hidden>!</i><span><b>{l.o?.name}</b><small>{f.text}</small></span></div>))}
+                {ev.legs.flatMap((l) => l.flags.filter((f) => f.t !== "info").map((f) => <div key={l.leg.opp + f.text} className={`st-check ${f.t}`}><i aria-hidden>!</i><span><b>{l.name}</b><small>{f.text}</small></span></div>))}
               </div>
             </div>
           ) : <p className="muted" style={{ margin: 0 }}>Pick opportunities: the preview computes as you go, from live data.</p>}
@@ -233,6 +240,41 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
           {msg && <p className="navp-err" style={{ margin: 0 }}>{msg}</p>}
         </div>
       </aside>
+    </div>
+  );
+}
+
+/**
+ * A loan leg: a named borrower, a contract rate and term, collateral, and what happens when
+ * it is late. dawns cannot read any of it on-chain, so the preview says exactly that.
+ */
+function CreditForm({ onAdd, full, taken }: { onAdd: (c: CreditTerms) => void; full: boolean; taken: string[] }) {
+  const [c, setC] = useState<CreditTerms>({ borrower: "", kind: "market-maker", rateBps: 1_000, termDays: 90, collateral: "secured", collateralNote: "", graceDays: 7, markdownBps: 2_500, reporting: "attested" });
+  const set = (p: Partial<CreditTerms>) => setC((x) => ({ ...x, ...p }));
+  const dup = taken.includes(creditId(c.borrower));
+  return (
+    <div className="st-credit">
+      <p className="muted" style={{ margin: 0 }}>Lend part of the vault to a named institution for a fixed term. The rate is a contract, not a market: dawns shows it, but can only see repayments that reach the vault.</p>
+      <div className="st-fields">
+        <span>Borrower</span>
+        <input className="search" placeholder="e.g. Northwind Markets" value={c.borrower} maxLength={60} onChange={(e) => set({ borrower: e.target.value })} aria-label="Borrower name" />
+        <span>Type</span>
+        <Seg label="Borrower type" items={(Object.keys(BORROWER) as BorrowerKind[]).map((k) => [k, BORROWER[k]] as [BorrowerKind, string])} value={c.kind} onPick={(v) => set({ kind: v })} />
+        <span>Rate a year</span>
+        <Seg label="Rate" items={[[600, "6%"], [800, "8%"], [1_000, "10%"], [1_200, "12%"], [1_500, "15%"]]} value={c.rateBps} onPick={(v) => set({ rateBps: v })} />
+        <span>Term</span>
+        <Seg label="Term" items={[[30, "30 d"], [60, "60 d"], [90, "90 d"], [180, "180 d"], [365, "1 y"]]} value={c.termDays} onPick={(v) => set({ termDays: v })} />
+        <span>Collateral</span>
+        <Seg label="Collateral" items={[["secured", "Secured"], ["unsecured", "Unsecured"]]} value={c.collateral} onPick={(v) => set({ collateral: v })} />
+        {c.collateral === "secured" && <><span>Secured by</span><input className="search" placeholder="e.g. loan receivables, 120% in BTC and ETH at a custodian" value={c.collateralNote} maxLength={200} onChange={(e) => set({ collateralNote: e.target.value })} aria-label="Collateral" /></>}
+        <span>If late: grace</span>
+        <Seg label="Grace" items={[[0, "0 d"], [7, "7 d"], [14, "14 d"], [30, "30 d"]]} value={c.graceDays} onPick={(v) => set({ graceDays: v })} />
+        <span>then mark down</span>
+        <Seg label="Markdown" items={[[0, "Never"], [1_000, "10% / 30 d"], [2_500, "25% / 30 d"], [5_000, "50% / 30 d"]]} value={c.markdownBps} onPick={(v) => set({ markdownBps: v })} />
+        <span>Loan standing</span>
+        <Seg label="Reporting" items={[["attested", "Attested by a third party"], ["self", "Borrower reports"]]} value={c.reporting} onPick={(v) => set({ reporting: v })} />
+      </div>
+      <button type="button" className="btn iris" disabled={full || dup || c.borrower.trim().length < 2} onClick={() => onAdd({ ...c, borrower: c.borrower.trim() })}>{full ? "All four slots are used" : dup ? "Already a leg" : "Add this loan"}</button>
     </div>
   );
 }

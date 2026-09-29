@@ -1,6 +1,5 @@
 "use client";
 
-import { legName } from "@/lib/strategies/parts";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Pill } from "./bits";
@@ -18,7 +17,7 @@ const bp = (b: number) => `${(b / 100).toFixed(b % 100 ? 1 : 0)}%`;
 /** Expected Net APY as a waterfall: native yield, rewards (never counted), fees, net. */
 export function ApyWaterfall({ ev }: { ev: Evaluation }) {
   const [on, setOn] = useState<number | null>(null);
-  const paused = ev.legs.filter((l) => l.paused.length).map((l) => l.o?.name);
+  const paused = ev.legs.filter((l) => l.paused.length).map((l) => l.name);
   if (ev.gross == null) return <p className="muted" style={{ margin: 0 }}>No leg has a measured yield yet: {ev.measuring.join(", ")}.</p>;
   const g = ev.gross, max = Math.max(g, 0.0001);
   const rows = [
@@ -71,7 +70,7 @@ export function LegList({ doc, ev }: { doc: StrategyDoc; ev: Evaluation }) {
         <div key={l.leg.opp} className="st-leg">
           <span className="st-leg-n">
             <i style={{ background: LEG_COLORS[i] }} />
-            <span><b>{legName(l.leg.opp, l.o?.name)}</b><small>{l.o ? `${l.o.pname} · ${l.o.kind === "supply" ? "lending" : "liquidity"} · ${l.o.chain}` : "not listed now"}</small></span>
+            <span><b>{l.name}</b><small>{l.where}</small></span>
           </span>
           <span className="st-leg-cap" title={`Target ${bp(l.leg.target)}, hard cap ${bp(l.leg.cap)}`}>
             <span className="capbar hbar-t"><i style={{ width: `${l.share * 100}%`, background: LEG_COLORS[i] }} /><em style={{ left: `${l.cap * 100}%` }} /></span>
@@ -82,10 +81,10 @@ export function LegList({ doc, ev }: { doc: StrategyDoc; ev: Evaluation }) {
               {l.range && <i style={{ left: `${(l.range[0] / maxApy) * 100}%`, width: `${Math.max(1, ((l.range[1] - l.range[0]) / maxApy) * 100)}%` }} />}
               {l.apy != null && <em style={{ left: `${(l.apy / maxApy) * 100}%`, background: LEG_COLORS[i] }} />}
             </span>
-            <small><b>{l.apy != null ? p1(l.apy, 2) : "measuring"}</b>{l.range ? ` · ${p1(l.range[0], 1)}–${p1(l.range[1], 1)}` : ""}</small>
+            <small><b>{l.apy != null ? p1(l.apy, 2) : "measuring"}</b>{l.credit ? " · contract rate" : l.range ? ` · ${p1(l.range[0], 1)}–${p1(l.range[1], 1)}` : ""}</small>
           </span>
           <span className="st-leg-exit">
-            {l.paused.length ? <Pill t="warn">Paused</Pill> : l.o?.kind === "lp" ? <Pill t="info">Pool price</Pill> : l.cover == null ? <Pill t="info">—</Pill> : <Pill t={l.cover >= doc.exitCover ? "good" : l.cover >= 1 ? "warn" : "crit"}>{l.cover >= 100 ? ">100" : l.cover.toFixed(1)}× cash</Pill>}
+            {l.credit ? <Pill t="warn">Locked {l.credit.termDays} d</Pill> : l.paused.length ? <Pill t="warn">Paused</Pill> : l.o?.kind === "lp" ? <Pill t="info">Pool price</Pill> : l.cover == null ? <Pill t="info">—</Pill> : <Pill t={l.cover >= doc.exitCover ? "good" : l.cover >= 1 ? "warn" : "crit"}>{l.cover >= 100 ? ">100" : l.cover.toFixed(1)}× cash</Pill>}
           </span>
           {l.flags.length > 0 && <ul className="st-flags">{l.flags.map((f) => <li key={f.text} className={f.t}>{f.text}</li>)}</ul>}
         </div>
@@ -98,11 +97,12 @@ const BY: Record<Enforcer, { label: string; color: string; one: string }> = {
   covenant: { label: "Covenant", color: "#4ADE9B", one: "Every Kaspa node refuses a breach" },
   keeper: { label: "Keeper", color: "#9085e9", one: "The operator's process, bounded by the covenant" },
   monitor: { label: "dawns monitor", color: "#4F8EE0", one: "Checked every snapshot and flagged, not blocked" },
+  trust: { label: "Trust", color: "#E07A98", one: "A promise: a loan agreement off-chain, not code" },
   "not yet": { label: "Not enforced yet", color: "#FFC061", one: "Stated, but nothing stops a breach today" },
 };
 /** Every term of the strategy, and who or what enforces it. */
 export function EnforcementMap({ terms }: { terms: Term[] }) {
-  const order: Enforcer[] = ["covenant", "keeper", "monitor", "not yet"];
+  const order: Enforcer[] = ["covenant", "keeper", "monitor", "trust", "not yet"];
   const parts: Part[] = order.map((k) => ({ key: k, label: BY[k].label, color: BY[k].color, share: terms.filter((t) => t.by === k).length })).filter((p) => p.share);
   return (
     <div style={{ display: "grid", gap: 18 }}>

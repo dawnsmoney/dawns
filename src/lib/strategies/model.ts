@@ -18,7 +18,24 @@ export type VaultType = "nav" | "fixed";
 export type Access = "permissionless" | "whitelist" | "private";
 export type PauseRule = "exit-blocked" | "oracle" | "frozen" | "volume";
 
-export interface Leg { opp: string; target: number; cap: number }   // bps of the vault
+/**
+ * A credit leg: capital lent to a named borrower (market maker, prime broker, exchange,
+ * custodian…) for a fixed term at a contract rate. It is not an on-chain market, so dawns
+ * cannot read its yield or its exit: the terms are the strategist's, the repayment is the
+ * borrower's promise, and only what comes back to the vault is seen on-chain.
+ */
+export type BorrowerKind = "market-maker" | "prime-broker" | "exchange" | "custodian" | "fund" | "other";
+export const BORROWER: Record<BorrowerKind, string> = { "market-maker": "Market maker", "prime-broker": "Prime broker", exchange: "Exchange", custodian: "Custodian", fund: "Fund", other: "Other" };
+export interface CreditTerms {
+  borrower: string; kind: BorrowerKind;
+  rateBps: number;                 // contract rate a year
+  termDays: number;                // capital is locked until repaid
+  collateral: "secured" | "unsecured"; collateralNote: string;
+  graceDays: number; markdownBps: number;   // overdue: after the grace, the mark falls this much each 30 days
+  reporting: "attested" | "self";  // who reports the loan's standing
+}
+export const creditId = (borrower: string) => `credit:${borrower.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)}`;
+export interface Leg { opp: string; target: number; cap: number; credit?: CreditTerms }   // bps of the vault
 export interface StrategyDoc {
   v: 1;
   name: string;
@@ -71,7 +88,18 @@ export function parseDoc(x: unknown): { doc: StrategyDoc } | { error: string } {
     if (!opp || target == null || cap == null) return { error: "Every leg needs an opportunity, a target and a cap." };
     if (cap < target) return { error: "A leg's cap cannot be below its target." };
     if (legs.some((y) => y.opp === opp)) return { error: "The same opportunity twice." };
-    legs.push({ opp, target, cap });
+    let credit: CreditTerms | undefined;
+    if (r.credit != null) {
+      const c = r.credit as Record<string, unknown>;
+      const borrower = str(c.borrower, 60);
+      const kind = (typeof c.kind === "string" && c.kind in BORROWER ? c.kind : "other") as BorrowerKind;
+      const rateBps = int(c.rateBps, 0, 5_000), termDays = int(c.termDays, 7, 730), graceDays = int(c.graceDays, 0, 90), markdownBps = int(c.markdownBps, 0, BPS);
+      if (borrower.length < 2) return { error: "A credit leg needs the borrower's name." };
+      if (rateBps == null || termDays == null || graceDays == null || markdownBps == null) return { error: "Credit terms out of range (rate ≤ 50%, term 7–730 days, grace ≤ 90 days)." };
+      if (opp !== creditId(borrower)) return { error: "A credit leg's id must follow its borrower's name." };
+      credit = { borrower, kind, rateBps, termDays, collateral: c.collateral === "unsecured" ? "unsecured" : "secured", collateralNote: str(c.collateralNote, 200), graceDays, markdownBps, reporting: c.reporting === "attested" ? "attested" : "self" };
+    } else if (opp.startsWith("credit:")) return { error: "A credit leg needs its terms." };
+    legs.push(credit ? { opp, target, cap, credit } : { opp, target, cap });
   }
   const reserveBps = int(o.reserveBps, 0, BPS);
   if (reserveBps == null) return { error: "Reserve must be 0–100%." };
@@ -99,7 +127,9 @@ export function parseDoc(x: unknown): { doc: StrategyDoc } | { error: string } {
 /** Canonical JSON: fixed key order, so the same strategy always hashes the same. */
 export function canonical(d: StrategyDoc): string {
   return JSON.stringify({
-    v: d.v, name: d.name, thesis: d.thesis, legs: d.legs.map((l) => ({ opp: l.opp, target: l.target, cap: l.cap })),
+    v: d.v, name: d.name, thesis: d.thesis, legs: d.legs.map((l) => ({ opp: l.opp, target: l.target, cap: l.cap, ...(l.credit ? { credit: {
+      borrower: l.credit.borrower, kind: l.credit.kind, rateBps: l.credit.rateBps, termDays: l.credit.termDays, collateral: l.credit.collateral,
+      collateralNote: l.credit.collateralNote, graceDays: l.credit.graceDays, markdownBps: l.credit.markdownBps, reporting: l.credit.reporting } } : {}) })),
     reserveBps: d.reserveBps, maxProtocolBps: d.maxProtocolBps, exitCover: d.exitCover, driftBps: d.driftBps, pause: d.pause,
     fees: { performanceBps: d.fees.performanceBps, managementBps: d.fees.managementBps },
     // added after the first strategies were published: only in the hash when it differs from the default
@@ -117,6 +147,8 @@ export const strategyId = (d: StrategyDoc) => strategyHash(d).slice(0, 12);
 // ---------------------------------------------------------------------------
 export interface LegView {
   leg: Leg; o: Opportunity | null; share: number; cap: number;
+  name: string; where: string;     // for display: the opportunity, or the loan
+  credit?: CreditTerms;
   usd: number;                     // position at full capacity
   apy: number | null; range: [number, number] | null;
   exitUsd: number;                 // what could leave the position now
@@ -148,9 +180,22 @@ export function evaluate(d: StrategyDoc, opps: Opportunity[], kasUsd: number | n
     const share = leg.target / BPS, usdPos = capUsd != null ? capUsd * share : 0;
     const flags: LegView["flags"] = [];
     const paused: PauseRule[] = [];
+    if (leg.credit) {
+      const c = leg.credit;
+      const r = `${(c.rateBps / 100).toFixed(c.rateBps % 100 ? 2 : 0)}%`;
+      flags.push({ t: "info", text: `Contract rate ${r} a year, paid by ${c.borrower} (${BORROWER[c.kind].toLowerCase()}). Not a market: dawns cannot read this yield, only the repayments that reach the vault.` });
+      flags.push({ t: "warn", text: `Locked for ${c.termDays} days: it counts as nothing towards what can leave today, and a withdrawal beyond the reserve waits for repayment.` });
+      flags.push(c.collateral === "secured"
+        ? { t: "info", text: `Secured${c.collateralNote ? `: ${c.collateralNote}` : ""}. Collateral is held off-chain under the loan agreement; dawns cannot see it.` }
+        : { t: "warn", text: `Unsecured: if ${c.borrower} does not pay, the vault recovers only through the loan agreement.` });
+      flags.push({ t: "info", text: c.markdownBps ? `Overdue: after ${c.graceDays} days' grace the loan's mark falls ${(c.markdownBps / 100).toFixed(0)}% every 30 days, so the share price shows a default before it is certain.` : "No markdown schedule: an overdue loan keeps its full mark until someone changes it." });
+      if (c.reporting === "self") flags.push({ t: "warn", text: `The loan's standing is reported by ${c.borrower} itself; no third party attests to it.` });
+      return { leg, o: null, credit: c, name: `Loan to ${c.borrower}`, where: `${BORROWER[c.kind]} · ${c.termDays} days · ${c.collateral}`, share, cap: leg.cap / BPS, usd: usdPos, apy: c.rateBps / BPS, range: null, exitUsd: 0, cover: null, paused, flags };
+    }
     if (!o) {
       flags.push({ t: "crit", text: "This opportunity is no longer listed (under $5K or gone). The leg is idle until it returns." });
-      return { leg, o, share, cap: leg.cap / BPS, usd: usdPos, apy: null, range: null, exitUsd: 0, cover: null, paused, flags };
+      const short = leg.opp.replace(/^([a-z0-9-]+):(?:[a-z]+:)?(0x[0-9a-f]{4})[0-9a-f]{32}([0-9a-f]{4})$/i, "$1 pool $2…$3");
+      return { leg, o, name: short, where: "not listed now", share, cap: leg.cap / BPS, usd: usdPos, apy: null, range: null, exitUsd: 0, cover: null, paused, flags };
     }
     // what can leave now: a lending position up to the market's cash; an LP position in full, at the pool price
     const exitUsd = o.kind === "supply" ? Math.min(usdPos, o.exitNow ?? 0) : usdPos;
@@ -169,13 +214,13 @@ export function evaluate(d: StrategyDoc, opps: Opportunity[], kasUsd: number | n
       : { t: "warn", text: `Farm rewards are off${o.farm.since ? ` since ${new Date(o.farm.since).toISOString().slice(0, 10)}` : ""}: this leg earns the pool's trading fees only, through one more contract, with a ${o.farm.emergencyFeeBps / 100}% emergency-exit fee.` });
     if (o.kind === "lp") flags.push({ t: "info", text: `Exposed to ${o.assets.join(" and ")} prices${o.ilAtMove != null && o.priceMove != null ? `; the price moved ${(o.priceMove * 100).toFixed(0)}% in dawns' last ${Math.round(o.rangeHours)} h of readings, where an LP trailed holding by ${(o.ilAtMove * 100).toFixed(1)}%` : ""}.` });
     if (o.apy == null) flags.push({ t: "info", text: o.apyBasis });
-    return { leg, o, share, cap: leg.cap / BPS, usd: usdPos, apy: o.apy, range: o.apyRange, exitUsd, cover, paused, flags };
+    return { leg, o, name: o.name, where: `${o.pname} · ${o.kind === "supply" ? "lending" : "liquidity"} · ${o.chain}`, share, cap: leg.cap / BPS, usd: usdPos, apy: o.apy, range: o.apyRange, exitUsd, cover, paused, flags };
   });
 
   // a paused leg takes no new capital: its weight sits in reserve and earns nothing
-  const active = legs.filter((l) => l.o && !l.paused.length);
+  const active = legs.filter((l) => (l.o || l.credit) && !l.paused.length);
   const measured = active.filter((l) => l.apy != null);
-  const measuring = active.filter((l) => l.apy == null).map((l) => l.o?.name ?? l.leg.opp);
+  const measuring = active.filter((l) => l.apy == null).map((l) => l.name);
   const gross = active.length && !measured.length ? null : measured.reduce((s, l) => s + l.share * (l.apy ?? 0), 0);
   const lo = measured.reduce((s, l) => s + l.share * (l.range?.[0] ?? l.apy ?? 0), 0);
   const hi = measured.reduce((s, l) => s + l.share * (l.range?.[1] ?? l.apy ?? 0), 0);
@@ -191,6 +236,12 @@ export function evaluate(d: StrategyDoc, opps: Opportunity[], kasUsd: number | n
   const pmap = new Map<string, { id: string; name: string; share: number }>();
   const amap = new Map<string, number>();
   for (const l of legs) {
+    if (l.credit) {
+      const p = pmap.get(l.leg.opp) ?? { id: l.leg.opp, name: l.credit.borrower, share: 0 };
+      p.share += l.share; pmap.set(l.leg.opp, p);
+      amap.set("KAS (lent)", (amap.get("KAS (lent)") ?? 0) + l.share);
+      continue;
+    }
     if (!l.o) continue;
     const p = pmap.get(l.o.protocol) ?? { id: l.o.protocol, name: l.o.pname, share: 0 };
     p.share += l.share; pmap.set(l.o.protocol, p);
@@ -200,16 +251,26 @@ export function evaluate(d: StrategyDoc, opps: Opportunity[], kasUsd: number | n
   const byAsset = [...amap.entries()].map(([sym, share]) => ({ sym, share })).sort((a, b) => b.share - a.share);
 
   const topP = byProtocol[0];
+  const credit = legs.filter((l) => l.credit);
+  const creditShare = credit.reduce((s, l) => s + l.share, 0);
   const checks: Check[] = [
     { key: "slots", ok: d.legs.length <= MAX_LEGS, t: "crit", label: `${d.legs.length} of ${MAX_LEGS} destination slots`, detail: "The NAV covenant has four destinations, each with a hard cap." },
     { key: "sum", ok: d.legs.reduce((s, l) => s + l.target, 0) + d.reserveBps === BPS, t: "crit", label: "Targets and reserve add up to 100%", detail: "Every KAS is either in a leg or in reserve." },
-    { key: "listed", ok: legs.every((l) => l.o), t: "crit", label: "Every leg is a listed opportunity", detail: "Listed means over $5K and read on-chain in the last snapshot." },
+    { key: "listed", ok: legs.every((l) => l.o || l.credit), t: "crit", label: "Every leg is a listed opportunity", detail: "Listed means over $5K and read on-chain in the last snapshot." },
     { key: "protocol", ok: !topP || topP.share * BPS <= d.maxProtocolBps, t: "warn", label: `At most ${(d.maxProtocolBps / 100).toFixed(0)}% in one protocol`, detail: topP ? `${topP.name}: ${(topP.share * 100).toFixed(0)}%.` : "No legs yet." },
     { key: "cover", ok: legs.every((l) => l.cover == null || l.cover >= d.exitCover), t: "warn", label: `Lending legs covered ${d.exitCover}× by withdrawable cash`, detail: capUsd ? "At full capacity, against each market's cash right now." : "Needs a KAS price." },
     { key: "size", ok: legs.every((l) => !l.o || !l.usd || l.usd <= 0.2 * l.o.size), t: "warn", label: "No leg over 20% of its market or pool", detail: capUsd ? "At full capacity, against each market's or pool's size today." : "Needs a KAS price." },
     { key: "open", ok: legs.every((l) => !l.paused.length), t: "warn", label: "No leg paused by its rules right now", detail: legs.filter((l) => l.paused.length).map((l) => l.o?.name).join(", ") || "All legs can take capital." },
     { key: "measured", ok: !measuring.length, t: "info", label: "Every leg has a measured yield", detail: measuring.length ? `Measuring: ${measuring.join(", ")}.` : "From on-chain rates and swap volume." },
     { key: "reserve", ok: d.reserveBps >= 1_000 || d.vault.type === "fixed", t: "warn", label: "Reserve of 10% or more for an open-term vault", detail: "Redemptions are paid from KAS in the vault; the rest waits for a recall." },
+    ...(credit.length ? [
+      d.vault.type === "fixed"
+        ? { key: "credit-term", ok: credit.every((l) => l.credit!.termDays <= d.vault.termDays), t: "crit" as Status, label: "Every loan is due before the vault matures", detail: `Longest loan ${Math.max(...credit.map((l) => l.credit!.termDays))} days; vault term ${d.vault.termDays} days.` }
+        : { key: "credit-term", ok: false, t: "warn" as Status, label: "Loans in an open-term vault", detail: `${(creditShare * 100).toFixed(0)}% is lent for up to ${Math.max(...credit.map((l) => l.credit!.termDays))} days: withdrawals beyond the ${(d.reserveBps / 100).toFixed(0)}% reserve wait for repayment. A fixed term matches loans better.` },
+      { key: "credit-secured", ok: credit.every((l) => l.credit!.collateral === "secured"), t: "warn" as Status, label: "Every loan is secured", detail: credit.filter((l) => l.credit!.collateral !== "secured").map((l) => l.credit!.borrower).join(", ") || "Collateral held under each loan agreement." },
+      { key: "credit-markdown", ok: credit.every((l) => l.credit!.markdownBps > 0), t: "warn" as Status, label: "Overdue loans are marked down on a schedule", detail: "Without one, a default shows only when someone admits it." },
+      { key: "credit-attested", ok: credit.every((l) => l.credit!.reporting === "attested"), t: "info" as Status, label: "Loan standing attested by a third party", detail: credit.filter((l) => l.credit!.reporting !== "attested").map((l) => `${l.credit!.borrower}: self-reported`).join(", ") || "Attested." },
+    ] : []),
   ];
   const worst = checks.filter((c) => !c.ok).map((c) => c.t);
   const [status, statusText]: [Status, string] = worst.includes("crit") ? ["crit", "Does not hold"] : worst.includes("warn") ? ["warn", "Holds with warnings"] : ["good", "Holds"];
@@ -221,18 +282,22 @@ export function evaluate(d: StrategyDoc, opps: Opportunity[], kasUsd: number | n
 // ---------------------------------------------------------------------------
 // where each term is enforced
 // ---------------------------------------------------------------------------
-export type Enforcer = "covenant" | "keeper" | "monitor" | "not yet";
+export type Enforcer = "covenant" | "keeper" | "monitor" | "trust" | "not yet";
 export interface Term { term: string; value: string; by: Enforcer; how: string }
 
 export function enforcement(d: StrategyDoc, ev: Evaluation): Term[] {
   const pctB = (b: number) => `${(b / 100).toFixed(b % 100 ? 1 : 0)}%`;
   const igra = ev.legs.some((l) => l.o?.chain === "igra" || l.o?.chain === "kasplex");
   return [
-    ...d.legs.map((l, i): Term => ({
+    ...d.legs.flatMap((l, i): Term[] => l.credit ? [
+      { term: `Slot ${i}: loan to ${l.credit.borrower}`, value: `target ${pctB(l.target)}, cap ${pctB(l.cap)}`, by: "not yet", how: "Credit vault covenant (designed, testnet next): only the borrower's registered address can receive, never above the cap, and repayments can only return to the vault." },
+      { term: `Repayment by ${l.credit.borrower}`, value: `${pctB(l.credit.rateBps)} a year, ${l.credit.termDays} days`, by: "trust", how: "A loan agreement, off-chain. No contract can make a borrower pay; dawns shows every repayment that reaches the vault and flags a late one." },
+      { term: `Markdown if ${l.credit.borrower} is late`, value: l.credit.markdownBps ? `after ${l.credit.graceDays} d, −${pctB(l.credit.markdownBps)} per 30 d` : "none", by: l.credit.markdownBps ? "not yet" : "trust", how: l.credit.markdownBps ? "The credit covenant marks an overdue loan down by this schedule itself, so no valuer can hold a defaulted loan at full value (designed)." : "Without a schedule the mark is whatever the valuer says." },
+    ] : [{
       term: `Slot ${i}: ${ev.legs[i]?.o?.name ?? l.opp}`, value: `target ${pctB(l.target)}, cap ${pctB(l.cap)}`,
       by: igra ? "not yet" : "covenant",
       how: igra ? "The covenant caps each destination slot, but a slot is a Kaspa L1 address. Reaching an Igra market needs the bridge payload rule, so today this cap is a plan, not a guard." : "dest and cap in the mandate; allocate refuses anything above the cap.",
-    })),
+    }]),
     { term: "Reserve", value: pctB(d.reserveBps), by: "covenant", how: "reserveFloorBps: an allocation that leaves less in the vault is refused." },
     { term: "Per-protocol limit", value: pctB(d.maxProtocolBps), by: "monitor", how: "dawns checks the split; the covenant sees slots, not protocols." },
     { term: "Exit cover", value: `${d.exitCover}×`, by: "monitor", how: "Checked against each market's withdrawable cash every snapshot." },
@@ -285,6 +350,14 @@ export function diffDocs(a: StrategyDoc, b: StrategyDoc, name: (opp: string) => 
     else {
       if (m.target !== l.target) out.push({ what: `${name(l.opp)} target`, from: pctB(l.target), to: pctB(m.target), t: "neutral" });
       if (m.cap !== l.cap) out.push({ what: `${name(l.opp)} hard cap`, from: pctB(l.cap), to: pctB(m.cap), t: m.cap > l.cap ? "down" : "up" });
+      if (l.credit && m.credit) {
+        const a1 = l.credit, b1 = m.credit, who = `Loan to ${b1.borrower}`;
+        if (a1.rateBps !== b1.rateBps) out.push({ what: `${who}: rate`, from: pctB(a1.rateBps), to: pctB(b1.rateBps), t: "neutral" });
+        if (a1.termDays !== b1.termDays) out.push({ what: `${who}: term`, from: `${a1.termDays} days`, to: `${b1.termDays} days`, t: b1.termDays > a1.termDays ? "down" : "up" });
+        if (a1.collateral !== b1.collateral) out.push({ what: `${who}: collateral`, from: a1.collateral, to: b1.collateral, t: b1.collateral === "secured" ? "up" : "down" });
+        if (a1.markdownBps !== b1.markdownBps || a1.graceDays !== b1.graceDays) out.push({ what: `${who}: markdown`, from: `${a1.graceDays} d, ${pctB(a1.markdownBps)}`, to: `${b1.graceDays} d, ${pctB(b1.markdownBps)}`, t: b1.markdownBps >= a1.markdownBps && b1.graceDays <= a1.graceDays ? "up" : "down" });
+        if (a1.reporting !== b1.reporting) out.push({ what: `${who}: reporting`, from: a1.reporting, to: b1.reporting, t: b1.reporting === "attested" ? "up" : "down" });
+      }
     }
   }
   for (const m of b.legs) if (!a.legs.some((l) => l.opp === m.opp)) out.push({ what: `Leg added: ${name(m.opp)}`, from: "—", to: `${pctB(m.target)} (cap ${pctB(m.cap)})`, t: "neutral" });

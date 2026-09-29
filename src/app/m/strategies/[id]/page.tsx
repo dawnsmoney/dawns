@@ -60,7 +60,7 @@ export default async function MStrategy({ params }: { params: Promise<{ id: stri
             </MCard>
             <MCard title="Rules that stop new capital">
               <MFlags flags={(Object.keys(PAUSE) as (keyof typeof PAUSE)[]).map((k) => {
-                const on = doc.pause.includes(k); const hit = ev.legs.filter((l) => l.paused.includes(k)).map((l) => l.o?.name);
+                const on = doc.pause.includes(k); const hit = ev.legs.filter((l) => l.paused.includes(k)).map((l) => l.name);
                 return [!on ? "info" : hit.length ? "warn" : "good", `${PAUSE[k].label}${!on ? " (off)" : hit.length ? `: pausing ${hit.join(", ")}` : ""}`] as [Status, string];
               })} />
             </MCard>
