@@ -190,6 +190,11 @@ export async function buildSnapshot(): Promise<Snapshot> {
   const safe = async <T,>(label: string, f: () => Promise<T>): Promise<T | null> => {
     try { return await f(); } catch (e) { errors.push(`${label}: ${(e as Error).message?.slice(0, 160)}`); return null; }
   };
+  // on-chain reads get a second try: a public RPC dropping one call should not turn a
+  // protocol dawns reads directly into a DefiLlama estimate for a whole refresh
+  const chain = <T,>(label: string, f: () => Promise<T>) => safe(label, async () => {
+    try { return await f(); } catch { await new Promise((r) => setTimeout(r, 1200)); return await f(); }
+  });
 
   // external market data first (anchors prices for on-chain valuation)
   const [list, coins, kas24] = await Promise.all([
@@ -207,15 +212,15 @@ export async function buildSnapshot(): Promise<Snapshot> {
   // on-chain reads
   const dexJobs = Object.entries(DEX_ADAPTERS).flatMap(([slug, a]) => a.sources.map((src) => ({ slug, src })));
   const [kaskad, kasdex, attest, lfg, dexReads, bridge, own, infinity, zfarm] = await Promise.all([
-    safe("Kaskad on-chain", () => readKaskad((sym) => book.get(normSym(sym).toLowerCase()) ?? null)),
-    safe("KasDex on-chain", () => readBalances("igra", KASDEX, KASDEX_TOKENS)),
-    safe("Igra Attestation on-chain", () => readBalances("igra", IGRA_ATTESTATION, [IGRA_TOKEN])),
-    Promise.all(LFG_FACTORIES.map((f) => safe(`KaspaCom LFG ${f.chain}`, () => readBondingNative(f.chain, f.factory)))),
-    Promise.all(dexJobs.map((j) => safe(`${j.slug} ${j.src.chain} on-chain`, () => (j.src.kind === "v3" ? readUniV3(j.src.chain, j.src.factory) : readUniV2(j.src.chain, j.src.factory))))),
-    safe("Igra bridge", () => readIgraBridge()),
+    chain("Kaskad on-chain", () => readKaskad((sym) => book.get(normSym(sym).toLowerCase()) ?? null)),
+    chain("KasDex on-chain", () => readBalances("igra", KASDEX, KASDEX_TOKENS)),
+    chain("Igra Attestation on-chain", () => readBalances("igra", IGRA_ATTESTATION, [IGRA_TOKEN])),
+    Promise.all(LFG_FACTORIES.map((f) => chain(`KaspaCom LFG ${f.chain}`, () => readBondingNative(f.chain, f.factory)))),
+    Promise.all(dexJobs.map((j) => chain(`${j.slug} ${j.src.chain} on-chain`, () => (j.src.kind === "v3" ? readUniV3(j.src.chain, j.src.factory) : readUniV2(j.src.chain, j.src.factory))))),
+    chain("Igra bridge", () => readIgraBridge()),
     safe("dawns history", readOwn),
-    safe("ZealousSwap Infinity Pools", readInfinityPools),
-    safe("ZealousSwap farm", readZealousFarm),
+    chain("ZealousSwap Infinity Pools", readInfinityPools),
+    chain("ZealousSwap farm", readZealousFarm),
   ]);
   // owner actions on contracts that pay users (explorer, cached 10 min)
   const zOwner = zfarm?.owner ?? null;
@@ -568,7 +573,10 @@ export async function buildSnapshot(): Promise<Snapshot> {
 
     if (base.source === "defillama") {
       base.canVerify = [];
-      base.cannotVerify = [["Everything on this page", "dawns does not read this protocol's contracts yet. Figures come from DefiLlama."]];
+      const reads = it.slug === "kaskad" || it.slug === "kasdex" || it.slug === "igra-attestation" || it.slug === "kaspacom-lfg" || it.slug in DEX_ADAPTERS;
+      base.cannotVerify = [reads
+        ? ["This refresh", "dawns reads this protocol's contracts directly, but the read failed this time (the public RPC did not answer twice). Figures below are DefiLlama's until the next refresh, a few minutes away."]
+        : ["Everything on this page", "dawns does not read this protocol's contracts yet. Figures come from DefiLlama."]];
       prov[`${it.slug}-tvl`] = { label: "Total value locked", value: usdFull(llamaTvl), trail: [["Source", `DefiLlama /protocol/${it.slug}`], ["Chains", base.chains.join(", ")], ["Status", "Not yet read on-chain by dawns"]] };
     }
     /* --- dawns' own history and event index --- */

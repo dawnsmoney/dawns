@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { accountAddress, ownerOf, fromHex, type AccountTemplate } from "@/lib/vaults/account";
 import { CopyId } from "./viz";
+import { MiniSteps } from "./wizard";
 import { openConnect, useAccount } from "./connect";
 import { decodeKaspaAddress, encodeKaspaAddress } from "@/lib/auth/kaspa";
 
@@ -39,6 +40,7 @@ export function NavPanel(p: NavPanelProps) {
   const [err, setErr] = useState<string | null>(null);
   const [pos, setPos] = useState<Pos | null>(null);
   const [tab, setTab] = useState<"in" | "out">("in");
+  const [dstep, setDstep] = useState(0);
   const [amount, setAmount] = useState(String(Math.max(10, Math.ceil(p.minDeposit + p.noteValue + p.maxFee))));
   const [busy, setBusy] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
@@ -138,16 +140,25 @@ export function NavPanel(p: NavPanelProps) {
             </div>
             {tab === "in" ? (
               <>
-                <div className="navp-amt big"><input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} aria-label="Amount in KAS" /><span>KAS</span></div>
-                <div className="navp-quick">{[10, 50, 100, 500].map((v) => <button key={v} type="button" className={Number(amount) === v ? "on" : ""} onClick={() => setAmount(String(v))}>{v}</button>)}</div>
-                <dl className="navp-kv">
-                  <div><dt>You receive</dt><dd>≈ {estShares.toLocaleString("en-US")} shares</dd></div>
-                  <div><dt>Held with your note</dt><dd>{kas(p.noteValue, 2)}, returned when you redeem</dd></div>
-                  <div><dt>Minimum</dt><dd>{kas(min, 2)}</dd></div>
-                </dl>
-                {hasKw ? <button type="button" className="btn sun" disabled={!!busy || p.halted || Number(amount) < min} onClick={() => send(ok.deposit, Number(amount), "Deposit")}>{p.halted ? "Deposits closed (halted)" : busy === "Deposit" ? "Confirm in KasWare…" : Number(amount) < min ? `At least ${kas(min, 2)}` : `Deposit ${kas(Number(amount), 2)}`}</button>
-                  : <p className="muted" style={{ margin: 0 }}>Send the amount to your deposit address below from any Kaspa wallet.</p>}
-                <details className="navp-alt" open={!hasKw}><summary>Send from another wallet</summary><div><CopyId text={ok.deposit} /><small className="muted">Your personal deposit address. The vault mints shares at NAV; until then only you can take the KAS back.</small></div></details>
+                <MiniSteps items={["Amount", "Confirm", "Sent"]} at={sent?.startsWith("Deposit") ? 2 : dstep} />
+                {dstep === 0 && !sent?.startsWith("Deposit") && <>
+                  <div className="navp-amt big"><input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} aria-label="Amount in KAS" /><span>KAS</span></div>
+                  <div className="navp-quick">{[10, 50, 100, 500].map((v) => <button key={v} type="button" className={Number(amount) === v ? "on" : ""} onClick={() => setAmount(String(v))}>{v}</button>)}</div>
+                  <button type="button" className="btn sun" disabled={p.halted || Number(amount) < min} onClick={() => { setErr(null); setDstep(1); }}>{p.halted ? "Deposits closed (halted)" : Number(amount) < min ? `At least ${kas(min, 2)}` : "Continue"}</button>
+                </>}
+                {dstep === 1 && !sent?.startsWith("Deposit") && <>
+                  <dl className="navp-kv">
+                    <div><dt>You send</dt><dd>{kas(Number(amount), 2)}</dd></div>
+                    <div><dt>You receive</dt><dd>≈ {estShares.toLocaleString("en-US")} shares at {p.price.toFixed(6)} KAS</dd></div>
+                    <div><dt>Held with your note</dt><dd>{kas(p.noteValue, 2)}, returned when you redeem</dd></div>
+                    <div><dt>Network fee, at most</dt><dd>{kas(p.maxFee, 2)}</dd></div>
+                  </dl>
+                  {hasKw ? <button type="button" className="btn sun" disabled={!!busy} onClick={() => send(ok.deposit, Number(amount), "Deposit")}>{busy === "Deposit" ? "Confirm in KasWare…" : `Deposit ${kas(Number(amount), 2)}`}</button>
+                    : <p className="muted" style={{ margin: 0 }}>Send {kas(Number(amount), 2)} to your deposit address below from any Kaspa wallet.</p>}
+                  <details className="navp-alt" open={!hasKw}><summary>Send from another wallet</summary><div><CopyId text={ok.deposit} /><small className="muted">Your personal deposit address. The vault mints shares at NAV; until then only you can take the KAS back.</small></div></details>
+                  <button type="button" className="linkish" style={{ justifySelf: "start" }} onClick={() => setDstep(0)}>← Change the amount</button>
+                </>}
+                {sent?.startsWith("Deposit") && <button type="button" className="btn ghost sm" style={{ justifySelf: "start" }} onClick={() => { setSent(null); setDstep(0); }}>Deposit more</button>}
               </>
             ) : (
               <>

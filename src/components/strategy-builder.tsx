@@ -11,6 +11,7 @@ import type { Opportunity } from "@/lib/types";
 import { pct, usd } from "@/lib/format";
 import { loadAccount, shortAddr, type Account } from "./wallet";
 import { openConnect } from "./connect";
+import { Wizard } from "./wizard";
 
 const bp = (b: number) => `${(b / 100).toFixed(b % 100 ? 1 : 0)}%`;
 
@@ -47,6 +48,7 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
   const [account, setAccount] = useState<Account | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
   const ev = useMemo(() => evaluate(doc, opps, kasUsd), [doc, opps, kasUsd]);
   const parsed = useMemo(() => parseDoc(doc), [doc]);
   const id = "doc" in parsed ? strategyId(parsed.doc) : null;
@@ -111,16 +113,18 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
             <small className="muted">It takes effect {from.doc.noticeDays} days after you publish (the notice period of v{from.version}). Until then v{from.version} stays in force and the strategy page shows depositors every change. Changing the notice period itself also waits for the current notice.</small>
           </div>
         )}
-        <div className="card">
-          <div className="c-head"><h3>1 · Name and thesis</h3></div>
+        <Wizard className="compact" step={step} onStep={setStep} nextLabel="Review" steps={[
+          { key: "name", title: "Name", hint: "What depositors see first: a name and why this split.", ok: doc.name.trim().length >= 3, need: "A name of 3 characters or more", summary: doc.name || undefined, body: (
+            <>
           <div style={{ display: "grid", gap: 10 }}>
             <input className="search" placeholder="Name, e.g. Stablecoin lending, exits first" value={doc.name} maxLength={60} onChange={(e) => set({ name: e.target.value })} aria-label="Strategy name" />
             <textarea className="search st-ta" placeholder="Why this split: where the yield comes from, what can go wrong, who it is for." value={doc.thesis} maxLength={600} rows={3} onChange={(e) => set({ thesis: e.target.value })} aria-label="Thesis" />
           </div>
-        </div>
-
-        <div className="card">
-          <div className="c-head"><h3>2 · Opportunities</h3><span className="tag">{doc.legs.length} of {MAX_LEGS} slots</span></div>
+            </>
+          ) },
+          { key: "opps", title: "Opportunities", hint: `Pick up to ${MAX_LEGS} places for the capital: live markets or a loan to a named borrower.`, ok: doc.legs.length > 0, need: "Pick at least one", summary: `${doc.legs.length} picked`, body: (
+            <>
+              <span className="tag" style={{ justifySelf: "start" }}>{doc.legs.length} of {MAX_LEGS} slots</span>
           <Seg label="Kind" items={[["all", "All"], ["supply", "Lending"], ["lp", "Liquidity"], ["credit", "Private credit"]]} value={kind} onPick={setKind} />
           {kind === "credit" && <CreditForm full={doc.legs.length >= MAX_LEGS} taken={doc.legs.map((l) => l.opp)} onAdd={addCredit} />}
           <div className="st-opps">
@@ -135,10 +139,10 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
               );
             })}
           </div>
-        </div>
-
-        <div className="card">
-          <div className="c-head"><h3>3 · Targets and hard caps</h3><span className="tag">reserve {bp(doc.reserveBps)}</span></div>
+            </>
+          ) },
+          { key: "split", title: "Split", hint: "A target for each leg and a hard cap it can never pass. What is left is the reserve.", summary: `reserve ${bp(doc.reserveBps)}`, body: (
+            <>
           {doc.legs.length === 0 ? <p className="muted" style={{ margin: 0 }}>Pick an opportunity above.</p> : (
             <div className="st-legset">
               {doc.legs.map((l, i) => {
@@ -157,10 +161,10 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
               <div className="st-legedit reserve"><span className="st-leg-n"><i style={{ background: "#6E6788" }} /><span><b>Reserve</b><small>What is not in a leg stays in the vault as KAS and pays redemptions at once.</small></span></span><b style={{ font: "600 20px var(--display)" }}>{bp(doc.reserveBps)}</b></div>
             </div>
           )}
-        </div>
-
-        <div className="card">
-          <div className="c-head"><h3>4 · Rules</h3></div>
+            </>
+          ) },
+          { key: "rules", title: "Rules", hint: "When new capital stops, and the limits the vault keeps.", summary: `≤ ${bp(doc.maxProtocolBps)} per protocol`, body: (
+            <>
           <div className="st-fields">
             <span>Stop new capital on</span>
             <div className="st-chips">{(Object.keys(PAUSE) as PauseRule[]).map((p) => <button key={p} type="button" className={doc.pause.includes(p) ? "on" : ""} aria-pressed={doc.pause.includes(p)} onClick={() => togglePause(p)} title={PAUSE[p].why}>{PAUSE[p].label}</button>)}</div>
@@ -171,10 +175,10 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
             <span>Rebalance at drift</span>
             <Seg label="Drift" items={[[250, "2.5%"], [500, "5%"], [1_000, "10%"]]} value={doc.driftBps} onPick={(v) => set({ driftBps: v })} />
           </div>
-        </div>
-
-        <div className="card">
-          <div className="c-head"><h3>5 · Vault terms and fee</h3></div>
+            </>
+          ) },
+          { key: "vault", title: "Vault", hint: "The terms depositors get and your fee.", summary: doc.vault.type === "nav" ? "NAV · open term" : `Fixed ${doc.vault.termDays} d`, body: (
+            <>
           <div className="st-fields">
             <span>Vault</span>
             <Seg label="Vault type" items={[["nav", "NAV · open term"], ["fixed", "Fixed term"]]} value={doc.vault.type} onPick={(v) => setVault(v === "fixed" ? { type: v, termDays: doc.vault.termDays || 90, depositDays: doc.vault.depositDays || 14 } : { type: v, termDays: 0, depositDays: 0 })} />
@@ -199,7 +203,23 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
             <span>Performance fee (on yield)</span>
             <Seg label="Performance fee" items={[[0, "0"], [500, "5%"], [1_000, "10%"], [1_500, "15%"], [2_000, "20%"]]} value={doc.fees.performanceBps} onPick={(v) => set({ fees: { ...doc.fees, performanceBps: v } })} />
           </div>
-        </div>
+            </>
+          ) },
+          { key: "publish", title: "Publish", hint: "Check it once more. Publishing freezes this version.", body: (
+            <div className="wz-review">
+              <div className="st-checks">
+                {ev.checks.map((c) => <div key={c.key} className={`st-check ${c.ok ? "good" : c.t}`}><i aria-hidden>{c.ok ? "✓" : c.t === "crit" ? "✕" : "!"}</i><span><b>{c.label}</b><small>{c.detail}</small></span></div>)}
+              </div>
+          <small className="muted">{"error" in parsed ? parsed.error : <>Hash id <span className="mono">{id}</span>. {from ? (from.id === id ? "Nothing has changed from the version in force yet." : `Publishing schedules v${from.version + 1} for ${from.doc.noticeDays} days from now.`) : "Publishing freezes this version: later changes are new versions, after notice."}</>}</small>
+          {account ? (
+            <button type="button" className="btn iris" disabled={!!busy || "error" in parsed} onClick={() => publish()}>{busy ? "Publishing…" : `Publish as ${shortAddr(account.wallets[0]?.address ?? "")}`}</button>
+          ) : (
+            <button type="button" className="btn iris" disabled={!!busy || "error" in parsed} onClick={() => publish(true)}>{busy ? "Check your wallet…" : "Connect a wallet and publish"}</button>
+          )}
+          {msg && <p className="navp-err" style={{ margin: 0 }}>{msg}</p>}
+            </div>
+          ) },
+        ]} />
       </div>
 
       {doc.legs.length > 0 && (
@@ -229,15 +249,6 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
               </div>
             </div>
           ) : <p className="muted" style={{ margin: 0 }}>Pick opportunities: the preview computes as you go, from live data.</p>}
-        </div>
-        <div className="card st-pub">
-          <small className="muted">{"error" in parsed ? parsed.error : <>Hash id <span className="mono">{id}</span>. {from ? (from.id === id ? "Nothing has changed from the version in force yet." : `Publishing schedules v${from.version + 1} for ${from.doc.noticeDays} days from now.`) : "Publishing freezes this version: later changes are new versions, after notice."}</>}</small>
-          {account ? (
-            <button type="button" className="btn iris" disabled={!!busy || "error" in parsed} onClick={() => publish()}>{busy ? "Publishing…" : `Publish as ${shortAddr(account.wallets[0]?.address ?? "")}`}</button>
-          ) : (
-            <button type="button" className="btn iris" disabled={!!busy || "error" in parsed} onClick={() => publish(true)}>{busy ? "Check your wallet…" : "Connect a wallet and publish"}</button>
-          )}
-          {msg && <p className="navp-err" style={{ margin: 0 }}>{msg}</p>}
         </div>
       </aside>
     </div>
