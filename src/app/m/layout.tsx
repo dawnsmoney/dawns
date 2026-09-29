@@ -1,5 +1,6 @@
 import { MShell } from "@/components/m/shell";
 import { TableLabels } from "@/components/table-labels";
+import { ReportButton } from "@/components/report";
 import "./mobile.css";
 
 /**
@@ -9,5 +10,5 @@ import "./mobile.css";
  * same titles as their desktop pages.)
  */
 export default function MobileLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <MShell><TableLabels />{children}</MShell>;
+  return <MShell><TableLabels />{children}<ReportButton mobile /></MShell>;
 }

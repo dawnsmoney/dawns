@@ -28,7 +28,8 @@ export default async function AdminPage() {
       (select count(distinct user_id) from points where t > now() - interval '7 days' and kind <> 'join') as active7,
       (select count(*) from referral_visits where t > now() - interval '7 days') as visits7,
       (select count(*) from referrals) as refs, (select count(activated_at) from referrals) as active_refs,
-      (select count(*) from finds where status = 'pending') as pending`);
+      (select count(*) from finds where status = 'pending') as pending,
+      (select count(*) from feedback where status = 'new' and kind <> 'survey') as reports`);
   const [people, tg, events, daily, health, recent, vis, pages, refs, countries] = await Promise.all([
     one(`select (select count(*) from users) as users,
         (select count(*) from users where created_at > now() - interval '7 days') as users7,
@@ -68,8 +69,9 @@ export default async function AdminPage() {
           <div><b style={{ font: "600 18px var(--display)" }}>Share cards</b><span className="muted" style={{ display: "block", fontSize: 13.5, marginTop: 4 }}>Today&apos;s drafts for X and Telegram: review, edit, approve, download.</span></div>
           <span className="btn iris sm">Open</span>
         </Link>
-        <div className="grid g3" style={{ margin: "0" }}>
+        <div className="grid g2" style={{ margin: "0" }}>
           <Link href="/admin/signal" className="card" style={{ textDecoration: "none", color: "inherit" }}><b style={{ font: "600 18px var(--display)" }}>The Dawns Signal</b><span className="muted" style={{ display: "block", fontSize: 13.5, marginTop: 4 }}>This week&apos;s draft: edit, publish, Telegram, X thread.</span></Link>
+          <Link href="/admin/testing" className="card" style={{ textDecoration: "none", color: "inherit" }}><b style={{ font: "600 18px var(--display)" }}>Testers · {num(pio.reports)} new reports</b><span className="muted" style={{ display: "block", fontSize: 13.5, marginTop: 4 }}>The /test funnel, reports and survey answers.</span></Link>
           <Link href="/admin/finds" className="card" style={{ textDecoration: "none", color: "inherit" }}><b style={{ font: "600 18px var(--display)" }}>Finds · {num(pio.pending)} to review</b><span className="muted" style={{ display: "block", fontSize: 13.5, marginTop: 4 }}>Opportunities Pioneers submitted.</span></Link>
           <div className="card"><b style={{ font: "600 18px var(--display)" }}>Pioneers · {num(pio.pioneers)}</b><span className="muted" style={{ display: "block", fontSize: 13.5, marginTop: 4 }}>{num(pio.active7)} earned this week · {num(pio.visits7)} visitors via share links · {num(pio.refs)} referred ({num(pio.active_refs)} active)</span></div>
         </div>

@@ -153,6 +153,11 @@ const SCHEMA = [
   `create table if not exists signal_issues (
     id text primary key, data jsonb not null, status text not null default 'draft',
     created_at timestamptz not null default now(), updated_at timestamptz not null default now(), published_at timestamptz, telegram_at timestamptz)`,
+  // testers' reports ("Report a problem") and the end-of-test survey; vid is the day-salted visitor hash, for limits only
+  `create table if not exists feedback (
+    id text primary key, user_id text references users(id) on delete set null, kind text not null, path text, text text, answers jsonb,
+    contact text, device text, vid text, status text not null default 'new', note text,
+    created_at timestamptz not null default now(), reviewed_at timestamptz)`,
 ];
 
 let ready: Promise<void> | null = null;

@@ -48,6 +48,11 @@ export function PioneerBody({ me, finds, site }: { me: PioneerView | null; finds
         </section>
       )}
 
+      <section className="card test-why" style={{ display: "flex", flexWrap: "wrap", gap: "12px 24px", alignItems: "center", justifyContent: "space-between" }}>
+        <div><b>Test the vaults first</b><p>dawns&apos; vaults are live on testnet-10, with test KAS that has no value. Walk the tester path, tell us what broke, and earn points for it.</p></div>
+        <Link className="btn sun" href="/test">Start testing</Link>
+      </section>
+
       <section className="card">
         <div className="c-head"><h3>How to earn</h3><span className="tag">points</span></div>
         <div className="pio-rules">
@@ -91,7 +96,7 @@ export function PioneerBody({ me, finds, site }: { me: PioneerView | null; finds
       )}
 
       <section className="pio-terms">
-        <b>What points are.</b> Recognition for early use of dawns. They have no cash value, cannot be transferred or sold, and are not a claim on any token or asset. dawns plans to let them unlock deeper intelligence and early access to new vaults; what they unlock, and the rules for earning them, may change. Depositing into a vault earns nothing. Accounts found gaming the program lose their points.
+        <b>What points are.</b> Recognition for early use of dawns. They have no cash value, cannot be transferred or sold, and are not a claim on any token or asset. dawns plans to let them unlock deeper intelligence and early access to new vaults; what they unlock, and the rules for earning them, may change. Depositing real KAS into a vault earns nothing; testnet deposits, which have no value, count as testing. Accounts found gaming the program lose their points.
       </section>
     </div>
   );

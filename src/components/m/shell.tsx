@@ -25,6 +25,7 @@ const MORE = [
   { href: "/managers", label: "Managers", sub: "Who runs the vaults, and their record" },
   { href: "/watchlist", label: "Watchlist", sub: "Protocols you get alerts for" },
   { href: "/signal", label: "The Signal", sub: "The week's biggest changes in Kaspa DeFi" },
+  { href: "/test", label: "Test dawns", sub: "Try the testnet vaults; tell us what broke" },
   { href: "/pioneer", label: "Pioneers", sub: "Help map Kaspa DeFi, earn Pioneer points" },
 ];
 

@@ -1,4 +1,4 @@
-import { sha256 } from "@noble/hashes/sha256";
+import { visitorId } from "@/lib/visitor";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 import { currentUser } from "@/lib/auth/session";
 import { isCode, onEvent, onReferralVisit } from "@/lib/pioneer";
@@ -10,23 +10,9 @@ const NAMES = new Set([
   "pageview",
   "signin_start", "signin_ok", "signin_fail", "profile_saved", "plan_followed", "plan_unfollowed", "telegram_link",
   "watch_saved", "watch_removed", "prov_open", "opportunity_open", "report_copied", "telegram_click",
-  "intel_day", "share_copy", "share_x", "find_submitted",
+  "intel_day", "share_copy", "share_x", "find_submitted", "test_open", "report_open", "report_sent",
 ]);
 const BOT = /bot|crawl|spider|slurp|preview|headless|lighthouse|facebookexternalhit|embedly|vercel|curl|wget|python|axios|node-fetch/i;
-const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-
-/**
- * Cookieless visitor id: hash of (daily salt, IP, user agent). The salt changes every UTC day and
- * is never stored, so the same person cannot be followed across days and no IP is kept.
- */
-function visitorId(req: Request) {
-  const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
-  const ua = req.headers.get("user-agent") ?? "";
-  const secret = process.env.CRON_SECRET ?? process.env.TELEGRAM_WEBHOOK_SECRET ?? "dawns";
-  const salt = hex(sha256(new TextEncoder().encode(`${secret}:${new Date().toISOString().slice(0, 10)}`)));
-  return hex(sha256(new TextEncoder().encode(`${salt}|${ip}|${ua}`))).slice(0, 16);
-}
-
 export async function POST(req: Request) {
   if (!hasDb()) return new Response(null, { status: 204 });
   if (BOT.test(req.headers.get("user-agent") ?? "")) return new Response(null, { status: 204 });

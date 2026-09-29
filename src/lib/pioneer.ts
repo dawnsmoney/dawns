@@ -1,5 +1,6 @@
 import "server-only";
 import { sql, ensureSchema } from "./db";
+import { progressOf } from "./testing";
 
 /**
  * The Dawns Pioneer program. Points recognise early use of dawns: exploring the market,
@@ -16,7 +17,7 @@ import { sql, ensureSchema } from "./db";
 /** Accounts created before this date are Pioneers for good. */
 export const PIONEER_UNTIL = Date.parse(process.env.PIONEER_UNTIL ?? "2027-01-01T00:00:00Z");
 
-export type Kind = "join" | "watchlist" | "plan" | "telegram" | "intel" | "opp" | "visit" | "referral" | "find";
+export type Kind = "join" | "watchlist" | "plan" | "telegram" | "intel" | "opp" | "visit" | "referral" | "find" | "tn_in" | "tn_out" | "bug" | "survey";
 export const RULES: { kind: Kind; label: string; pts: number; how: string }[] = [
   { kind: "join", label: "Join as a Pioneer", pts: 1000, how: "Sign in with a wallet before the early phase ends. Once." },
   { kind: "watchlist", label: "Start a watchlist", pts: 100, how: "Watch a protocol or an opportunity. Once." },
@@ -27,6 +28,10 @@ export const RULES: { kind: Kind; label: string; pts: number; how: string }[] = 
   { kind: "visit", label: "Share what you found", pts: 150, how: "Each new visitor who arrives through your link, up to 5 a day." },
   { kind: "referral", label: "Bring someone who uses dawns", pts: 1000, how: "When a person who signed up through your link has used dawns on 3 different days, or made a watchlist or a plan." },
   { kind: "find", label: "Find an opportunity", pts: 1000, how: "When dawns accepts a market, pool or vault you submitted." },
+  { kind: "tn_in", label: "Test a vault: deposit", pts: 200, how: "Your first deposit into a testnet vault. Test KAS has no value. Once." },
+  { kind: "tn_out", label: "Test a vault: withdraw", pts: 200, how: "Your first withdrawal from a testnet vault. Once." },
+  { kind: "bug", label: "Report a real problem", pts: 500, how: "When dawns confirms something you reported was broken or misleading." },
+  { kind: "survey", label: "Tell dawns what you saw", pts: 100, how: "Answer the three questions at the end of the tester path. Once." },
 ];
 const PTS = Object.fromEntries(RULES.map((r) => [r.kind, r.pts])) as Record<Kind, number>;
 const OPP_CAP = 20, VISITS_PER_DAY = 5;
@@ -113,6 +118,10 @@ export async function syncPoints(userId: string) {
   if (f.watch) await award(userId, "watchlist", "first");
   if (f.plan) await award(userId, "plan", "first");
   if (f.tg) await award(userId, "telegram", "first");
+  // testnet vaults: test KAS has no value, so trying a deposit and a withdrawal is testing, not investing
+  const p = await progressOf(userId).catch(() => null);
+  if (p?.nav_in || p?.credit_in) await award(userId, "tn_in", "first");
+  if (p?.nav_out) await award(userId, "tn_out", "first");
   // people this account brought: activate each once they have used dawns
   const mine = (await q.query("select user_id from referrals where referrer = $1 and activated_at is null", [userId])) as { user_id: string }[];
   for (const r of mine) {

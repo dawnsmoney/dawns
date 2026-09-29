@@ -26,6 +26,7 @@ const EXPLORE: { href: string; label: string; badge?: string; primary?: boolean 
   { href: "/allocate", label: "Allocate" },
   { href: "/watchlist", label: "Watchlist", primary: true },
   { href: "/signal", label: "The Signal", badge: "Weekly" },
+  { href: "/test", label: "Test dawns", badge: "Testnet" },
   { href: "/pioneer", label: "Pioneers", badge: "New" },
 ];
 
