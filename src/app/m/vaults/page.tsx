@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { vaults, KIND, MANAGERS } from "@/lib/vaults/registry";
 import { getSnapshot } from "@/lib/snapshot";
-import { evaluate } from "@/lib/strategies/model";
+import { evaluate, launchPath } from "@/lib/strategies/model";
 import { listFamilies } from "@/lib/strategies/store";
 import { MCard, MFlags, MHead, MList, MNote, MRow } from "@/components/m/kit";
 import { MTabs } from "@/components/m/tabs";
@@ -47,7 +47,7 @@ export default async function MVaults() {
             <MCard flush>
               <MList>{fams.map((f) => { const ev = evaluate(f.current.doc, s.opportunities, s.kasUsd); return (
                 <MRow key={f.current.id} href={`/strategies/${f.current.id}`} title={f.current.doc.name}
-                  sub={`0 / ${f.current.doc.vault.capacityKas.toLocaleString("en-US")} KAS · ${ev.legs.some((l) => l.o?.chain === "igra" || l.o?.chain === "kasplex") ? "needs the Igra bridge rule" : "needs a curator"}`}
+                  sub={`0 / ${f.current.doc.vault.capacityKas.toLocaleString("en-US")} KAS · ${launchPath(f.current.doc, ev).note}`}
                   value={ev.net != null ? pct(ev.net, 1) : "—"} valueSub="expected net" />); })}</MList>
             </MCard>
           </div>

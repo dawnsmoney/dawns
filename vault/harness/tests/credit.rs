@@ -4,7 +4,7 @@
 use dawns_vault_harness::credit::*;
 use dawns_vault_harness::nav::*;
 use dawns_vault_harness::*;
-use kaspa_consensus_core::tx::{TransactionInput, TransactionOutput, UtxoEntry};
+use kaspa_consensus_core::tx::{TransactionId, TransactionInput, TransactionOutpoint, TransactionOutput, UtxoEntry};
 use kaspa_consensus_core::Hash;
 use silverscript_lang::ast::Expr;
 use silverscript_lang::compiler::CompiledContract;
@@ -372,4 +372,134 @@ fn successor_state_is_exact_on_every_path() {
     let (cur, succ) = (compile_credit(&m, &prev), compile_credit(&m, &h));
     ok(signed(&cur, "halt", |s| vec![credit_state(&h), Expr::bytes(s)], vec![], held, vec![cov_out(&succ, (held - FEE) as u64, 0, VCOV)], 0, &guardian()), "halt baseline");
     no(signed(&cur, "halt", |s| vec![credit_state(&h), Expr::bytes(s)], vec![], held, vec![cov_out(&succ, (held - FEE) as u64, 0, VCOV)], 0, &allocator()), "allocator halts");
+}
+
+// ---------------------------------------------------------------------------
+// init: the guardian binds the share token, once, and nothing else changes
+// ---------------------------------------------------------------------------
+#[test]
+fn init_binds_the_share_token_once() {
+    let m = CreditMandate::default();
+    let (kp_, ks, _) = kcc_template();
+    let outpoint = TransactionOutpoint { transaction_id: TransactionId::from_bytes([1; 32]), index: 0 };
+    let seed = 3 * KAS;
+    let pre = Credit { share_covid: [0; 32], ..Credit::default() };
+    #[allow(clippy::too_many_arguments)]
+    let run = |prev: Credit, owner: [u8; 32], is_minter: bool, amount: i64, fake: bool, next_of: &dyn Fn(Hash) -> Credit, k: &secp256k1::Keypair, extra_in: bool, extra_out: bool, swap: bool, keep: i64| -> R {
+        let token = compile_kcc(&owner, ID_COVENANT, amount, is_minter);
+        let placeholder = cov_out(&token, MINTER_DUST as u64, 0, Hash::from_bytes([0; 32]));
+        let covid = genesis_covid(outpoint, &placeholder, 0);
+        let next = next_of(if fake { Hash::from_bytes([7; 32]) } else { covid });
+        let (cur, succ) = (compile_credit(&m, &prev), compile_credit(&m, &next));
+        let mut entries = vec![cov_utxo(&cur, seed as u64, VCOV)];
+        let mut inputs = vec![TransactionInput::new_with_compute_budget(outpoint, vec![], 0, 1000)];
+        if extra_in { entries.push(plain_utxo(KAS as u64, p2pk_spk(xonly(&stranger())))); inputs.push(tx_input(1, vec![])); }
+        let mut outs = vec![cov_out(&token, MINTER_DUST as u64, 0, covid), cov_out(&succ, keep as u64, 0, VCOV)];
+        if extra_out { outs.push(out_to(1, p2pk_spk(xonly(&stranger())))); }
+        if swap { outs.swap(0, 1); }
+        let mut tx = new_tx(inputs, outs, 0);
+        let args = |sg: Vec<u8>| vec![credit_state(&next), Expr::dynamic_bytes(kp_.clone()), Expr::dynamic_bytes(ks.clone()), Expr::bytes(sg)];
+        tx.inputs[0].signature_script = decl_sigscript(&cur, "init", args(vec![0u8; 65]));
+        let s = sign(&tx, entries.clone(), 0, k);
+        tx.inputs[0].signature_script = decl_sigscript(&cur, "init", args(s));
+        run_all(&tx, &entries)
+    };
+    let keep = seed - MINTER_DUST - FEE;
+    let bind = |c: Hash| Credit { share_covid: c.as_bytes(), ..pre };
+    let v = VCOV.as_bytes();
+    ok(run(pre, v, true, 0, false, &bind, &guardian(), false, false, false, keep), "init");
+    no(run(pre, xonly(&stranger()), true, 0, false, &bind, &guardian(), false, false, false, keep), "token minter owned by someone else");
+    no(run(pre, v, true, 1_000, false, &bind, &guardian(), false, false, false, keep), "token born with supply");
+    no(run(pre, v, false, 0, false, &bind, &guardian(), false, false, false, keep), "token born without a minter");
+    no(run(pre, v, true, 0, true, &bind, &guardian(), false, false, false, keep), "records the wrong token");
+    no(run(pre, v, true, 0, false, &bind, &allocator(), false, false, false, keep), "allocator initialises");
+    no(run(pre, v, true, 0, false, &bind, &guardian(), true, false, false, keep), "an extra input");
+    no(run(pre, v, true, 0, false, &bind, &guardian(), false, true, false, keep), "an extra output");
+    no(run(pre, v, true, 0, false, &bind, &guardian(), false, false, true, keep), "token and vault swapped");
+    no(run(pre, v, true, 0, false, &bind, &guardian(), false, false, false, keep - 10_000_000), "the vault keeps less than it should");
+    let had = Credit { share_covid: [5; 32], ..pre };
+    no(run(had, v, true, 0, false, &|c: Hash| Credit { share_covid: c.as_bytes(), ..had }, &guardian(), false, false, false, keep), "a second token for a vault that has one");
+    let sh = Credit { shares: 7, ..pre };
+    no(run(sh, v, true, 0, false, &|c: Hash| Credit { share_covid: c.as_bytes(), ..sh }, &guardian(), false, false, false, keep), "init with shares outstanding (kept)");
+    no(run(sh, v, true, 0, false, &bind, &guardian(), false, false, false, keep), "init with shares outstanding (zeroed)");
+    // every other field must pass through untouched
+    let token = compile_kcc(&v, ID_COVENANT, 0, true);
+    let covid = genesis_covid(outpoint, &cov_out(&token, MINTER_DUST as u64, 0, Hash::from_bytes([0; 32])), 0);
+    for (f, t) in tampers(bind(covid), &["shareCovid"]) {
+        no(run(pre, v, true, 0, false, &move |_| t, &guardian(), false, false, false, keep), &format!("init tampers {f}"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// a malformed state (only a hand-made genesis could create one) moves nowhere
+// ---------------------------------------------------------------------------
+#[test]
+fn out_of_range_state_is_refused() {
+    let m = CreditMandate::default();
+    let (base, held) = lent();
+    const MAXV: i64 = 100_000_000_000_000;
+    const MAXD: i64 = 10_000_000_000_000;
+    // repay carries every field but its own slot unchanged: a clean way to reach bounded()
+    let bad: Vec<(String, Credit, usize)> = {
+        let mut v = Vec::new();
+        for (name, val) in [("low", -1i64), ("high", 0)] {
+            let sh = if val < 0 { -1 } else { MAXV + 1 };
+            v.push((format!("shares {name}"), Credit { shares: sh, ..base }, 2));
+            for i in 0..3 {
+                let slot = if i == 2 { 0 } else { 2 };
+                let mut p = base; p.principal[i] = if val < 0 { -1 } else { MAXV + 1 }; v.push((format!("principal{i} {name}"), p, slot));
+                let mut d = base; d.due[i] = if val < 0 { -1 } else { MAXD + 1 }; v.push((format!("due{i} {name}"), d, slot));
+                let mut k = base; k.marks[i] = if val < 0 { -1 } else { MAXV + 1 }; v.push((format!("mark{i} {name}"), k, slot));
+            }
+        }
+        v
+    };
+    ok(repay_run(&m, base, repay_next(base, 2, 5 * KAS), 2, VCOV, 5 * KAS, held, held + 5 * KAS - FEE), "baseline recovery on slot 2");
+    for (what, prev, slot) in bad {
+        let n = repay_next(prev, slot, 5 * KAS);
+        no(repay_run(&m, prev, n, slot as i64, VCOV, 5 * KAS, held, held + 5 * KAS - FEE), &format!("state with {what}"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// time: no DAA before the mandate starts, no going back an epoch, no vault below its seed
+// ---------------------------------------------------------------------------
+#[test]
+fn claimed_time_only_moves_forward() {
+    let m = CreditMandate::default();
+    let (prev, held) = funded();
+    let amt = 10 * KAS;
+    // not_before is 1 000: DAA 999 rounds to epoch 0, so only the start check catches it
+    let early = lend_next(&m, prev, 2, amt, 999);
+    no(lend_run(&m, prev, early, 2, amt, 999, 999, held, to_borrower(2), &allocator()), "claims a DAA before the mandate starts");
+    // spent near the limit in epoch 3; a claim from epoch 1 would reset the budget
+    let late = Credit { epoch_index: 3, epoch_spent: m.base.epoch_limit - KAS, ..prev };
+    let back = lend_next(&m, late, 2, amt, 1_500);
+    assert_eq!((back.epoch_index, back.epoch_spent), (0, amt));
+    no(lend_run(&m, late, back, 2, amt, 1_500, 3_500, held, to_borrower(2), &allocator()), "claims an earlier epoch to reset the budget");
+    // the valuer cannot re-mark within an epoch by claiming an old one
+    let (l, lheld) = lent();
+    let marked = Credit { mark_epoch: 4, ..l };
+    no(mark_run(&m, marked, Credit { marks: [KAS, 20 * KAS, 0], mark_epoch: 1, ..marked }, 2_500, 5_500, lheld, &valuer()), "marks again claiming an old epoch");
+    // a vault holding less than its seed prices nothing
+    let mut open = m.clone(); open.base.reserve_floor_bps = 0;
+    let (l, _) = lent();
+    let n = lend_next(&open, l, 2, 1_000, 2_500);
+    ok(lend_run(&open, l, n, 2, 1_000, 2_500, 2_500, open.base.min_keep + 1_000 + MAX_FEE, to_borrower(2), &allocator()), "lends down to exactly its seed");
+    no(lend_run(&open, l, n, 2, 1_000, 2_500, 2_500, open.base.min_keep + 1_000 + MAX_FEE - 1, to_borrower(2), &allocator()), "lends into its seed (reserve floor 0)");
+    no(lend_run(&open, l, n, 2, 1_000, 2_500, 2_500, open.base.min_keep - 1, to_borrower(2), &allocator()), "lends from a vault below its seed");
+
+    // fees come out of NAV, never out of the seed: at minKeep + maxFee the vault can still pay one, below it nothing moves
+    let (l, _) = lent();
+    let edge = m.base.min_keep + MAX_FEE;
+    let md = Credit { marks: [20 * KAS, 20 * KAS, 0], ..l };
+    ok(md_run(&m, l, md, 0, 13_700, 13_700, edge, edge - FEE), "markdown with exactly one fee above the seed");
+    no(md_run(&m, l, md, 0, 13_700, 13_700, edge - 1, edge - 1 - FEE), "markdown paid out of the seed");
+    let up = Credit { marks: [KAS, 20 * KAS, 0], mark_epoch: 1, ..l };
+    no(mark_run(&m, l, up, 2_500, 2_500, edge - 1, &valuer()), "mark paid out of the seed");
+    let zero = Credit { marks: [0, 20 * KAS, 0], ..l };
+    no(wo_run(&m, zero, Credit { principal: [0, 20 * KAS, 0], due: [0, 11_500, 0], ..zero }, 0, 20_000, 20_000, edge - 1, &valuer()), "write-off paid out of the seed");
+    let h = Credit { halted: true, ..l };
+    let (cur, succ) = (compile_credit(&m, &l), compile_credit(&m, &h));
+    no(signed(&cur, "halt", |s| vec![credit_state(&h), Expr::bytes(s)], vec![], edge - 1, vec![cov_out(&succ, (edge - 1 - FEE) as u64, 0, VCOV)], 0, &guardian()), "halt paid out of the seed");
 }

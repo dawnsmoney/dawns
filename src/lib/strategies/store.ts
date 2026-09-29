@@ -44,6 +44,17 @@ export const REFERENCE: StoredStrategy[] = [
     reserveBps: 3_000, maxProtocolBps: 6_000, exitCover: 1, fees: { performanceBps: 2_000, managementBps: 0 },
     vault: { type: "fixed", access: "permissionless", capacityKas: 50_000, exitFeeBps: 0, termDays: 90, depositDays: 14, redemptionDays: 0 },
   }),
+  ref({
+    name: "Private credit, three borrowers (testnet)",
+    thesis: "Short loans to three named borrowers, each capped, with 30% of the vault kept liquid. Repayments can only return to the vault; a loan late past its week of grace is written down 25% a month by rule. The borrowers are invented test names: it exists to show a strategy becoming a credit vault on testnet-10.",
+    legs: [
+      { opp: "credit:aster-liquidity-test", target: 3_000, cap: 4_000, credit: { borrower: "Aster Liquidity (test)", kind: "market-maker", rateBps: 1_000, termDays: 30, collateral: "secured", collateralNote: "stablecoins at a custodian, 110%", graceDays: 7, markdownBps: 2_500, reporting: "attested" } },
+      { opp: "credit:brightwater-prime-test", target: 2_500, cap: 3_000, credit: { borrower: "Brightwater Prime (test)", kind: "prime-broker", rateBps: 1_200, termDays: 60, collateral: "secured", collateralNote: "receivables", graceDays: 7, markdownBps: 2_500, reporting: "attested" } },
+      { opp: "credit:calder-trading-test", target: 1_500, cap: 2_000, credit: { borrower: "Calder Trading (test)", kind: "fund", rateBps: 800, termDays: 14, collateral: "unsecured", collateralNote: "", graceDays: 7, markdownBps: 2_500, reporting: "self" } },
+    ],
+    reserveBps: 3_000, maxProtocolBps: 10_000, exitCover: 1, fees: { performanceBps: 0, managementBps: 0 },
+    vault: { type: "nav", access: "permissionless", capacityKas: 10_000, exitFeeBps: 25, termDays: 0, depositDays: 0, redemptionDays: 0 },
+  }),
 ];
 
 type Row = { id: string; hash: string; doc: unknown; strategist: string; created_at: string; family: string | null; version: number | null; parent: string | null; effective_at: string | null; listed: boolean };

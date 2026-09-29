@@ -7,7 +7,9 @@ import { CopyId, SplitBar } from "@/components/viz";
 import { ApyWaterfall, ChangeList, EnforcementMap, ExitStack, LegList, OwnerActions, Roles, VersionTrack } from "@/components/strategy";
 import { splitParts } from "@/lib/strategies/parts";
 import { getSnapshot } from "@/lib/snapshot";
-import { evaluate, enforcement, toMandate, diffDocs, PAUSE } from "@/lib/strategies/model";
+import { evaluate, enforcement, toMandate, diffDocs, launchPath, PAUSE } from "@/lib/strategies/model";
+import { CreditLaunch } from "@/components/credit-launch";
+import { creditMandate, listCredit } from "@/lib/vaults/credit";
 import { getStrategy } from "@/lib/strategies/store";
 import { usd, pct } from "@/lib/format";
 
@@ -36,6 +38,9 @@ export default async function StrategyPage({ params }: { params: Promise<{ id: s
   const mandate = toMandate(doc, st.hash);
   const passed = ev.checks.filter((c) => c.ok).length;
   const offL1 = ev.legs.some((l) => l.o?.chain === "igra" || l.o?.chain === "kasplex");
+  const lp = launchPath(doc, ev);
+  const launched = lp.kind === "credit" ? (await listCredit()).filter((v) => v.m.strategy?.hash === st.hash) : [];
+  const testKeys = creditMandate ? { roles: creditMandate.roles, borrowers: creditMandate.borrowers.map((b) => b.address) } : null;
   const bp = (b: number) => `${(b / 100).toFixed(b % 100 ? 1 : 0)}%`;
   const tile = (label: string, big: string, small: string, color?: string) => (
     <div className="card st-tile"><span className="eyebrow muted">{label}</span><b style={color ? { color } : undefined}>{big}</b><small className="muted">{small}</small></div>
@@ -132,12 +137,25 @@ export default async function StrategyPage({ params }: { params: Promise<{ id: s
           <Roles strategist={st.by === "dawns" ? "Dawns (reference)" : st.strategist} href={`/strategists/${who}`} />
         </div>
 
+        {lp.kind === "credit" && (
+          <div className="card" id="launch">
+            <div className="c-head"><h3>Launch as a credit vault</h3><Pill t={lp.note.startsWith("ready") ? "good" : "warn"}>{lp.note}</Pill></div>
+            {launched.length > 0 && (
+              <div className="vlog" style={{ marginBottom: 18 }}>
+                {launched.map((v) => <Link key={v.l.covenantId} href={v.href} className="vlog-row" style={{ ["--c" as string]: "#199e70" }}><i /><div><b>{v.m.name}</b><small>launched {new Date(v.l.createdAt * 1000).toISOString().slice(0, 10)} · v{v.m.strategy?.version} · {v.l.moves.length} moves</small></div><span className="amt">open →</span></Link>)}
+              </div>
+            )}
+            <CreditLaunch doc={doc} strategy={{ id: st.id, version: st.version, hash: st.hash, strategist: st.by === "dawns" ? "dawns" : st.strategist }} test={testKeys} />
+          </div>
+        )}
         <div className="grid gA">
+          {lp.kind !== "credit" && (
           <div className="card">
-            <div className="c-head"><h3>Vault from this strategy</h3><Pill t="info">{offL1 ? "Needs the Igra bridge rule" : "Ready for NAV v1.1"}</Pill></div>
-            <p className="muted" style={{ marginTop: 0 }}>A curator launches a NAV v1.1 vault with these mandate parameters. Each leg becomes a destination slot with its hard cap. {offL1 ? "These legs are Igra markets: a covenant slot is a Kaspa L1 address, so until the bridge payload rule exists the slots have no address and the vault cannot launch." : ""}</p>
+            <div className="c-head"><h3>Vault from this strategy</h3><Pill t="info">{offL1 ? "Markets on Igra/Kasplex" : "Ready for NAV v1.1"}</Pill></div>
+            <p className="muted" style={{ marginTop: 0 }}>A curator launches a NAV v1.1 vault with these mandate parameters. Each leg becomes a destination slot with its hard cap. {offL1 ? "These legs are markets on Igra or Kasplex, and dawns vaults run on Kaspa L1 covenants only: a covenant can send only to L1 addresses, so these legs cannot be vault destinations." : ""}</p>
             <pre className="st-pre">{JSON.stringify(mandate, null, 2)}</pre>
           </div>
+          )}
           <div className="card st-cta">
             <span className="eyebrow muted">Strategy hash</span>
             <CopyId text={st.hash} />

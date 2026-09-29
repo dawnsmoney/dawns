@@ -4,7 +4,7 @@ import { Banner } from "@/components/Banner";
 import { Pill } from "@/components/bits";
 import { vaults, KIND, MANAGERS } from "@/lib/vaults/registry";
 import { getSnapshot } from "@/lib/snapshot";
-import { evaluate } from "@/lib/strategies/model";
+import { evaluate, launchPath } from "@/lib/strategies/model";
 import { listFamilies } from "@/lib/strategies/store";
 import { pct } from "@/lib/format";
 
@@ -22,7 +22,7 @@ export default async function VaultsHub() {
     ...vs.filter((v) => v.status !== "designed").map((v) => ({ key: v.id, href: v.href, name: v.name, color: KIND[v.kind].color, kind: KIND[v.kind].label, network: v.network,
       deposits: v.figures[0]?.value ?? "—", depositsSub: v.figures[0]?.label && v.figures[0].label !== "Value" && v.figures[0].label !== "NAV" ? v.figures[0].label : null,
       net: <span className="muted">test KAS</span>, exit: EXIT[v.kind], curator: man(v.manager)?.name ?? v.manager, state: STATUS[v.status] })),
-    ...proposed.map(({ st, ev }) => { const k = st.doc.vault.type === "fixed" ? "fixed" : "nav"; return { key: st.id, href: `/strategies/${st.id}`, name: st.doc.name, color: KIND[k].color, kind: `${KIND[k].label} · proposed`, network: ev.legs.some((l) => l.o?.chain === "igra" || l.o?.chain === "kasplex") ? "needs the Igra bridge rule" : "needs a curator",
+    ...proposed.map(({ st, ev }) => { const lp = launchPath(st.doc, ev); const k = lp.kind; return { key: st.id, href: `/strategies/${st.id}`, name: st.doc.name, color: KIND[k].color, kind: `${KIND[k].label} · proposed`, network: lp.note,
       deposits: `0 / ${st.doc.vault.capacityKas.toLocaleString("en-US")} KAS`, depositsSub: "capacity",
       net: <b>{ev.net != null ? pct(ev.net, 1) : "—"}</b>, exit: `${pct(ev.exitNow, 0)} out now${st.doc.vault.type === "fixed" ? ` · ${st.doc.vault.termDays}-day term` : ""}`,
       curator: st.by === "dawns" ? "Dawns" : `${st.strategist.slice(0, 8)}…${st.strategist.slice(-4)}`, state: { t: "info" as const, w: "Proposed" } }; }),

@@ -29,7 +29,15 @@
 use super::nav::*;
 use super::*;
 
-const CREDIT_SOURCE: &str = include_str!("../../credit/dawns_credit.sil");
+/// The covenant a vault runs is part of its address, so each version stays:
+/// v0 is what the first TN10 credit vault runs; new vaults get v0.1.
+const CREDIT_V0: &str = include_str!("../../credit/dawns_credit_v0.sil");
+const CREDIT_V01: &str = include_str!("../../credit/dawns_credit.sil");
+const CREDIT_LATEST: &str = "dawns-credit/0.1";
+static CREDIT_VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+fn credit_source() -> &'static str {
+    match CREDIT_VERSION.get().map(String::as_str) { Some("dawns-credit/0") => CREDIT_V0, _ => CREDIT_V01 }
+}
 const REPAY_SOURCE: &str = include_str!("../../credit/dawns_repay.sil");
 const CREDIT_STANDARD: &str = "dawns-credit/0";
 const SLOTS: usize = 3;
@@ -215,7 +223,7 @@ fn credit_ctor(m: &CreditMandate, s: &Credit) -> Res<Vec<Expr<'static>>> {
     Ok(v)
 }
 fn compile_credit(m: &CreditMandate, s: &Credit) -> Res<CompiledContract<'static>> {
-    compile_contract(CREDIT_SOURCE, &credit_ctor(m, s)?, CompileOptions::default()).map_err(|e| format!("compile: {e:?}").into())
+    compile_contract(credit_source(), &credit_ctor(m, s)?, CompileOptions::default()).map_err(|e| format!("compile: {e:?}").into())
 }
 fn credit_state(s: &Credit) -> Expr<'static> {
     let mut f: Vec<(&str, Expr<'static>)> = vec![("shareCovid", Expr::bytes(s.share_covid.to_vec())), ("shares", Expr::int(s.shares))];
@@ -237,6 +245,7 @@ impl Ledger {
     fn read() -> Res<Ledger> {
         let v: Value = serde_json::from_str(&std::fs::read_to_string(LEDGER).map_err(|_| format!("no {LEDGER} — run `credit genesis`"))?)?;
         if v["status"] == "planned" { return Err(format!("{LEDGER} is the site's placeholder — run `credit genesis`").into()); }
+        let _ = CREDIT_VERSION.set(v["covenant"].as_str().unwrap_or("dawns-credit/0").to_string());
         Ok(Ledger { v })
     }
     fn write(&self) -> Res<()> {
@@ -591,8 +600,21 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
             let client = connect().await?;
             let daa = ready(&client).await?;
             let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(MANDATE)?)?;
-            if doc["notBeforeDaa"].as_i64() == Some(0) { doc["notBeforeDaa"] = json!(daa - DAA_BACKOFF); std::fs::write(MANDATE, serde_json::to_string_pretty(&doc)? + "\n")?; }
+            if doc["notBeforeDaa"].as_i64() == Some(0) {
+                // fixed term from a strategy: maturity and the deposit window count from launch
+                let start = daa - DAA_BACKOFF;
+                doc["notBeforeDaa"] = json!(start);
+                if let Some(d) = doc["maturityDays"].as_i64().filter(|d| *d > 0) { if doc["maturityDaa"].as_i64() == Some(0) { doc["maturityDaa"] = json!(start + d * 864_000); } }
+                if let Some(d) = doc["depositDays"].as_i64().filter(|d| *d > 0) { if doc["depositUntilDaa"].as_i64() == Some(0) { doc["depositUntilDaa"] = json!(start + d * 864_000); } }
+                std::fs::write(MANDATE, serde_json::to_string_pretty(&doc)? + "\n")?;
+            }
             let m = read_credit_mandate()?;
+            // this tool signs with ./keys (or DAWNS_KEYS): the mandate's keys must be those
+            for (role, a) in [("allocator", &m.allocator), ("valuer", &m.valuer), ("guardian", &m.guardian)] {
+                let k = load_key(role).map_err(|_| format!("no {role} key in {} — this tool signs with it", keys_dir().display()))?;
+                if &address_of(&k) != a { return Err(format!("the mandate's {role} is {a}, but {}/{role} is {}: run from the folder whose keys the mandate names (DAWNS_KEYS)", keys_dir().display(), address_of(&k)).into()); }
+            }
+            if let Some(st) = m.doc["strategy"].as_object() { println!("strategy       : {} v{} · {}", st.get("id").and_then(|v| v.as_str()).unwrap_or("?"), st.get("version").and_then(|v| v.as_i64()).unwrap_or(0), st.get("hash").and_then(|v| v.as_str()).unwrap_or("?")); }
             // The seed is exactly what the vault must keep (minKeep), the share token's
             // minter dust and the token transaction's fee: after `token` the vault holds
             // minKeep and its NAV is 0. Anything more would count in NAV before the first
@@ -626,12 +648,14 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
             println!("covenant bytes : {}\nmandate hash   : {}\ncovenant id    : {cov}\nvault address  : {addr}\nlocal engine   : ACCEPTED ({used:?})", contract.bytecode.len(), hex(&mandate_hash(&m.doc)));
             let repay: Vec<Value> = (0..m.borrowers.len()).map(|i| repay_account(&m, &cov, i).map(|(a, _)| json!(a.to_string()))).collect::<Res<_>>()?;
             let led = Ledger { v: json!({
-                "standard": CREDIT_STANDARD, "covenant": CREDIT_STANDARD, "network": NETWORK, "name": m.doc["name"], "manager": m.doc["manager"],
+                "standard": CREDIT_STANDARD, "covenant": CREDIT_LATEST, "network": NETWORK, "name": m.doc["name"], "manager": m.doc["manager"],
                 "covenantId": cov.to_string(), "mandateHash": hex(&mandate_hash(&m.doc)), "genesisTx": tx.id().to_string(), "createdAt": now(),
                 "seed": seed, "state": st.to_json(), "address": addr.to_string(), "value": seed, "pending": Value::Null,
                 "accountTemplate": { "prefix": hex(&ap), "suffix": hex(&asuf) },
                 "repayTemplate": { "prefix": hex(&rp), "suffix": hex(&rsuf) },
                 "repayAddresses": repay,
+                // the mandate itself, so the site can check it hashes to mandateHash
+                "mandate": m.doc,
                 "shareCovid": Value::Null, "tokenTx": Value::Null, "notes": [], "moves": []
             })};
             led.write()?;
@@ -680,7 +704,7 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
                 let (a, _) = repay_account(&m, &cov, i)?;
                 ok &= led.v["repayAddresses"][i].as_str() == Some(&a.to_string());
             }
-            println!("covenant       : {CREDIT_STANDARD}\ncompiles to    : {addr}\nledger says    : {}\n{}", led.v["address"].as_str().unwrap_or(""), if ok { "MATCH" } else { "MISMATCH — do not move this vault with this build" });
+            println!("covenant       : {}\ncompiles to    : {addr}\nledger says    : {}\n{}", CREDIT_VERSION.get().map(String::as_str).unwrap_or(CREDIT_LATEST), led.v["address"].as_str().unwrap_or(""), if ok { "MATCH" } else { "MISMATCH — do not move this vault with this build" });
         }
 
         "accounts" => {

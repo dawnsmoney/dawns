@@ -1,7 +1,7 @@
 import "server-only";
 import { mandate as mm, ledger as ml, figures as mandateFigures, SOMPI } from "@/lib/vault";
 import { getNav, navFigures, FIRST_PRICE } from "./nav";
-import { getCredit, creditFigures } from "./credit";
+import { getCredit, creditFigures, listCredit } from "./credit";
 
 /**
  * Every vault dawns knows, whatever its state, and the managers who run them.
@@ -65,6 +65,15 @@ export async function vaults(): Promise<VaultCard[]> {
       figures: [{ label: "NAV", value: kas(f.nav) }, { label: "Loans", value: `${f.loans.filter((x) => x.status !== "free").length} of ${f.loans.length}` }, { label: "Holders", value: String(f.holders) }],
       guarantees: ["Only registered borrowers", "Repayments only into the vault", `Late loans −${cm.markdownStepBps / 100}% per period`],
     });
+    for (const v of (await listCredit()).filter((x) => !x.reference)) {
+      const g = creditFigures(v.l, v.m, null);
+      out.push({
+        id: v.l.covenantId, kind: "credit", name: v.m.name, href: v.href, manager: v.m.manager ?? "—", network: "testnet-10", status: "live",
+        pitch: v.m.objective || "A credit vault launched from a strategy.",
+        figures: [{ label: "NAV", value: kas(g.nav) }, { label: "Loans", value: `${g.loans.filter((x) => x.status !== "free").length} of ${g.loans.length}` }, { label: "Holders", value: String(g.holders) }],
+        guarantees: ["Only registered borrowers", "Repayments only into the vault", `Late loans −${v.m.markdownStepBps / 100}% per period`],
+      });
+    }
   } else {
     out.push({ id: "credit", kind: "credit", name: "Credit vault", href: null, manager: "dawns", network: "testnet-10", status: "designed",
       pitch: "Approved borrowers as destinations, each with an amount, a rate and a due date. Repayments can only come back into the vault.",

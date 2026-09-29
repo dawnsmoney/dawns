@@ -1505,3 +1505,19 @@ a.vlog-row:hover b{color:var(--ink)}
 .spc-leg i{width:9px;height:9px;border-radius:50%}
 .spc-plot{position:relative;min-width:0}
 .vlog-row small a{color:inherit;text-decoration:underline;text-decoration-color:rgba(255,255,255,.25);text-underline-offset:2px}
+
+/* ---- launch a credit vault from a strategy ---- */
+.cl-map{display:grid;border-top:1px solid var(--line)}
+.cl-row{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.4fr) auto;gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.cl-row>span:first-child{display:grid;gap:2px;min-width:0}
+.cl-row small{color:var(--ink-3);font-size:12.5px}
+.cl-to{font-size:13.5px;color:var(--ink-2);min-width:0}
+@media (max-width:720px){.cl-row{grid-template-columns:minmax(0,1fr) auto}.cl-to{grid-column:1 / -1;grid-row:2}}
+.cl-fields{display:grid;gap:16px}
+.cl-field{display:grid;gap:6px;min-width:0}
+.cl-field>span{display:grid;gap:2px}
+.cl-field small{color:var(--ink-3);font-size:12.5px}
+.cl-field input{width:100%;max-width:none;font-size:13px}
+.cl-field input[aria-invalid=true]{border-color:rgba(255,122,122,.6)}
+.cl-err{color:var(--crit)!important}
+.cl-actions{display:flex;gap:8px;flex-wrap:wrap}

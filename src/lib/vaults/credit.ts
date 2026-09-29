@@ -1,6 +1,7 @@
 import "server-only";
 import creditDoc from "../../../vault/deploy/credit.json";
 import creditMandateDoc from "../../../vault/deploy/credit-mandate.json";
+import { blake2b } from "@noble/hashes/blake2b";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 import { readNavLive, SOMPI, FIRST_PRICE, type NavNote, type NavLive } from "./nav";
 import type { AccountTemplate } from "./account";
@@ -23,10 +24,13 @@ export interface CreditLedger {
   name?: string; manager?: string; standard?: string; network?: string;
   covenantId: string; shareCovid: string | null; mandateHash: string; genesisTx: string; tokenTx: string | null; createdAt: number; seed: number;
   state: CreditState; address: string; value: number; accountTemplate: AccountTemplate; repayAddresses: string[];
+  /** the mandate itself, in vaults launched from a strategy (blake2b of it is mandateHash) */
+  mandate?: CreditMandateDoc;
   notes: NavNote[]; moves: CreditMove[];
 }
 export interface CreditMandateDoc {
   name: string; objective: string; manager?: string; network: string; standard: string;
+  strategy?: { id: string; version: number; hash: string };
   roles: { allocator: string; valuer: string; guardian: string };
   borrowers: { label: string; address: string; capBps: number; termDaa: number; interestBps: number }[];
   graceDaa: number; markdownStepBps: number; markdownPeriodDaa: number;
@@ -48,6 +52,42 @@ export async function getCredit(): Promise<{ l: CreditLedger | null; m: CreditMa
     if (d && d.covenantId === creditLedger.covenantId && d.mandateHash === creditLedger.mandateHash && Array.isArray(d.moves) && d.moves.length >= creditLedger.moves.length) return { l: d, m: creditMandate };
   } catch { /* fall back to git */ }
   return { l: creditLedger, m: creditMandate };
+}
+
+/** serde_json's compact form of a map-sorted Value: keys in byte order at every level (Postgres jsonb reorders them). */
+export function sortedJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(sortedJson).join(",")}]`;
+  if (v && typeof v === "object") return `{${Object.keys(v as object).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).map((k) => `${JSON.stringify(k)}:${sortedJson((v as Record<string, unknown>)[k])}`).join(",")}}`;
+  return JSON.stringify(v);
+}
+
+/**
+ * A ledger a launched vault published: it carries its mandate, and the mandate
+ * hashes to the mandateHash the covenant commits (the deploy tool hashes serde's
+ * key-sorted compact JSON, which sortedJson reproduces).
+ */
+export function launchedOk(d: Partial<CreditLedger> | null | undefined): d is CreditLedger & { mandate: CreditMandateDoc } {
+  if (!d || typeof d.covenantId !== "string" || !/^[0-9a-f]{64}$/.test(d.covenantId) || !d.mandate || !Array.isArray(d.moves) || !d.state) return false;
+  if (d.mandate.standard !== "dawns-credit/0" || d.mandate.network !== "testnet-10") return false;
+  const h = Buffer.from(blake2b(new TextEncoder().encode(sortedJson(d.mandate)), { dkLen: 32 })).toString("hex");
+  return h === d.mandateHash;
+}
+
+/** Every credit vault: the reference one, then those launched from strategies (newest first). */
+export async function listCredit(): Promise<{ l: CreditLedger; m: CreditMandateDoc; reference: boolean; href: string }[]> {
+  const out: { l: CreditLedger; m: CreditMandateDoc; reference: boolean; href: string }[] = [];
+  const ref = await getCredit();
+  if (ref.l && ref.m) out.push({ l: ref.l, m: ref.m, reference: true, href: "/vaults/credit-tn10" });
+  if (!hasDb()) return out;
+  try {
+    await ensureSchema();
+    const r = (await sql().query("select doc from vault_ledgers where doc->>'standard' = 'dawns-credit/0' and doc->'mandate' is not null order by updated_at desc limit 200", [])) as { doc: CreditLedger }[];
+    for (const { doc } of r) if (doc.covenantId !== creditLedger?.covenantId && launchedOk(doc)) out.push({ l: doc, m: doc.mandate!, reference: false, href: `/vaults/credit/${doc.covenantId}` });
+  } catch { /* the reference vault still lists */ }
+  return out;
+}
+export async function getCreditById(id: string) {
+  return (await listCredit()).find((x) => x.l.covenantId === id) ?? null;
 }
 
 export const readCreditLive = (l: CreditLedger): Promise<NavLive> => readNavLive(l as never);

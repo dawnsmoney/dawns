@@ -1,5 +1,5 @@
 import { getNav, positionOf, positionAt } from "@/lib/vaults/nav";
-import { getCredit, creditFigures } from "@/lib/vaults/credit";
+import { getCreditById, creditFigures } from "@/lib/vaults/credit";
 
 export const dynamic = "force-dynamic";
 
@@ -9,10 +9,8 @@ export async function GET(req: Request) {
   const address = (q.get("address") ?? "").trim().toLowerCase();
   const vault = q.get("vault");
   try {
-    const c = await getCredit();
-    if (vault && c.l && c.m && vault === c.l.covenantId) {
-      return Response.json(await positionAt(c.l, creditFigures(c.l, c.m, null).price, address), { headers: { "cache-control": "no-store" } });
-    }
+    const c = vault && /^[0-9a-f]{64}$/.test(vault) ? await getCreditById(vault) : null;
+    if (c) return Response.json(await positionAt(c.l, creditFigures(c.l, c.m, null).price, address), { headers: { "cache-control": "no-store" } });
     const { l, m } = await getNav();
     if (!l || !m || (vault && vault !== l.covenantId)) return Response.json({ error: "Unknown vault" }, { status: 404 });
     return Response.json(await positionOf(l, m, address), { headers: { "cache-control": "no-store" } });

@@ -381,3 +381,12 @@ export function diffDocs(a: StrategyDoc, b: StrategyDoc, name: (opp: string) => 
   num("Redemption window", a.vault.redemptionDays, b.vault.redemptionDays, (x) => (x ? `≤ ${x} days` : "from reserve"), true);
   return out;
 }
+
+/** How a published strategy can become a vault today (dawns vaults run on Kaspa L1 covenants only). */
+export function launchPath(d: StrategyDoc, ev: Evaluation): { kind: "credit" | "nav" | "fixed"; note: string } {
+  const loans = d.legs.filter((l) => l.credit).length;
+  if (loans && loans === d.legs.length) return { kind: "credit", note: loans <= 3 ? "ready: launch as a credit vault" : "credit vault holds 3 loans at most" };
+  const k = d.vault.type === "fixed" ? "fixed" : "nav";
+  if (ev.legs.some((l) => l.o?.chain === "igra" || l.o?.chain === "kasplex")) return { kind: k, note: "markets on Igra/Kasplex: dawns vaults run on Kaspa L1" };
+  return { kind: k, note: "needs a curator" };
+}

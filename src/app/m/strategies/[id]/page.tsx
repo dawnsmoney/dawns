@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSnapshot } from "@/lib/snapshot";
-import { evaluate, enforcement, diffDocs, PAUSE } from "@/lib/strategies/model";
+import { evaluate, enforcement, diffDocs, launchPath, PAUSE } from "@/lib/strategies/model";
+import { CreditLaunch } from "@/components/credit-launch";
+import { creditMandate } from "@/lib/vaults/credit";
 import { getStrategy } from "@/lib/strategies/store";
 import { splitParts } from "@/lib/strategies/parts";
 import { MCard, MFlags, MHead, MHero, MLinkButton, MNote, MStats } from "@/components/m/kit";
@@ -33,6 +35,8 @@ export default async function MStrategy({ params }: { params: Promise<{ id: stri
   const who = st.by === "dawns" ? "dawns" : st.strategist;
   const bp = (b: number) => `${(b / 100).toFixed(b % 100 ? 1 : 0)}%`;
   const passed = ev.checks.filter((c) => c.ok).length;
+  const lp = launchPath(doc, ev);
+  const testKeys = creditMandate ? { roles: creditMandate.roles, borrowers: creditMandate.borrowers.map((b) => b.address) } : null;
   return (
     <>
       <MHead back={{ href: "/strategies", label: "Strategies" }} eyebrow={<><Link href={`/strategists/${who}`} style={{ color: "inherit" }}>{st.by === "dawns" ? "Dawns · reference" : `${st.strategist.slice(0, 12)}…${st.strategist.slice(-4)}`}</Link> · v{st.version}</>}
@@ -47,7 +51,7 @@ export default async function MStrategy({ params }: { params: Promise<{ id: stri
           { label: "Capacity", value: `${(doc.vault.capacityKas / 1000).toLocaleString("en-US")}K KAS`, sub: ev.capacityUsd ? usd(ev.capacityUsd) : undefined },
           { label: "Reserve", value: bp(doc.reserveBps), sub: doc.vault.type === "fixed" ? `${doc.vault.termDays}-day term` : "open term" },
         ]} />
-        <MTabs tabs={[{ key: "o", label: "Split & yield" }, { key: "l", label: "Legs", badge: doc.legs.length }, { key: "r", label: "Rules", badge: ev.checks.length - passed || null }, { key: "t", label: "Terms" }, { key: "v", label: "Versions", badge: family.versions.length }]}>
+        <MTabs tabs={[{ key: "o", label: "Split & yield" }, { key: "l", label: "Legs", badge: doc.legs.length }, { key: "r", label: "Rules", badge: ev.checks.length - passed || null }, { key: "t", label: "Terms" }, { key: "v", label: "Versions", badge: family.versions.length }, ...(lp.kind === "credit" ? [{ key: "x", label: "Launch" }] : [])]}>
           <div className="m-panel">
             <MCard title="Split" tag={`${doc.legs.length} of 4 slots`}><SplitBar parts={splitParts(doc, ev)} label="Strategy split" height={20} /></MCard>
             <MCard title="Expected net APY" tag="native + rewards − fees"><ApyWaterfall ev={ev} /></MCard>
@@ -76,6 +80,12 @@ export default async function MStrategy({ params }: { params: Promise<{ id: stri
               <MNote>A running vault never changes: its terms are its address. A new version applies to vaults launched after it takes effect.</MNote>
             </MCard>
           </div>
+          {lp.kind === "credit" && (
+            <div className="m-panel">
+              <MNote>Launching runs from a computer: the last step gives you the mandate file and the Terminal commands.</MNote>
+              <CreditLaunch doc={doc} strategy={{ id: st.id, version: st.version, hash: st.hash, strategist: st.by === "dawns" ? "dawns" : st.strategist }} test={testKeys} />
+            </div>
+          )}
         </MTabs>
         <MLinkButton href={`/strategies/new?from=${st.id}`} kind="ghost">Start a strategy from this one</MLinkButton>
       </div>

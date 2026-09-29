@@ -1,10 +1,10 @@
 pragma silverscript ^0.1.0;
 
-// Dawns — credit vault covenant, v0.1 (TESTNET-10 ONLY, NOT AUDITED)
+// Dawns — credit vault covenant, v0 (TESTNET-10 ONLY, NOT AUDITED)
 //
-// v0.1 over v0 (dawns_credit_v0.sil, which the first TN10 credit vault runs):
-// no loan and no fee may take the vault below its seed (minKeep), whatever the
-// reserve floor; below it, deposits and NAV pricing would stop.
+// Kept byte-for-byte for the first TN10 credit vault (covenant baf9e099…), whose
+// address is this code: it can only be moved by compiling exactly this. New vaults
+// run dawns_credit.sil (v0.1).
 //
 // A NAV vault (shares, personal accounts, deposit and redeem exactly as
 // dawns_nav_v11.sil) whose three slots are loans to named borrowers instead of
@@ -299,7 +299,6 @@ contract DawnsCredit(
         require(reserveFloorBps >= 0);
         require(reserveFloorBps <= BPS);
         require((inValue - amount) * BPS >= reserveFloorBps * nav);
-        require(inValue - amount - maxFee >= minKeep);    // the seed stays, whatever the floor
         int due = claimedDaa + term;
         if (maturity > 0) { require(due <= maturity); }
 
@@ -423,7 +422,6 @@ contract DawnsCredit(
         require(newState.shareCovid == prevState.shareCovid);
         require(newState.halted == prevState.halted);
         int inValue = tx.inputs[this.activeInputIndex].value;
-        require(inValue - maxFee >= minKeep);             // a fee is never paid out of the seed
         require(OpAuthOutputIdx(this.activeInputIndex, 0) == 0);
         require(tx.outputs[0].value >= inValue - maxFee);
     }
@@ -462,7 +460,6 @@ contract DawnsCredit(
         require(newState.halted == prevState.halted);
 
         int inValue = tx.inputs[this.activeInputIndex].value;
-        require(inValue - maxFee >= minKeep);             // a fee is never paid out of the seed
         require(OpAuthOutputIdx(this.activeInputIndex, 0) == 0);
         require(tx.outputs[0].value >= inValue - maxFee);
         require(checkSig(valuerSig, valuerKey));
@@ -512,7 +509,6 @@ contract DawnsCredit(
         require(newState.shareCovid == prevState.shareCovid);
         require(newState.halted == prevState.halted);
         int inValue = tx.inputs[this.activeInputIndex].value;
-        require(inValue - maxFee >= minKeep);             // a fee is never paid out of the seed
         require(OpAuthOutputIdx(this.activeInputIndex, 0) == 0);
         require(tx.outputs[0].value >= inValue - maxFee);
         require(checkSig(valuerSig, valuerKey));
@@ -653,7 +649,6 @@ contract DawnsCredit(
         require(newState.shares == prevState.shares);
         sameAccounting(prevState, newState);
         int inValue = tx.inputs[this.activeInputIndex].value;
-        require(inValue - maxFee >= minKeep);             // a fee is never paid out of the seed
         require(OpAuthOutputIdx(this.activeInputIndex, 0) == 0);
         require(tx.outputs[0].value >= inValue - maxFee);
         require(checkSig(guardianSig, guardianKey));
