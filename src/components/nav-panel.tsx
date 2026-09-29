@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { accountAddress, ownerOf, fromHex, type AccountTemplate } from "@/lib/vaults/account";
 import { CopyId } from "./viz";
+import { openConnect, useAccount } from "./connect";
+import { decodeKaspaAddress, encodeKaspaAddress } from "@/lib/auth/kaspa";
+
+/** The vault lives on testnet-10: a mainnet address of the same key is shown in its testnet form. */
+const toTestnet = (a: string | null) => { if (!a || !a.startsWith("kaspa:")) return a; try { const d = decodeKaspaAddress(a); return encodeKaspaAddress("kaspatest", d.version, d.payload); } catch { return a; } };
 
 type KW = {
   requestAccounts(): Promise<string[]>;
@@ -21,16 +26,27 @@ export interface NavPanelProps { vault: string; template: AccountTemplate; price
 const kas = (x: number, d = 4) => `${x.toLocaleString("en-US", { maximumFractionDigits: d })} KAS`;
 const LS = "dawns.nav.address";
 
-/** Your position in the NAV vault: two personal addresses, what is on its way, your shares. */
+/**
+ * Your position in the NAV vault. The address comes from the connected account (a Kaspa
+ * wallet, testnet or mainnet: same key, same owner), or one pasted by hand. Deposit and
+ * withdraw are one box with two tabs; sending from another wallet is one tap away.
+ */
 export function NavPanel(p: NavPanelProps) {
-  const saved = () => { try { return typeof window === "undefined" ? "" : localStorage.getItem(LS) ?? ""; } catch { return ""; } };
-  const [addr, setAddr] = useState(saved);
-  const [input, setInput] = useState(saved);
+  const { account } = useAccount();
+  const [manual, setManual] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [input, setInput] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [pos, setPos] = useState<Pos | null>(null);
+  const [tab, setTab] = useState<"in" | "out">("in");
   const [amount, setAmount] = useState(String(Math.max(10, Math.ceil(p.minDeposit + p.noteValue + p.maxFee))));
   const [busy, setBusy] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
+  const [hasKw, setHasKw] = useState(false);
+
+  useEffect(() => { const t = setTimeout(() => { setHasKw(!!kw()); try { const v = localStorage.getItem(LS); if (v) setManual(v); } catch { /* private mode */ } }, 300); return () => clearTimeout(t); }, []);
+  const fromAccount = account?.wallets.find((w) => w.address.startsWith("kaspatest:"))?.address ?? account?.wallets.find((w) => w.kind === "kaspa")?.address ?? null;
+  const addr = toTestnet(manual ?? fromAccount);
 
   const accounts = useMemo(() => {
     if (!addr) return null;
@@ -56,81 +72,113 @@ export function NavPanel(p: NavPanelProps) {
 
   const choose = (a: string) => {
     const v = a.trim().toLowerCase();
-    try { ownerOf(v); setErr(null); setAddr(v); try { localStorage.setItem(LS, v); } catch { /* ignore */ } }
+    try { ownerOf(v); setErr(null); setManual(v); setEditing(false); setPos(null); try { localStorage.setItem(LS, v); } catch { /* ignore */ } }
     catch (e) { setErr((e as Error).message); }
   };
-  const connect = async () => {
-    const w = kw();
-    if (!w) { setErr("KasWare is not installed in this browser. Paste your address instead."); return; }
-    try {
-      const net = await w.getNetwork?.();
-      if (net && !/testnet[-_]?10/i.test(net)) {
-        if (w.switchNetwork) await w.switchNetwork("kaspa_testnet_10"); else { setErr("Switch KasWare to Testnet 10 first."); return; }
-      }
-      const [a] = await w.requestAccounts();
-      setInput(a); choose(a);
-    } catch (e) { setErr((e as Error).message ?? "KasWare refused"); }
-  };
+  const useAccountAddress = () => { setManual(null); setEditing(false); setPos(null); try { localStorage.removeItem(LS); } catch { /* ignore */ } };
   const send = async (to: string, kasAmount: number, what: string) => {
     const w = kw();
-    if (!w?.sendKaspa) { setErr("Your wallet can't send from this page. Send the amount to the address shown with any wallet."); return; }
+    if (!w?.sendKaspa) { setErr("This wallet can't send from the page. Send the amount to the address below from any wallet."); return; }
     setBusy(what); setErr(null);
-    try { const id = await w.sendKaspa(to, Math.round(kasAmount * 1e8)); setSent(`${what}: sent · ${String(id).slice(0, 16)}…`); }
+    try {
+      const net = await w.getNetwork?.();
+      if (net && !/testnet[-_]?10/i.test(net)) { if (w.switchNetwork) await w.switchNetwork("kaspa_testnet_10"); else throw new Error("Switch KasWare to Testnet 10 first."); }
+      const id = await w.sendKaspa(to, Math.round(kasAmount * 1e8)); setSent(`${what} sent · ${String(id).slice(0, 16)}…`);
+    }
     catch (e) { setErr((e as Error).message ?? "The wallet did not send"); }
     finally { setBusy(null); }
   };
 
+  const min = p.minDeposit + p.noteValue + p.maxFee;
   const credit = Math.max(0, Number(amount) - p.noteValue - p.maxFee);
   const estShares = p.price > 0 ? Math.floor(credit / p.price) : 0;
   const ok = accounts && !("error" in accounts) ? accounts : null;
 
+  if (!addr || editing) {
+    return (
+      <div className="navp navp-empty">
+        {!editing && <><b>See your position and deposit</b><small className="muted">Connect a Kaspa wallet (KasWare, Kastle). Testnet and mainnet addresses of the same key are the same owner.</small>
+          <button type="button" className="btn iris" onClick={() => openConnect().catch(() => null)}>Connect wallet</button></>}
+        <form className="navp-paste" onSubmit={(e) => { e.preventDefault(); choose(input); }}>
+          <input className="search" value={input} onChange={(e) => setInput(e.target.value)} placeholder="or paste a kaspatest: address" aria-label="Your testnet address" spellCheck={false} />
+          <button type="submit" className="btn ghost sm">Show</button>
+          {editing && <button type="button" className="btn ghost sm" onClick={() => setEditing(false)}>Cancel</button>}
+        </form>
+        {err && <p className="navp-err">{err}</p>}
+      </div>
+    );
+  }
+
   return (
     <div className="navp">
-      <div className="navp-who">
-        <input className="search" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && choose(input)} suppressHydrationWarning placeholder="Your kaspatest: address" aria-label="Your testnet address" />
-        <button type="button" className="btn ghost" onClick={() => choose(input)}>Show my position</button>
-        <button type="button" className="btn iris" onClick={connect}>Connect KasWare</button>
+      <div className="navp-id">
+        <span className="acct-av" style={{ background: `conic-gradient(from ${parseInt(addr.slice(-4), 36) % 360}deg,#FFD27A,#F0679A,#8C7CF0,#FFD27A)` }} />
+        <span className="mono">{addr.slice(0, 16)}…{addr.slice(-6)}</span>
+        <small className="muted">{manual ? "pasted" : "your connected wallet"}</small>
+        <button type="button" className="linkish" onClick={() => { setInput(""); setEditing(true); }}>Change</button>
+        {manual && fromAccount && <button type="button" className="linkish" onClick={useAccountAddress}>Use my wallet</button>}
       </div>
-      {err && <p className="navp-err">{err}</p>}
       {accounts && "error" in accounts && <p className="navp-err">{accounts.error}</p>}
 
       {ok && (
         <>
-          <div className="depth-top" style={{ marginTop: 18 }}>
-            <div><span className="eyebrow muted">Your shares</span><b>{pos ? pos.shares.toLocaleString("en-US") : "…"}</b><small>{pos ? `worth ${kas(pos.value)} at today's NAV` : "reading…"}</small></div>
-            <div><span className="eyebrow muted">On its way in</span><b>{pos?.pendingDeposit ? kas(pos.pendingDeposit) : "—"}</b><small>{pos?.pendingDeposit ? "waiting for the next sweep (about a minute)" : "nothing pending"}</small></div>
-            <div><span className="eyebrow muted">Withdrawal requested</span><b>{pos?.pendingRedeem ? "Queued" : "—"}</b><small>{pos?.pendingRedeem ? "paid when the vault holds the KAS" : "nothing pending"}</small></div>
-          </div>
-
-          <div className="navp-cols">
-            <div className="navp-box">
-              <h4>Deposit</h4>
-              <p className="muted">Send KAS to your personal deposit address. The vault mints your shares at NAV; the network allows nothing else. Until then only you can take it back.</p>
-              <div className="navp-amt"><input className="search" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} aria-label="Amount in KAS" /><span>KAS</span></div>
-              <small className="muted">≈ {estShares.toLocaleString("en-US")} shares · {kas(p.noteValue, 2)} rides with your share note and comes back when you redeem · minimum {kas(p.minDeposit + p.noteValue + p.maxFee, 2)}</small>
-              <button type="button" className="btn sun" disabled={!!busy || p.halted || Number(amount) < p.minDeposit + p.noteValue + p.maxFee} onClick={() => send(ok.deposit, Number(amount), "Deposit")}>{p.halted ? "Deposits closed (halted)" : busy === "Deposit" ? "Confirm in KasWare…" : "Deposit with KasWare"}</button>
-              <div className="navp-addr"><small className="muted">or send from any wallet to</small><CopyId text={ok.deposit} /></div>
-            </div>
-            <div className="navp-box">
-              <h4>Withdraw</h4>
-              <p className="muted">Send 1 KAS to your withdrawal address. The vault burns one share note and pays its value at NAV{p.exitFeeBps ? `, less ${p.exitFeeBps / 100}%` : ""}, to your own address only, with the 1 KAS back.</p>
-              <button type="button" className="btn ghost" disabled={!!busy || !pos?.shares || !p.maturityOpen} onClick={() => send(ok.redeem, 1, "Withdrawal")}>{!p.maturityOpen ? "Opens at maturity" : busy === "Withdrawal" ? "Confirm in KasWare…" : pos?.shares ? "Request withdrawal (1 KAS)" : "No shares yet"}</button>
-              <div className="navp-addr"><small className="muted">withdrawal address</small><CopyId text={ok.redeem} /></div>
+          <div className="navp-hero">
+            <div className="navp-main"><span className="eyebrow muted">Your position</span><b>{pos ? kas(pos.value, 2) : "…"}</b><small>{pos ? `${pos.shares.toLocaleString("en-US")} shares at ${p.price.toFixed(6)} KAS each` : "reading the vault…"}</small></div>
+            <div className="navp-pend">
+              <span className={pos?.pendingDeposit ? "on" : ""}><i />{pos?.pendingDeposit ? `${kas(pos.pendingDeposit, 2)} on its way in` : "No deposit pending"}</span>
+              <span className={pos?.pendingRedeem ? "on" : ""}><i />{pos?.pendingRedeem ? "Withdrawal queued" : "No withdrawal pending"}</span>
             </div>
           </div>
-          {sent && <p className="navp-ok">{sent}. It shows here once the sweep picks it up.</p>}
 
-          {pos && pos.notes.length > 0 && (
-            <div className="vlog" style={{ marginTop: 18 }}>
-              {pos.notes.slice().reverse().map((n) => (
-                <div key={n.txid} className="vlog-row" style={{ ["--c" as string]: n.redeemed ? "#4A4270" : "#3987e5" }}>
-                  <i />
-                  <div><b>{n.shares.toLocaleString("en-US")} shares {n.redeemed ? "· redeemed" : ""}</b><small>{new Date(n.at * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC · minted at {n.price.toFixed(6)} KAS{n.redeemed ? ` · paid ${kas(n.redeemed.payout)}` : ""}</small></div>
-                  <span className="amt">{n.redeemed ? "" : "live"}</span>
-                </div>
-              ))}
+          <div className="navp-grid">
+          <div className="navp-box">
+            <div className="navp-tabs" role="tablist">
+              <button type="button" role="tab" aria-selected={tab === "in"} className={tab === "in" ? "on" : ""} onClick={() => setTab("in")}>Deposit</button>
+              <button type="button" role="tab" aria-selected={tab === "out"} className={tab === "out" ? "on" : ""} onClick={() => setTab("out")}>Withdraw</button>
             </div>
-          )}
+            {tab === "in" ? (
+              <>
+                <div className="navp-amt big"><input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} aria-label="Amount in KAS" /><span>KAS</span></div>
+                <div className="navp-quick">{[10, 50, 100, 500].map((v) => <button key={v} type="button" className={Number(amount) === v ? "on" : ""} onClick={() => setAmount(String(v))}>{v}</button>)}</div>
+                <dl className="navp-kv">
+                  <div><dt>You receive</dt><dd>≈ {estShares.toLocaleString("en-US")} shares</dd></div>
+                  <div><dt>Held with your note</dt><dd>{kas(p.noteValue, 2)}, returned when you redeem</dd></div>
+                  <div><dt>Minimum</dt><dd>{kas(min, 2)}</dd></div>
+                </dl>
+                {hasKw ? <button type="button" className="btn sun" disabled={!!busy || p.halted || Number(amount) < min} onClick={() => send(ok.deposit, Number(amount), "Deposit")}>{p.halted ? "Deposits closed (halted)" : busy === "Deposit" ? "Confirm in KasWare…" : Number(amount) < min ? `At least ${kas(min, 2)}` : `Deposit ${kas(Number(amount), 2)}`}</button>
+                  : <p className="muted" style={{ margin: 0 }}>Send the amount to your deposit address below from any Kaspa wallet.</p>}
+                <details className="navp-alt" open={!hasKw}><summary>Send from another wallet</summary><div><CopyId text={ok.deposit} /><small className="muted">Your personal deposit address. The vault mints shares at NAV; until then only you can take the KAS back.</small></div></details>
+              </>
+            ) : (
+              <>
+                <p className="muted" style={{ margin: 0 }}>The vault burns one share note and pays its value at NAV{p.exitFeeBps ? `, less ${p.exitFeeBps / 100}%` : ""}, to your own address only. You send 1 KAS to ask; it comes back with the payout.</p>
+                <dl className="navp-kv">
+                  <div><dt>You hold</dt><dd>{pos ? `${pos.shares.toLocaleString("en-US")} shares · ${kas(pos.value, 2)}` : "…"}</dd></div>
+                  <div><dt>Paid to</dt><dd className="mono">{addr.slice(0, 14)}…{addr.slice(-6)}</dd></div>
+                </dl>
+                {hasKw ? <button type="button" className="btn sun" disabled={!!busy || !pos?.shares || !p.maturityOpen} onClick={() => send(ok.redeem, 1, "Withdrawal")}>{!p.maturityOpen ? "Opens at maturity" : busy === "Withdrawal" ? "Confirm in KasWare…" : pos?.shares ? "Request withdrawal" : "No shares yet"}</button> : null}
+                <details className="navp-alt" open={!hasKw}><summary>Send from another wallet</summary><div><CopyId text={ok.redeem} /><small className="muted">Send exactly 1 KAS to your withdrawal address.</small></div></details>
+              </>
+            )}
+            {err && <p className="navp-err">{err}</p>}
+            {sent && <p className="navp-ok">{sent}. It shows here once the sweep picks it up.</p>}
+          </div>
+
+          <div className="navp-notes">
+            <h4>Your share notes</h4>
+            {pos && pos.notes.length > 0 ? (
+              <div className="vlog">
+                {pos.notes.slice().reverse().map((n) => (
+                  <div key={n.txid} className="vlog-row" style={{ ["--c" as string]: n.redeemed ? "#4A4270" : "#3987e5" }}>
+                    <i />
+                    <div><b>{n.shares.toLocaleString("en-US")} shares {n.redeemed ? "· redeemed" : ""}</b><small>{new Date(n.at * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC · minted at {n.price.toFixed(6)} KAS{n.redeemed ? ` · paid ${kas(n.redeemed.payout)}` : ""}</small></div>
+                    <span className="amt">{n.redeemed ? "" : "live"}</span>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="muted" style={{ margin: 0 }}>{pos ? "No notes yet. Each deposit mints one note of shares; each withdrawal burns one." : "Reading…"}</p>}
+          </div>
+          </div>
         </>
       )}
     </div>

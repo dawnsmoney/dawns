@@ -7,6 +7,7 @@ import { Logo } from "./Logo";
 import { BackToMobile } from "./m/shell";
 import { Arrow, Chevron } from "./icons";
 import { useWatchMap } from "./providers";
+import { AccountButton } from "./connect";
 
 /** The four places capital decisions happen, always in view; everything to read lives under More. */
 const PRIMARY = [
@@ -23,6 +24,7 @@ const EXPLORE: { href: string; label: string; badge?: string; primary?: boolean 
   { href: "/strategies", label: "Strategies", badge: "Beta" },
   { href: "/bridge", label: "Igra bridge" },
   { href: "/allocate", label: "Allocate" },
+  { href: "/watchlist", label: "Watchlist", primary: true },
 ];
 
 export function Header() {
@@ -57,11 +59,12 @@ export function Header() {
       <button type="button" className={`navbtn ${inExplore || open ? "on" : ""}`} aria-expanded={open} aria-controls="explore-menu" onClick={() => setOpen((v) => !v)}>
         <span className="dot" />More<Chevron className={`chev ${open ? "up" : ""}`} />
       </button>
-      <Link href="/watchlist" className={active("/watchlist") ? "on" : ""}>
+      <Link href="/watchlist" className={`hide-md ${active("/watchlist") ? "on" : ""}`}>
         <span className="hide-xs">Watchlist</span>
         {count > 0 && <span className="cnt">{count}</span>}
         <span className="go"><Arrow /></span>
       </Link>
+      <AccountButton />
     </>
   );
 

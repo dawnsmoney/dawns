@@ -4,7 +4,9 @@ import { clients, pool as runPool, type ChainKey } from "./chain/clients";
 import { ZEALOUS_FARM } from "./chain/farms";
 import type { Snapshot } from "./types";
 import { infinityShare } from "./underneath";
-import type { WalletRead, L1Read } from "./portfolio";
+import type { WalletRead, L1Read, Position } from "./portfolio";
+import { getNav, navFigures, SOMPI } from "./vaults/nav";
+import { decodeKaspaAddress } from "./auth/kaspa";
 import { currentUser, accountOf } from "./auth/session";
 import { hasDb } from "./db";
 
@@ -94,6 +96,7 @@ export async function myWallet(): Promise<string | null> {
  */
 export async function readL1(address: string): Promise<L1Read> {
   const a = address.toLowerCase();
+  if (a.startsWith("kaspatest:")) return { address: a, kas: 0, krc20: [], at: Date.now() };   // testnet: only vault shares count
   const get = async <T,>(url: string) => { try { const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10_000), headers: { accept: "application/json" } }); return r.ok ? ((await r.json()) as T) : null; } catch { return null; } };
   const bal = get<{ balance?: number | string }>(`https://api.kaspa.org/addresses/${a}/balance`);
   const krc = (async () => {
@@ -110,4 +113,31 @@ export async function readL1(address: string): Promise<L1Read> {
   })();
   const [b, k] = await Promise.all([bal, krc]);
   return { address: a, kas: b?.balance != null ? Number(b.balance) / 1e8 : null, krc20: k, at: Date.now() };
+}
+
+const keyOf = (a: string) => { try { const d = decodeKaspaAddress(a.toLowerCase()); return `${d.version}:${Buffer.from(d.payload).toString("hex")}`; } catch { return null; } };
+
+/**
+ * Shares in dawns' NAV vault (testnet-10) held by any of these Kaspa keys. A kaspa: and a
+ * kaspatest: address with the same key are the same owner, so a mainnet address finds its
+ * testnet shares. Value is in test KAS at the vault's NAV per share; no dollar value.
+ */
+export async function vaultPositions(addresses: string[]): Promise<Position[]> {
+  const keys = new Set(addresses.map(keyOf).filter(Boolean));
+  if (!keys.size) return [];
+  const { l, m } = await getNav();
+  if (!l || !m) return [];
+  const f = navFigures(l, m);
+  const mine = l.notes.filter((n) => !n.redeemed && keys.has(keyOf(n.owner)));
+  const shares = mine.reduce((a, n) => a + n.shares, 0);
+  if (!shares) return [];
+  const kas = shares * f.price;
+  const paid = mine.reduce((a, n) => a + n.value, 0) / SOMPI;
+  const total = f.liquid + f.marks.reduce((a, x) => a + x, 0) || 1;
+  const under = [{ sym: "KAS", amount: kas * (f.liquid / total), usd: null }, ...m.destinations.map((d, i) => ({ sym: d.label.replace(" (test wallet)", ""), amount: kas * ((f.marks[i] ?? 0) / total), usd: null }))].filter((u) => u.amount > 0);
+  return [{
+    key: `vault:nav-tn10`, kind: "vault", name: `${m.name}`, sub: `${shares.toLocaleString("en-US")} shares in ${mine.length} note${mine.length > 1 ? "s" : ""} · testnet-10`, chain: "Kaspa TN10",
+    usd: null, valueText: `${kas.toLocaleString("en-US", { maximumFractionDigits: 2 })} test KAS`, under,
+    exitNow: null, exitNote: `redeem at NAV (${f.price.toFixed(6)} KAS a share)${paid ? ` · paid ${paid.toLocaleString("en-US", { maximumFractionDigits: 2 })} KAS` : ""}`, href: "/vaults/nav-tn10",
+  }];
 }

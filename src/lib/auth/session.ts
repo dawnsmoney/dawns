@@ -21,7 +21,7 @@ const hashToken = (t: string) => [...sha256(new TextEncoder().encode(t))].map((b
 export function normalize(kind: WalletKind, address: string): string | null {
   const a = address.trim();
   if (kind === "evm") return isAddress(a) ? getAddress(a) : null;
-  try { const d = decodeKaspaAddress(a.toLowerCase()); return d.prefix === "kaspa" && (d.version === 0 || d.version === 1) ? a.toLowerCase() : null; } catch { return null; }
+  try { const d = decodeKaspaAddress(a.toLowerCase()); return (d.prefix === "kaspa" || d.prefix === "kaspatest") && (d.version === 0 || d.version === 1) ? a.toLowerCase() : null; } catch { return null; }
 }
 
 export async function issueNonce(kind: WalletKind, address: string) {

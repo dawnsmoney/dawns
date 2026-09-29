@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { getSnapshot } from "@/lib/snapshot";
 import { getIntelRaw } from "@/lib/intel-db";
 import { buildIntel } from "@/lib/intel";
-import { readWallet, readL1, myWallet } from "@/lib/portfolio-read";
+import { readWallet, readL1, myWallet, vaultPositions } from "@/lib/portfolio-read";
 import { getAssets } from "@/lib/assets";
 import { valueCredible } from "@/lib/assets/types";
 import { buildPortfolio, parseAddresses, POS_COLOR, POS_LABEL } from "@/lib/portfolio";
@@ -27,7 +27,7 @@ export default async function MPortfolio({ searchParams }: P) {
   const sp = await searchParams;
   const a = Array.isArray(sp.a) ? sp.a[0] : sp.a;
   const mine = await myWallet();
-  const q = parseAddresses(a);
+  const q = parseAddresses(a || mine);   // no address in the link: the signed-in wallets
   const ok = q.evm.length + q.l1.length > 0;
   const head = <MHead eyebrow="Look-through" title="Portfolio" clamp sub="Any wallet's positions on Igra, Kasplex and Kaspa L1, broken down to what they hold, with what could leave today. Read-only." />;
   if (!ok) {
@@ -35,22 +35,22 @@ export default async function MPortfolio({ searchParams }: P) {
       <>
         {head}
         <div className="m-screen">
-          <MCard><PortfolioConnect value={a} mine={mine} />{a && <MNote>Not an address dawns can read: use 0x… (Igra, Kasplex) or kaspa:q….</MNote>}</MCard>
+          <MCard><PortfolioConnect value={a} mine={mine} viewing={[...q.evm, ...q.l1]} />{a && <MNote>Not an address dawns can read: use 0x… (Igra, Kasplex) or kaspa:q….</MNote>}</MCard>
         </div>
       </>
     );
   }
   const [s, assets] = await Promise.all([getSnapshot(), getAssets()]);
-  const [evmReads, l1Reads, raw] = await Promise.all([Promise.all(q.evm.map((x) => readWallet(s, x))), Promise.all(q.l1.map((x) => readL1(x))), getIntelRaw()]);
+  const [evmReads, l1Reads, raw, vault] = await Promise.all([Promise.all(q.evm.map((x) => readWallet(s, x))), Promise.all(q.l1.map((x) => readL1(x))), getIntelRaw(), vaultPositions(q.l1)]);
   const px = new Map(assets.map((x) => [x.id, valueCredible(x) ? x.price : null]));
-  const pf = buildPortfolio(s, evmReads, l1Reads, (id) => px.get(id) ?? null);
+  const pf = buildPortfolio(s, evmReads, l1Reads, (id) => px.get(id) ?? null, vault);
   const intel = buildIntel(raw, s).byOpp;
   const top = pf.exposure[0];
   return (
     <>
       {head}
       <div className="m-screen">
-        <MCard><PortfolioConnect value={a} mine={mine} /></MCard>
+        <MCard><PortfolioConnect value={a} mine={mine} viewing={[...q.evm, ...q.l1]} /></MCard>
         {!pf.positions.length ? <MNote>Nothing found{pf.dust ? ` (${pf.dust} balances under $0.50 not listed)` : ""}{pf.failed ? "; some reads did not answer, reload to try again" : ""}. Add your other wallet above.</MNote> : (
           <>
             <MStats items={[
@@ -65,7 +65,7 @@ export default async function MPortfolio({ searchParams }: P) {
                   <MCard key={x.key}>
                     <div className="m-pos">
                       <span className="vt-name"><i style={{ background: POS_COLOR[x.kind] }} /><span>{x.href ? <Link href={x.href}><b>{x.name}</b></Link> : <b>{x.name}</b>}<small>{POS_LABEL[x.kind]} · {x.sub}</small></span></span>
-                      <b className="m-pos-v" style={{ color: x.usd != null && x.usd < 0 ? "#D55A7C" : undefined }}>{x.usd != null ? `${x.usd < 0 ? "−" : ""}${usd(Math.abs(x.usd))}` : "no price"}</b>
+                      <b className="m-pos-v" style={{ color: x.usd != null && x.usd < 0 ? "#D55A7C" : undefined }}>{x.usd != null ? `${x.usd < 0 ? "−" : ""}${usd(Math.abs(x.usd))}` : x.valueText ?? "no price"}</b>
                     </div>
                     <dl className="m-kv">
                       <div><dt>Underneath</dt><dd>{x.under.map((u) => `${amt(u.amount)} ${u.sym}`).join(" + ")}</dd></div>

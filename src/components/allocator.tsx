@@ -9,7 +9,8 @@ import { PlanShare } from "./plan-share";
 import { allocate, checkPlan, project, usdPolicy, defaultPerProtocol, parsePolicy, DEFAULT_POLICY, type Avoid, type ExitNeed, type Policy, type Risk, type Unit } from "@/lib/allocator";
 import { usd, pct } from "@/lib/format";
 import type { Opportunity } from "@/lib/types";
-import { loadAccount, shortAddr, signInWith, signOut, useWalletOptions, type Account } from "./wallet";
+import { loadAccount, shortAddr, signOut, type Account } from "./wallet";
+import { openConnect } from "./connect";
 
 const RISKS: [Risk, string, string][] = [
   ["low", "Low", "Stablecoins only. Smallest positions."],
@@ -44,7 +45,6 @@ export function Allocator({ opps, kasUsd }: { opps: Opportunity[]; kasUsd: numbe
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [showOut, setShowOut] = useState(false);
-  const wallets = useWalletOptions();
   const up = useMemo(() => usdPolicy(policy, kasUsd), [policy, kasUsd]);
   const plan = useMemo(() => allocate(opps, up), [opps, up]);
   const checks = useMemo(() => checkPlan(plan, up, opps), [plan, up, opps]);
@@ -70,12 +70,11 @@ export function Allocator({ opps, kasUsd }: { opps: Opportunity[]; kasUsd: numbe
   }, []);
 
   const set = (patch: Partial<Policy>) => setPolicy((p) => ({ ...p, ...patch }));
-  const connect = async (key: string) => {
-    setBusy(key); setMsg(null);
-    track("signin_start", { wallet: key.startsWith("6963:") ? "evm" : key });
-    try { adopt(await signInWith(key)); window.dispatchEvent(new Event("dawns:auth")); track("signin_ok", { wallet: key.startsWith("6963:") ? "evm" : key }); setMsg("Signed in. Your profile is saved to this wallet."); }
-    catch (e) { track("signin_fail", { wallet: key.startsWith("6963:") ? "evm" : key, error: (e as Error).message }); setMsg((e as Error).message); }
-    finally { setBusy(null); }
+  const connect = async () => {
+    setMsg(null);
+    track("signin_start", { wallet: "picker" });
+    try { adopt(await openConnect()); track("signin_ok", { wallet: "picker" }); setMsg("Signed in. Your profile is saved to this wallet."); }
+    catch (e) { if ((e as Error).message !== "Cancelled.") setMsg((e as Error).message); }
   };
   const put = async (body: object, done: string, key: string) => {
     setBusy(key); setMsg(null);
@@ -117,9 +116,7 @@ export function Allocator({ opps, kasUsd }: { opps: Opportunity[]; kasUsd: numbe
               <small className="muted" style={{ display: "block" }}>{account.wallets.map((w) => `${w.kind === "kaspa" ? "Kaspa" : "EVM"} ${shortAddr(w.address)}`).join(" · ")}</small>
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {wallets.filter((w) => w.installed && !account.wallets.some((x) => x.kind === w.kind)).slice(0, 1).map((w) => (
-                <button key={w.key} type="button" className="btn ghost sm" disabled={!!busy} onClick={() => connect(w.key)}>Link {w.label}</button>
-              ))}
+              <button type="button" className="btn ghost sm" disabled={!!busy} onClick={connect}>Add another wallet</button>
               <button type="button" className="btn ghost sm" onClick={out}>Sign out</button>
             </div>
           </>
@@ -130,16 +127,7 @@ export function Allocator({ opps, kasUsd }: { opps: Opportunity[]; kasUsd: numbe
               <small className="muted" style={{ display: "block" }}>You sign a one-time message. No transaction, no fee, no access to funds. The plan below works without signing in.</small>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {wallets.map((w) => w.installed ? (
-                <button key={w.key} type="button" className="btn glass sm" disabled={!!busy} onClick={() => connect(w.key)}>
-                  {/* eslint-disable-next-line @next/next/no-img-element -- wallet icons are data: URIs from EIP-6963 */}
-                  {w.icon && /^data:image\//.test(w.icon) && <img src={w.icon} alt="" width={16} height={16} style={{ borderRadius: 4 }} />}
-                  {busy === w.key ? "Check your wallet…" : w.label}
-                </button>
-              ) : (
-                w.open ? <a key={w.key} className="btn ghost sm" href={w.open}>Or open in the {w.label} app&apos;s browser</a>
-                  : <a key={w.key} className="btn ghost sm" href={w.install} target="_blank" rel="noopener noreferrer">Get {w.label}</a>
-              ))}
+              <button type="button" className="btn sun sm" onClick={connect}>Connect wallet</button>
             </div>
           </>
         )}

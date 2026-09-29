@@ -43,9 +43,9 @@ export function PositionTable({ rows, tags }: { rows: Position[]; tags: Record<s
         {rows.map((x) => (
           <tr key={x.key}>
             <td><span className="vt-name"><i style={{ background: POS_COLOR[x.kind] }} /><span>{x.href ? <Link href={x.href}><b>{x.name}</b></Link> : <b>{x.name}</b>}<small>{POS_LABEL[x.kind]} · {x.sub} · {x.chain}</small></span></span></td>
-            <td className={x.usd != null && x.usd < 0 ? "neg" : ""}><b>{x.usd != null ? `${x.usd < 0 ? "−" : ""}${usd(Math.abs(x.usd))}` : "no price"}</b></td>
+            <td className={x.usd != null && x.usd < 0 ? "neg" : ""}><b>{x.usd != null ? `${x.usd < 0 ? "−" : ""}${usd(Math.abs(x.usd))}` : x.valueText ?? "no price"}</b></td>
             <td className="soft">{x.under.map((u) => `${amt(u.amount)} ${u.sym}`).join(" + ")}</td>
-            <td className="soft">{x.exitNow != null ? usd(x.exitNow) : "—"}<small className="muted" style={{ display: "block" }}>{x.exitNote}</small></td>
+            <td className="soft">{x.exitNow != null ? usd(x.exitNow) : x.kind === "vault" ? "at NAV" : "—"}<small className="muted" style={{ display: "block" }}>{x.exitNote}</small></td>
             <td className="dv">{x.opp && tags[x.opp] ? <Tags tags={tags[x.opp]} max={2} /> : <span className="muted">—</span>}</td>
           </tr>
         ))}

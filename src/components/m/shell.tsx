@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Logo } from "../Logo";
 import { useWatchMap } from "../providers";
+import { AccountButton } from "../connect";
 
 /* The phone app's frame: a slim top bar and a tab bar at the thumb. */
 
@@ -56,10 +57,11 @@ export function MShell({ children }: { children: React.ReactNode }) {
     <div className="m-app">
       <header className="m-top">
         <Link href="/" className="m-brand" aria-label="dawns.money home"><Logo id="mtop" height={24} /></Link>
+        <span className="m-top-r"><AccountButton compact />
         <Link href="/watchlist" className="m-topbtn" aria-label={`Watchlist${watching ? `, ${watching} protocols` : ""}`}>
           <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8z" /><path d="M6.6 14a1.5 1.5 0 0 0 2.8 0" /></svg>
           {watching > 0 && <span className="m-dot">{watching}</span>}
-        </Link>
+        </Link></span>
       </header>
       <main className="m-main">{children}</main>
       <nav className="m-tabs" aria-label="Main">

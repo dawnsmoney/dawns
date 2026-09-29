@@ -9,6 +9,7 @@ import { usd } from "@/lib/format";
 import { Bell, Close, External } from "./icons";
 import { Pill, ProtocolCoin } from "./bits";
 import { KaspiumDialog } from "./kaspium";
+import { ConnectModal } from "./connect";
 
 /* ---------- watch store (localStorage, per viewer) ---------- */
 export type RuleState = { on: boolean; v: number | null };
@@ -132,6 +133,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       {watch && registry.protocols[watch] && <WatchModal p={registry.protocols[watch]} onClose={close} toast={toast} />}
       {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
       <KaspiumDialog />
+      <ConnectModal />
     </UICtx.Provider>
   );
 }

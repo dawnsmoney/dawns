@@ -124,12 +124,16 @@ export async function connectWith(key: string): Promise<{ kind: "kaspa" | "evm";
   return { kind, address, sign };
 }
 
-/** Connect a wallet, sign dawns' one-time message, and start a session. */
-export async function signInWith(key: string): Promise<Account> {
+export type SignStep = "connect" | "sign" | "verify";
+/** Connect a wallet, sign dawns' one-time message, and start a session. `onStep` reports progress. */
+export async function signInWith(key: string, onStep?: (s: SignStep, address?: string) => void): Promise<Account> {
   if (key === "kaspium") return openKaspium();
+  onStep?.("connect");
   const { kind, address, sign } = await connectWith(key);
   const { message, address: canonical } = await post<{ message: string; address: string }>("/api/auth/nonce", { kind, address });
+  onStep?.("sign", canonical);
   const signature = await sign(message);
+  onStep?.("verify", canonical);
   return post<Account>("/api/auth/verify", { kind, address: canonical, message, signature });
 }
 

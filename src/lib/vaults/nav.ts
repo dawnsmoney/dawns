@@ -1,7 +1,7 @@
 import "server-only";
 import navDoc from "../../../vault/deploy/nav.json";
 import navMandateDoc from "../../../vault/deploy/nav-mandate.json";
-import { accountAddress, ownerOf, fromHex, type AccountTemplate } from "./account";
+import { accountAddress, ownerOf, fromHex, toHex, type AccountTemplate } from "./account";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 
 /**
@@ -94,7 +94,8 @@ export async function positionOf(l: NavLedger, m: NavMandateDoc, address: string
   const redeem = accountAddress(l.accountTemplate, owner, cov, 1);
   const [db, rb] = await Promise.all([get<{ balance: number }>(`/addresses/${deposit}/balance`), get<{ balance: number }>(`/addresses/${redeem}/balance`)]);
   const f = navFigures(l, m);
-  const notes = l.notes.filter((n) => n.owner === address);
+  const key = toHex(owner);
+  const notes = l.notes.filter((n) => { try { return toHex(ownerOf(n.owner).owner) === key; } catch { return n.owner === address; } });
   const liveShares = notes.filter((n) => !n.redeemed).reduce((s, n) => s + n.shares, 0);
   return {
     address, deposit, redeem,

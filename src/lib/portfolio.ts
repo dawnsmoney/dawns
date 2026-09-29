@@ -7,9 +7,9 @@ import { infinityShare } from "./underneath";
  * Every position shows what is underneath it and how much of it could leave today.
  */
 
-export type PosKind = "wallet" | "supply" | "borrow" | "lp" | "farm" | "staking";
-export const POS_LABEL: Record<PosKind, string> = { wallet: "In the wallet", supply: "Lending", borrow: "Borrowed", lp: "Liquidity", farm: "Farm", staking: "Staking" };
-export const POS_COLOR: Record<PosKind, string> = { wallet: "#9085e9", supply: "#4F8EE0", borrow: "#D55A7C", lp: "#D17A30", farm: "#c98500", staking: "#2FA88F" };
+export type PosKind = "wallet" | "supply" | "borrow" | "lp" | "farm" | "staking" | "vault";
+export const POS_LABEL: Record<PosKind, string> = { wallet: "In the wallet", supply: "Lending", borrow: "Borrowed", lp: "Liquidity", farm: "Farm", staking: "Staking", vault: "Vault share" };
+export const POS_COLOR: Record<PosKind, string> = { wallet: "#9085e9", supply: "#4F8EE0", borrow: "#D55A7C", lp: "#D17A30", farm: "#c98500", staking: "#2FA88F", vault: "#E6B84F" };
 
 /** Balances in whole units, keyed `chain:address` (lower case). */
 export interface WalletRead {
@@ -31,6 +31,7 @@ export interface Position {
   under: Under[];
   exitNow: number | null; exitNote: string;
   href: string | null; opp?: string;
+  valueText?: string;                    // when there is no dollar value (testnet)
 }
 export interface Portfolio {
   addresses: string[]; at: number;
@@ -141,8 +142,8 @@ function positionsOf(s: Snapshot, r: WalletRead, priceOf: (assetId: string) => n
  * One portfolio across any mix of EVM addresses (Igra, Kasplex) and Kaspa L1 addresses.
  * `priceOf` gives an asset's USD price from dawns' asset index when it is credible (traded, not stale), else null.
  */
-export function buildPortfolio(s: Snapshot, evm: WalletRead[], l1: L1Read[] = [], priceOf: (assetId: string) => number | null = () => null): Portfolio {
-  const out: Position[] = [];
+export function buildPortfolio(s: Snapshot, evm: WalletRead[], l1: L1Read[] = [], priceOf: (assetId: string) => number | null = () => null, extra: Position[] = []): Portfolio {
+  const out: Position[] = [...extra];
   let hf: number | null = null, failed = 0, at = 0;
   for (const r of evm) { const x = positionsOf(s, r, priceOf); out.push(...x.out); hf = hf ?? x.hf; failed += r.failed; at = Math.max(at, r.at); }
   for (const r of l1) {
@@ -185,7 +186,7 @@ export function parseAddresses(input: string | undefined | null): { evm: string[
   const evm: string[] = [], l1: string[] = [], bad: string[] = [];
   for (const p of parts) {
     if (/^0x[0-9a-fA-F]{40}$/.test(p)) evm.push(p.toLowerCase());
-    else if (/^kaspa:[a-z0-9]{61,63}$/i.test(p)) l1.push(p.toLowerCase());
+    else if (/^kaspa(test)?:[a-z0-9]{61,63}$/i.test(p)) l1.push(p.toLowerCase());
     else bad.push(p);
   }
   return { evm, l1, bad };

@@ -9,7 +9,8 @@ import { LEG_COLORS, splitParts } from "@/lib/strategies/parts";
 import { DEFAULT_DOC, MAX_LEGS, PAUSE, evaluate, parseDoc, strategyId, type PauseRule, type StrategyDoc } from "@/lib/strategies/model";
 import type { Opportunity } from "@/lib/types";
 import { pct, usd } from "@/lib/format";
-import { loadAccount, shortAddr, signInWith, useWalletOptions, type Account } from "./wallet";
+import { loadAccount, shortAddr, type Account } from "./wallet";
+import { openConnect } from "./connect";
 
 const bp = (b: number) => `${(b / 100).toFixed(b % 100 ? 1 : 0)}%`;
 
@@ -46,7 +47,6 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
   const [account, setAccount] = useState<Account | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const wallets = useWalletOptions();
   const ev = useMemo(() => evaluate(doc, opps, kasUsd), [doc, opps, kasUsd]);
   const parsed = useMemo(() => parseDoc(doc), [doc]);
   const id = "doc" in parsed ? strategyId(parsed.doc) : null;
@@ -80,13 +80,13 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
     const a = await loadAccount().catch(() => null);
     setAccount(a); return a;
   };
-  const publish = async (walletKey?: string) => {
+  const publish = async (signIn?: boolean) => {
     setMsg(null);
     if ("error" in parsed) { setMsg(parsed.error); return; }
-    setBusy(walletKey ?? "publish");
+    setBusy("publish");
     try {
       let a = await ensureAccount();
-      if (!a && walletKey) { a = await signInWith(walletKey); setAccount(a); window.dispatchEvent(new Event("dawns:auth")); }
+      if (!a && signIn) { a = await openConnect().catch(() => null); setAccount(a); }
       if (!a) { setMsg("Sign in with a wallet to publish: it becomes the strategist."); return; }
       const r = await fetch("/api/strategies", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ doc: parsed.doc, parent: from?.id ?? null }) });
       const j = await r.json();
@@ -228,11 +228,7 @@ export function StrategyBuilder({ opps, kasUsd, from, start }: { opps: Opportuni
           {account ? (
             <button type="button" className="btn iris" disabled={!!busy || "error" in parsed} onClick={() => publish()}>{busy ? "Publishing…" : `Publish as ${shortAddr(account.wallets[0]?.address ?? "")}`}</button>
           ) : (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {wallets.filter((w) => w.installed).map((w) => <button key={w.key} type="button" className="btn iris sm" disabled={!!busy || "error" in parsed} onClick={() => publish(w.key)}>{busy === w.key ? "Check your wallet…" : `Sign in with ${w.label} and publish`}</button>)}
-              {wallets.filter((w) => w.open).map((w) => <a key={w.key} className="btn ghost sm" href={w.open}>Or open in the {w.label} app&apos;s browser</a>)}
-              {!wallets.some((w) => w.installed || w.open) && <small className="muted">Install a Kaspa or EVM wallet to publish. The preview works without one.</small>}
-            </div>
+            <button type="button" className="btn iris" disabled={!!busy || "error" in parsed} onClick={() => publish(true)}>{busy ? "Check your wallet…" : "Connect a wallet and publish"}</button>
           )}
           {msg && <p className="navp-err" style={{ margin: 0 }}>{msg}</p>}
         </div>
