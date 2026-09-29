@@ -3,8 +3,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUI } from "./providers";
 
-export type StudioDraft = { id: string; day: string; kind: "asset" | "opp" | "count" | "plan"; title: string; sub: string; reading: string; status: "draft" | "approved" | "skipped" | "sent"; origin: string; v: string; path: string; caption: string | null };
-const KIND_LABEL: Record<StudioDraft["kind"], string> = { asset: "Asset", opp: "Opportunity · Capital Report", count: "Weekly count", plan: "Plan" };
+export type StudioDraft = { id: string; day: string; kind: "asset" | "opp" | "count" | "plan" | "week"; title: string; sub: string; reading: string; status: "draft" | "approved" | "skipped" | "sent"; origin: string; v: string; path: string; caption: string | null };
+const KIND_LABEL: Record<StudioDraft["kind"], string> = { asset: "Asset", opp: "Opportunity · Capital Report", count: "Weekly count", plan: "Plan", week: "This week in capital" };
 export type StudioOption = { id: string; label: string };
 
 const STATUS_PILL: Record<StudioDraft["status"], [string, string]> = {
@@ -22,7 +22,8 @@ async function post(body: Record<string, unknown>) {
 export function CardMaker({ assets, opps }: { assets: StudioOption[]; opps: StudioOption[] }) {
   const router = useRouter();
   const { toast } = useUI();
-  const [kind, setKind] = useState<"asset" | "opp" | "count">("asset");
+  const [kind, setKind] = useState<"asset" | "opp" | "count" | "week">("asset");
+  const needsRef = kind === "asset" || kind === "opp";
   const [ref, setRef] = useState("");
   const [busy, setBusy] = useState(false);
   const list = kind === "asset" ? assets : opps;
@@ -34,13 +35,14 @@ export function CardMaker({ assets, opps }: { assets: StudioOption[]; opps: Stud
           <button type="button" className={kind === "asset" ? "on" : ""} onClick={() => { setKind("asset"); setRef(""); }}>Asset</button>
           <button type="button" className={kind === "opp" ? "on" : ""} onClick={() => { setKind("opp"); setRef(""); }}>Opportunity</button>
           <button type="button" className={kind === "count" ? "on" : ""} onClick={() => { setKind("count"); setRef(""); }}>Weekly count</button>
+          <button type="button" className={kind === "week" ? "on" : ""} onClick={() => { setKind("week"); setRef(""); }}>This week</button>
         </div>
-        {kind !== "count" && <select value={ref} onChange={(e) => setRef(e.target.value)} aria-label="Subject"
+        {needsRef && <select value={ref} onChange={(e) => setRef(e.target.value)} aria-label="Subject"
           style={{ flex: "1 1 260px", minWidth: 0, height: 42, borderRadius: 12, background: "rgba(0,0,0,.2)", color: "#fff", border: "1px solid var(--line-2)", padding: "0 12px", font: "500 15px var(--body)" }}>
           <option value="">{kind === "asset" ? "Pick an asset…" : "Pick an opportunity…"}</option>
           {list.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>}
-        <button className="btn iris sm" type="button" disabled={(kind !== "count" && !ref) || busy} onClick={async () => {
+        <button className="btn iris sm" type="button" disabled={(needsRef && !ref) || busy} onClick={async () => {
           setBusy(true);
           try { await post({ action: "create", kind, ref }); toast("Card drafted from live data."); router.refresh(); } catch (e) { toast((e as Error).message); }
           setBusy(false);

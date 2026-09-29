@@ -7,6 +7,8 @@ import { significant } from "./assets/view";
 import { getAssets } from "./assets";
 import { sql, getMeta, setMeta } from "./db";
 import { usd, pct } from "./format";
+import { buildIntel } from "./intel";
+import { getIntelRaw } from "./intel-db";
 
 /**
  * Share cards: a 1200×630 image of one asset or opportunity reading, for X and Telegram.
@@ -14,7 +16,7 @@ import { usd, pct } from "./format";
  * numbers are frozen when drafted, so what you review is what gets posted. Nothing is
  * published until an admin approves it.
  */
-export type CardKind = "asset" | "opp" | "count" | "plan";
+export type CardKind = "asset" | "opp" | "count" | "plan" | "week";
 export interface CardTile { title: string; big: string; small: string; t: Status }
 export interface CardData {
   kind: CardKind; ref: string;
@@ -145,6 +147,55 @@ export function countCard(s: Snapshot): { data: CardData; reading: string } {
   };
 }
 
+/**
+ * This week in Kaspa capital, from Intelligence: net new capital counted in token quantities
+ * (so a price move is not mistaken for money arriving), where it arrived and left, and the
+ * yields that moved. Null until dawns holds a few days of its own readings.
+ */
+export async function weekCard(s: Snapshot): Promise<{ data: CardData; reading: string } | null> {
+  const I = buildIntel(await getIntelRaw(), s);
+  if (I.days < 3) return null;
+  const sg = (v: number) => `${v >= 0 ? "+" : "−"}${usd(Math.abs(v))}`;
+  const span = Math.max(1, Math.round(I.span));
+  const within = `last ${span} day${span > 1 ? "s" : ""}`;
+  const f = I.flows, inn = f.into[0], out = f.out[0];
+  const yu = I.yieldUp[0], yd = I.yieldDown[0];
+  const m = I.market;
+  const volChange = m.vol7 != null && m.volPrev7 ? m.vol7 / m.volPrev7 - 1 : null;
+  const tiles: CardTile[] = [
+    { title: "Net new capital", big: sg(f.total), small: `${sg(f.lending)} lending · ${sg(f.liquidity)} pools`, t: f.total >= 0 ? "good" : "warn" },
+    inn ? { title: "Most arrived", big: sg(inn.value), small: `${inn.name} · ${inn.pname}`, t: "good" } : { title: "Most arrived", big: "—", small: "nothing over $500", t: "info" },
+    out ? { title: "Most left", big: sg(out.value), small: `${out.name} · ${out.pname}`, t: "warn" } : { title: "Most left", big: "—", small: "nothing over $500", t: "info" },
+    yu && yu.now != null && yu.then != null ? { title: "Yield rising", big: pct(yu.now), small: `${yu.name}, from ${pct(yu.then)}`, t: "good" }
+      : yd && yd.now != null && yd.then != null ? { title: "Yield falling", big: pct(yd.now), small: `${yd.name}, from ${pct(yd.then)}`, t: "warn" }
+      : { title: "Traded, 7 days", big: m.vol7 != null ? usd(m.vol7) : "—", small: volChange != null ? `${volChange >= 0 ? "+" : "−"}${pct(Math.abs(volChange), 0)} on the week before` : "on the DEXs dawns reads", t: "info" },
+  ];
+  const parts = [
+    `${sg(f.total)} of net new capital over the ${within}: lending ${sg(f.lending)}, pools ${sg(f.liquidity)}, counted in tokens at today's prices.`,
+    inn ? `Most arrived in ${inn.name} (${inn.pname}).` : "",
+    out ? `Most left ${out.name} (${out.pname}).` : "",
+    yu && yu.now != null && yu.then != null ? `Native yield rose on ${yu.name}, ${pct(yu.then)} to ${pct(yu.now)}.` : yd && yd.now != null && yd.then != null ? `Native yield fell on ${yd.name}, ${pct(yd.then)} to ${pct(yd.now)}.` : "",
+  ].filter(Boolean);
+  const list = (xs: typeof f.into) => xs.slice(0, 2).map((x) => `${x.name} ${sg(x.value)}`).join(", ") || "nothing over $500";
+  const ylist = (xs: typeof I.yieldUp) => xs.filter((x) => x.now != null && x.then != null).slice(0, 2).map((x) => `${x.name} ${pct(x.then!)} → ${pct(x.now!)}`).join(", ") || "none beyond ±15%";
+  return {
+    data: {
+      kind: "week", ref: `intel:${athens(s.asOf).day}`, kicker: "THIS WEEK IN KASPA CAPITAL", title: `${sg(f.total)} net new capital`, sub: `Kaspa DeFi · ${within}`,
+      tiles, grade: { t: "info", label: "Every Thursday" }, path: "/intelligence", asOf: s.asOf, block: s.blocks.igra?.block ?? null,
+      foot: "Research, not advice",
+      caption: [
+        "DAWNS // THIS WEEK IN KASPA CAPITAL", "",
+        `• Net new capital (${within}): ${sg(f.total)}`, `• Arriving: ${list(f.into)}`, `• Leaving: ${list(f.out)}`,
+        `• Yield rising: ${ylist(I.yieldUp)}`, `• Yield falling: ${ylist(I.yieldDown)}`,
+        ...(m.vol7 != null ? [`• Traded on Kaspa DEXs, 7 days: ${usd(m.vol7)}${volChange != null ? ` (${volChange >= 0 ? "+" : "−"}${pct(Math.abs(volChange), 0)} on the week before)` : ""}`] : []), "",
+        "Counted in tokens, not dollars: a price move is not money arriving.", "",
+        "{url}",
+      ].join("\n"),
+    },
+    reading: joinFindings(parts),
+  };
+}
+
 /** Today in Athens (YYYY-MM-DD) and the hour, the same clock as the morning report. */
 function athens(t: number) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(new Date(t)).map((x) => [x.type, x.value]));
@@ -156,6 +207,7 @@ const rid = () => `c_${[...crypto.getRandomValues(new Uint8Array(8))].map((b) =>
 /** Look up one asset or opportunity and build its card from the live data. */
 export async function cardFor(kind: CardKind, ref: string, s: Snapshot, assets?: Asset[]) {
   if (kind === "count") return countCard(s);
+  if (kind === "week") return weekCard(s);
   if (kind === "plan") return null;
   if (kind === "opp") { const o = s.opportunities.find((x) => x.id === ref); return o ? oppCard(o, s) : null; }
   const a = (assets ?? (await getAssets())).find((x) => x.id === ref);
@@ -184,7 +236,7 @@ export async function makeCard(kind: CardKind, ref: string, s: Snapshot) {
  *   skipping any featured in the last 7 days;
  * - opportunities of at least $25K: the largest, the highest native yield, and one with a
  *   warning, skipping any featured in the last 3 days;
- * - on Mondays, the weekly count (see countCard).
+ * - on Mondays, the weekly count (see countCard); on Thursdays, this week in Kaspa capital (weekCard).
  */
 export function pickDaily(s: Snapshot, assets: Asset[], recent: Set<string>) {
   const flow = (a: Asset) => Math.max(a.vol7 ?? 0, (a.vol24 ?? 0) * 7);
@@ -215,6 +267,7 @@ export async function maybeDailyCards(s: Snapshot) {
   let n = 0;
   for (const a of as) if (await save(day, "asset", a.id, assetCard(a, s), "daily", false)) n++;
   for (const o of opps) if (await save(day, "opp", o.id, oppCard(o, s), "daily", false)) n++;
+  if (weekday === "Thu") { const c = await weekCard(s); if (c && await save(day, "week", c.data.ref, c, "daily", false)) n++; }
   if (weekday === "Mon") { const c = countCard(s); if (await save(day, "count", c.data.ref, c, "daily", false)) n++; }
   return `drafted ${n}`;
 }

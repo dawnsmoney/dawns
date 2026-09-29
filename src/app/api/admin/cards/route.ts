@@ -23,10 +23,10 @@ export async function POST(req: Request) {
   const q = sql();
 
   if (b.action === "create") {
-    const kind = b.kind === "asset" || b.kind === "opp" || b.kind === "count" ? (b.kind as CardKind) : null;
-    if (!kind || (kind !== "count" && !b.ref)) return Response.json({ error: "Pick an asset or opportunity." }, { status: 400 });
+    const kind = b.kind === "asset" || b.kind === "opp" || b.kind === "count" || b.kind === "week" ? (b.kind as CardKind) : null;
+    if (!kind || ((kind === "asset" || kind === "opp") && !b.ref)) return Response.json({ error: "Pick an asset or opportunity." }, { status: 400 });
     const id = await makeCard(kind, b.ref ?? "", await getSnapshot());
-    return id ? Response.json({ id }) : Response.json({ error: "Not found in today's data." }, { status: 404 });
+    return id ? Response.json({ id }) : Response.json({ error: kind === "week" ? "Intelligence needs a few more days of readings." : "Not found in today's data." }, { status: 404 });
   }
 
   const d = b.id ? await getDraft(b.id) : null;
