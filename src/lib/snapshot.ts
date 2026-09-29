@@ -458,14 +458,14 @@ export async function buildSnapshot(): Promise<Snapshot> {
           const perDay = f.perBlock * (86_400 / f.blockSec);
           const totalAlloc = f.pools.reduce((x, q) => x + (q.active ? q.alloc : 0), 0) || 1;
           const cur = f.history?.length ? f.history[f.history.length - 1] : null;
-          const farmPools = f.pools.map((q) => {
+          const farmPools = f.pools.map((q, pid) => {
             const pv = base.dex!.pools.find((x) => x.pair.toLowerCase() === q.lp);
             const stakedShare = q.lpSupply > 0 ? q.staked / q.lpSupply : 0;
             const stakedUsd = pv ? pv.usd * stakedShare : null;
             const qDay = q.active ? perDay * (q.alloc / totalAlloc) : 0;
             const apr = stakedUsd && px != null ? (qDay * 365 * px) / stakedUsd : null;
             const aprPool = stakedUsd && pp != null ? (qDay * 365 * pp) / stakedUsd : null;
-            return { pair: q.lp, symbols: (pv?.symbols ?? ["?", "?"]) as [string, string], alloc: q.alloc, allocShare: q.active ? q.alloc / totalAlloc : 0, staked: q.staked, stakedShare, stakedUsd, perDay: qDay, apr, aprPool, active: q.active };
+            return { pid, pair: q.lp, symbols: (pv?.symbols ?? ["?", "?"]) as [string, string], alloc: q.alloc, allocShare: q.active ? q.alloc / totalAlloc : 0, staked: q.staked, stakedShare, stakedUsd, perDay: qDay, apr, aprPool, active: q.active };
           });
           base.dex.farms = [{
             chain: f.chain as "igra", address: f.address, owner: f.owner, reward: { sym: "ZEAL", address: f.rewardToken, px, pp },

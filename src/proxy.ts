@@ -20,7 +20,7 @@ export function proxy(req: NextRequest) {
 
 /** Routes that have a mobile screen. Anything else (admin, brand) stays on the desktop site. */
 const MOBILE = [
-  /^\/$/, /^\/protocols(\/[^/]+)?$/, /^\/bridge$/, /^\/opportunities$/, /^\/intelligence$/, /^\/allocate$/,
+  /^\/$/, /^\/protocols(\/[^/]+)?$/, /^\/bridge$/, /^\/opportunities$/, /^\/intelligence$/, /^\/portfolio$/, /^\/allocate$/,
   /^\/strategies(\/[^/]+)?$/, /^\/strategists\/[^/]+$/,
   /^\/vaults(\/[^/]+)?$/, /^\/managers(\/[^/]+)?$/,
   /^\/assets$/, /^\/assets\/compare$/, /^\/assets\/[^/]+\/[^/]+\/[^/]+$/, /^\/watchlist$/,

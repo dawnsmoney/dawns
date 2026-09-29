@@ -1,5 +1,6 @@
 "use client";
 
+import { legName } from "@/lib/strategies/parts";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Pill } from "./bits";
@@ -70,7 +71,7 @@ export function LegList({ doc, ev }: { doc: StrategyDoc; ev: Evaluation }) {
         <div key={l.leg.opp} className="st-leg">
           <span className="st-leg-n">
             <i style={{ background: LEG_COLORS[i] }} />
-            <span><b>{l.o?.name ?? l.leg.opp}</b><small>{l.o ? `${l.o.pname} · ${l.o.kind === "supply" ? "lending" : "liquidity"} · ${l.o.chain}` : "not listed now"}</small></span>
+            <span><b>{legName(l.leg.opp, l.o?.name)}</b><small>{l.o ? `${l.o.pname} · ${l.o.kind === "supply" ? "lending" : "liquidity"} · ${l.o.chain}` : "not listed now"}</small></span>
           </span>
           <span className="st-leg-cap" title={`Target ${bp(l.leg.target)}, hard cap ${bp(l.leg.cap)}`}>
             <span className="capbar hbar-t"><i style={{ width: `${l.share * 100}%`, background: LEG_COLORS[i] }} /><em style={{ left: `${l.cap * 100}%` }} /></span>

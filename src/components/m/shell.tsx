@@ -9,13 +9,14 @@ import { useWatchMap } from "../providers";
 /* The phone app's frame: a slim top bar and a tab bar at the thumb. */
 
 const TABS = [
-  { href: "/", label: "Home", icon: "home" },
   { href: "/opportunities", label: "Yield", icon: "yield" },
-  { href: "/strategies", label: "Strategies", icon: "strat" },
   { href: "/vaults", label: "Vaults", icon: "vault" },
+  { href: "/intelligence", label: "Intel", icon: "intel" },
+  { href: "/portfolio", label: "Portfolio", icon: "wallet" },
 ] as const;
 const MORE = [
-  { href: "/intelligence", label: "Intelligence", sub: "Where capital and yield moved this week" },
+  { href: "/", label: "Kaspa DeFi", sub: "The ecosystem today: value, liquidity, signals" },
+  { href: "/strategies", label: "Strategies", sub: "Written, versioned, evaluated daily" },
   { href: "/assets", label: "Assets", sub: "Every Kaspa token, who holds it, how deep it trades" },
   { href: "/protocols", label: "Protocols", sub: "Health of every Kaspa DeFi protocol" },
   { href: "/bridge", label: "Igra bridge", sub: "KAS locked vs iKAS, exits and payouts" },
@@ -29,6 +30,8 @@ function Icon({ k }: { k: string }) {
   if (k === "home") return <svg {...p}><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" /></svg>;
   if (k === "yield") return <svg {...p}><path d="M4 19V11M10 19V6M16 19v-9M22 19H2" /></svg>;
   if (k === "strat") return <svg {...p}><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="12" cy="18" r="2.5" /><path d="M7.5 8l3.5 7.5M16.5 8L13 15.5" /></svg>;
+  if (k === "intel") return <svg {...p}><path d="M3 17l5-5 4 3 8-8" /><path d="M15 7h5v5" /></svg>;
+  if (k === "wallet") return <svg {...p}><rect x="3" y="6" width="18" height="14" rx="2.5" /><path d="M3 10h18M16.5 15h1.5" /></svg>;
   if (k === "vault") return <svg {...p}><rect x="3" y="5" width="18" height="15" rx="2.5" /><circle cx="12" cy="12.5" r="3.2" /><path d="M12 9.3v-1M12 16.7v-1M8.8 12.5h-1M16.2 12.5h-1" /></svg>;
   return <svg {...p}><circle cx="5" cy="12" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="19" cy="12" r="1.4" /></svg>;
 }

@@ -45,7 +45,7 @@ export interface FarmView {
   history: { t: number; perBlock: number }[] | null;
   budget: number; budgetDays: number | null; // reward tokens the farm holds, and how long they last at today's rate
   lockSec: number; emergencyFeeBps: number;
-  pools: { pair: string; symbols: [string, string]; alloc: number; allocShare: number; staked: number; stakedShare: number; stakedUsd: number | null; perDay: number; apr: number | null; aprPool: number | null; active: boolean }[];
+  pools: { pid?: number; pair: string; symbols: [string, string]; alloc: number; allocShare: number; staked: number; stakedShare: number; stakedUsd: number | null; perDay: number; apr: number | null; aprPool: number | null; active: boolean }[];
 }
 export interface PoolToken { a: string; d: number; px: number | null; pp?: number | null } // px headline price, pp price from pools on that chain only
 

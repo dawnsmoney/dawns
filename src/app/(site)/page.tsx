@@ -1,17 +1,21 @@
 import { dawnReport } from "@/lib/report";
 import Link from "next/link";
 import { getSnapshot } from "@/lib/snapshot";
-import { toLite, toRow, names, ecoTiles } from "@/lib/view";
-import { Tiles, SplitBar } from "@/components/viz";
+import { toLite, toRow, names } from "@/lib/view";
 import { usd, usdFull, pct } from "@/lib/format";
-import { Clouds, BAND_CLOUDS, COIN, Coin, HealthMeter, Pill, ProtocolCoin, SERIES, assetColor } from "@/components/bits";
+import { Clouds, BAND_CLOUDS, Pill, SERIES, assetColor } from "@/components/bits";
 import { Arrow, Bell, Info } from "@/components/icons";
 import { HeroArt } from "@/components/HeroArt";
-import { ProvButton, ProvRow, WatchButton, CopyReport } from "@/components/actions";
+import { ProvButton, ProvRow, CopyReport } from "@/components/actions";
 import { RangeChart, Donut } from "@/components/charts";
 import { Feed, ProtocolList } from "@/components/sections";
 import { DataBridge } from "@/components/providers";
 import { Fresh } from "@/components/Fresh";
+import { YieldLadder } from "@/components/opportunities";
+import { signedUsd, pp } from "@/components/intel";
+import { getIntelRaw } from "@/lib/intel-db";
+import { buildIntel } from "@/lib/intel";
+import { listFamilies } from "@/lib/strategies/store";
 
 export const revalidate = 120;
 
@@ -30,14 +34,15 @@ function BigSpark({ values }: { values: number[] }) {
 }
 
 export default async function Home() {
-  const s = await getSnapshot();
+  const [s, raw, families] = await Promise.all([getSnapshot(), getIntelRaw(), listFamilies()]);
+  const I = buildIntel(raw, s);
+  const fams = families.length;
+  const bestOpen = s.opportunities.filter((o) => o.kind === "supply" && o.status === "good").sort((a, b) => (b.apy ?? 0) - (a.apy ?? 0))[0];
   const lend = s.protocols.find((p) => p.lending);
   const dexes = s.protocols.filter((p) => p.kind === "dex" && p.tvl > 0);
-  const featured = [lend, s.protocols.find((p) => p.dex)].filter(Boolean) as NonNullable<typeof lend>[];
   const rows = s.protocols.map(toRow);
   const n = names(s);
   const onchainShare = s.eco.tvl ? s.protocols.filter((p) => p.source === "onchain").reduce((a, p) => a + p.tvl, 0) / s.eco.tvl : 0;
-  const top2 = s.eco.tvl ? [...s.protocols].sort((a, b) => b.tvl - a.tvl).slice(0, 2).reduce((a, p) => a + p.tvl, 0) / s.eco.tvl : 0;
 
   // composition: top 5 + other
   const comp = s.eco.composition.filter((c) => c.usd > 0);
@@ -65,10 +70,10 @@ export default async function Home() {
               <Link className="chip" href="/protocols"><b>Live</b>{onchainShare > 0 ? `${pct(onchainShare, 0)} of tracked value read on-chain` : "Kaspa DeFi, tracked"} <Arrow /></Link>
               <h1>Kaspa DeFi,<br />in plain daylight</h1>
               <div className="sub">Know what your capital stands on with <em>dawns.money</em></div>
-              <p className="lede">Live health for every protocol in Kaspa DeFi. Every number traces back to a contract and a block.</p>
+              <p className="lede">The capital intelligence layer for Kaspa DeFi: what every yield pays, what it costs to leave, and where capital is moving. Every number traces back to a contract and a block.</p>
               <div className="ctas">
-                <Link className="btn sun" href="/protocols">Explore protocols <span className="sq"><Arrow /></span></Link>
-                {lend && <WatchButton id={lend.id} variant="glass" label="Watch a protocol" />}
+                <Link className="btn sun" href="/opportunities">Find yield <span className="sq"><Arrow /></span></Link>
+                <Link className="btn glass" href="/intelligence">This week</Link>
               </div>
             </div>
             <HeroArt tvl={s.eco.tvl} spot={spot} />
@@ -83,86 +88,40 @@ export default async function Home() {
         <div className="fade" />
       </section>
 
-      {featured.length > 0 && (
-        <section className="s wrap">
-          <div className="s-head">
-            <div className="badges">
-              <span className="badge"><i />{usd(s.eco.tvl)} in Kaspa DeFi</span>
-              {s.blocks.igra && <span className="badge"><i style={{ background: "linear-gradient(135deg,#8BF5CF,#179C75)" }} />Igra block #{s.blocks.igra.block.toLocaleString("en-US")}</span>}
-            </div>
-            <h2>How healthy is Kaspa DeFi<br />today?</h2>
-            <p>The two largest protocols hold {pct(top2, 0)} of the value dawns tracks. Here is how each one looks right now.</p>
+      <section className="s wrap">
+        <div className="s-head">
+          <div className="badges">
+            <span className="badge"><i />{usd(s.eco.tvl)} in Kaspa DeFi</span>
+            {s.blocks.igra && <span className="badge"><i style={{ background: "linear-gradient(135deg,#8BF5CF,#179C75)" }} />Igra block #{s.blocks.igra.block.toLocaleString("en-US")}</span>}
           </div>
-          <div className="card" style={{ marginBottom: 22 }}><Tiles tiles={ecoTiles(s)} /></div>
-          <div className="grid g2">
-            {featured.map((p) => {
-              const L = !!p.lending;
-              return (
-                <div key={p.id} className="card feat" style={{ ["--glow" as string]: (COIN[p.id] ?? ["", "#7B6CFF"])[1] }}>
-                  <div className="top">
-                    <ProtocolCoin p={p} size={76} />
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}><span className="tag">{p.category}</span><Pill t={p.status}>{p.statusText}</Pill></div>
-                  </div>
-                  <div>
-                    <h3>{p.name}</h3>
-                    <div style={{ marginTop: 14 }}>
-                      {L && p.lending ? (
-                        <SplitBar height={22} label={`${p.name} supplied by market`} parts={[...p.lending.markets].filter((m) => m.suppliedUsd > 0).sort((a, b) => b.suppliedUsd - a.suppliedUsd).slice(0, 5).map((m, i) => ({
-                          key: m.symbol, label: `${m.symbol}${m.utilization >= 0.95 ? " · blocked" : ""}`, color: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"][i], share: m.suppliedUsd, note: `${pct(m.utilization, 0)} used`,
-                        }))} />
-                      ) : p.dex ? (
-                        <SplitBar height={22} label={`${p.name} liquidity by pool`} parts={[...p.dex.pools.slice(0, 4).map((q, i) => ({ key: q.chain + q.pair, label: q.symbols.join("/"), color: ["#3987e5", "#d95926", "#199e70", "#c98500"][i], share: q.share })),
-                          { key: "rest", label: "Other pools", color: "#4A4270", share: Math.max(0, 1 - p.dex.pools.slice(0, 4).reduce((x, q) => x + q.share, 0)) }]} />
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="row">
-                    <div className="stats">
-                      <div><span>{L ? "Withdrawable" : "Liquidity"}</span><b>{usd(p.tvl)}</b></div>
-                      <div><span>{L ? "Utilization" : "24h volume"}</span><b>{L ? pct(p.lending!.utilization) : p.dex?.vol24 != null ? usd(p.dex.vol24) : "—"}</b></div>
-                      <div><span>Health</span><b style={{ display: "flex", alignItems: "center", height: 22 }}><HealthMeter status={p.status} /></b></div>
-                    </div>
-                    <Link className="btn iris" href={`/protocols/${p.id}`}>View health</Link>
-                  </div>
-                </div>
-              );
-            })}
-            {s.bridge && (() => {
-              const b = s.bridge;
-              const pending = b.payouts ? b.payouts.unpaidKas : b.inWindowKas;
-              const kasN = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${Math.round(n / 1e3)}K`);
-              return (
-                <div className="card feat bridge-feat" style={{ ["--glow" as string]: "#3F7FD8" }}>
-                  <div className="top">
-                    <Coin size={76} k="igra-attestation" glyph="⇄" />
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}><span className="tag">Bridge</span><Pill t={b.coverage >= 1 ? "good" : b.coverage >= 0.99 ? "warn" : "crit"}>{b.coverage >= 1 ? "Fully backed" : "Under-backed"}</Pill></div>
-                  </div>
-                  <div>
-                    <h3>Igra bridge</h3>
-                    <div style={{ marginTop: 14 }}>
-                      <SplitBar height={22} label="Locked KAS" parts={[
-                        { key: "ikas", label: "Backs iKAS", color: "#3987e5", share: Math.min(b.ikasSupply, b.lockedKas), note: `${kasN(b.ikasSupply)} iKAS on Igra` },
-                        ...(b.surplusKas > 0 ? [
-                          { key: "exits", label: "Exits awaiting payout", color: "#c98500", share: Math.min(pending, b.surplusKas), note: `${kasN(Math.min(pending, b.surplusKas))} KAS` },
-                          { key: "extra", label: "Surplus", color: "#199e70", share: Math.max(0, b.surplusKas - pending), note: `${kasN(Math.max(0, b.surplusKas - pending))} KAS` },
-                        ] : []),
-                      ].filter((x) => x.share > 0)} />
-                    </div>
-                  </div>
-                  <div className="row">
-                    <div className="stats">
-                      <div><span>Backing</span><b>{pct(b.coverage, 1)}</b></div>
-                      <div><span>KAS locked</span><b>{kasN(b.lockedKas)}</b></div>
-                      <div><span>Typical payout</span><b>{b.payouts?.medianHours != null ? `${Math.round(b.payouts.medianHours)} h` : "—"}</b></div>
-                    </div>
-                    <Link className="btn iris" href="/bridge">Check the bridge</Link>
-                  </div>
-                </div>
-              );
-            })()}
+          <h2>From an asset to a position<br />you can watch</h2>
+          <p>Every step reads the chain. Yield is never summed with token incentives, and no step reduces an opportunity to a single score.</p>
+        </div>
+        <div className="chain4">
+          <Link href="/opportunities" className="card chain-c"><span className="eyebrow muted">1 · Opportunities</span><b>{bestOpen?.apy != null ? pct(bestOpen.apy, 1) : "—"}</b><small>{bestOpen ? `best open native yield · ${bestOpen.name} on ${bestOpen.pname}` : "no market fully open"}</small><span className="chain-go">Every yield, next to its exit <Arrow /></span></Link>
+          <Link href="/intelligence" className="card chain-c"><span className="eyebrow muted">2 · Intelligence</span><b>{signedUsd(I.flows.total)}</b><small>net new capital · {I.span >= 1.5 ? `${Math.round(I.span)} days` : "readings so far"}, in tokens</small><span className="chain-go">Where capital and yield moved <Arrow /></span></Link>
+          <Link href="/vaults" className="card chain-c"><span className="eyebrow muted">3 · Strategies &amp; vaults</span><b>{fams}</b><small>published strategies · vaults on testnet-10</small><span className="chain-go">Rules the network enforces <Arrow /></span></Link>
+          <Link href="/portfolio" className="card chain-c"><span className="eyebrow muted">4 · Portfolio</span><b>Your wallet</b><small>positions on Igra, looked through to what they hold</small><span className="chain-go">Paste an address <Arrow /></span></Link>
+        </div>
+        <div className="grid gA" style={{ marginTop: 22 }}>
+          <div className="card">
+            <div className="c-head"><h3>Highest native yields, and whether you can get out</h3><Link href="/opportunities" className="tag">All opportunities →</Link></div>
+            <YieldLadder rows={s.opportunities.filter((o) => !o.farm)} limit={5} />
           </div>
-        </section>
-      )}
+          <div className="card">
+            <div className="c-head"><h3>This week</h3><Link href="/intelligence" className="tag">Intelligence →</Link></div>
+            <ul className="week">
+              {[...I.flows.into.slice(0, 1).map((m) => ({ k: "in" + m.id, t: "up", h: `${signedUsd(m.value)} into ${m.name.replace(/ liquidity$/, "")}`, sub: `${m.pname} · capital arriving` })),
+                ...I.flows.out.slice(0, 1).map((m) => ({ k: "out" + m.id, t: "down", h: `${signedUsd(m.value)} out of ${m.name.replace(/ liquidity$/, "")}`, sub: `${m.pname} · capital leaving` })),
+                ...I.yieldUp.slice(0, 1).map((m) => ({ k: "yu" + m.id, t: "up", h: `${m.name.replace(/ liquidity$/, "")} yield ${pp(m.value)}`, sub: `${m.pname} · native yield rising` })),
+                ...I.yieldDown.slice(0, 1).map((m) => ({ k: "yd" + m.id, t: "down", h: `${m.name.replace(/ liquidity$/, "")} yield ${pp(m.value)}`, sub: `${m.pname} · native yield falling` })),
+                ...I.emerging.slice(0, 1).map((id) => ({ k: "em" + id, t: "calm", h: `Emerging: ${s.opportunities.find((o) => o.id === id)?.name ?? id}`, sub: "yield rising, capital staying, exit open" })),
+              ].map((x) => <li key={x.k} className={`t-${x.t}`}><i aria-hidden>{x.t === "up" ? "▲" : x.t === "down" ? "▼" : "•"}</i><span><b>{x.h}</b><small>{x.sub}</small></span></li>)}
+              {!I.flows.into.length && !I.flows.out.length && !I.yieldUp.length && !I.yieldDown.length && <li className="t-calm"><i aria-hidden>•</i><span><b>A quiet week</b><small>no move above dawns&apos; thresholds</small></span></li>}
+            </ul>
+          </div>
+        </div>
+      </section>
 
       <section className="s wrap">
         <div className="l-head"><div><h2>Protocol health</h2><p>Every Kaspa DeFi protocol on Igra and Kasplex. Rows marked On-chain are read by dawns directly.</p></div></div>
@@ -246,11 +205,11 @@ export default async function Home() {
       <section className="s wrap">
         <div className="s-head"><h2>From daylight to capital</h2><p>Information first. Capital products come once people trust the data.</p></div>
         <div className="road">
-          <div className="now"><span className="n">1 · LIVE</span><b>Intelligence</b><p>Protocol health, flows, the Igra bridge, and the source of every number.</p></div>
-          <div className="now"><span className="n">2 · LIVE</span><b>Watch &amp; alerts</b><p>Telegram alerts on liquidity, utilization, large exits and bridge backing.</p></div>
-          <div className="now"><span className="n">3 · BETA</span><b>Opportunities</b><p>Native yield next to exit liquidity, rate stability and price exposure.</p></div>
-          <div className="now"><span className="n">4 · BETA</span><b>Allocation</b><p>Your risk and exit window turned into a split, explained line by line. Sign in with any wallet.</p></div>
-          <div><span className="n">5</span><b>Vaults</b><p>Managed, policy-bound strategies. Non-custodial.</p></div>
+          <div className="now"><span className="n">1 · LIVE</span><b>Health &amp; alerts</b><p>Every protocol, the Igra bridge, and Telegram alerts, with the source of every number.</p></div>
+          <div className="now"><span className="n">2 · LIVE</span><b>Opportunities</b><p>Native yield next to exit liquidity, rate stability and price exposure, with 7- and 30-day trends.</p></div>
+          <div className="now"><span className="n">3 · LIVE</span><b>Intelligence</b><p>Capital flows in tokens, yield movement, and what is emerging this week.</p></div>
+          <div className="now"><span className="n">4 · BETA</span><b>Strategies</b><p>Written, versioned and evaluated daily, with a notice period before any change.</p></div>
+          <div><span className="n">5 · TESTNET</span><b>Vaults</b><p>Strategies run by rules the Kaspa network enforces. Non-custodial.</p></div>
         </div>
       </section>
     </>

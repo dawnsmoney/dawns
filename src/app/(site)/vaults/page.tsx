@@ -17,11 +17,40 @@ export default async function VaultsHub() {
   const [vs, fams, snap] = await Promise.all([vaults(), listFamilies(), getSnapshot()]);
   const proposed = fams.map((f) => ({ st: f.current, ev: evaluate(f.current.doc, snap.opportunities, snap.kasUsd) }));
   const man = (id: string) => MANAGERS.find((m) => m.id === id);
+  const EXIT: Record<string, string> = { mandate: "The owner withdraws; no outside shares", nav: "Redeem at NAV any time, from liquid KAS", fixed: "Redeem at NAV after maturity", credit: "As borrowers repay" };
+  const rows = [
+    ...vs.filter((v) => v.status !== "designed").map((v) => ({ key: v.id, href: v.href, name: v.name, color: KIND[v.kind].color, kind: KIND[v.kind].label, network: v.network,
+      deposits: v.figures[0]?.value ?? "—", depositsSub: v.figures[0]?.label && v.figures[0].label !== "Value" && v.figures[0].label !== "NAV" ? v.figures[0].label : null,
+      net: <span className="muted">test KAS</span>, exit: EXIT[v.kind], curator: man(v.manager)?.name ?? v.manager, state: STATUS[v.status] })),
+    ...proposed.map(({ st, ev }) => { const k = st.doc.vault.type === "fixed" ? "fixed" : "nav"; return { key: st.id, href: `/strategies/${st.id}`, name: st.doc.name, color: KIND[k].color, kind: `${KIND[k].label} · proposed`, network: ev.legs.some((l) => l.o?.chain === "igra" || l.o?.chain === "kasplex") ? "needs the Igra bridge rule" : "needs a curator",
+      deposits: `0 / ${st.doc.vault.capacityKas.toLocaleString("en-US")} KAS`, depositsSub: "capacity",
+      net: <b>{ev.net != null ? pct(ev.net, 1) : "—"}</b>, exit: `${pct(ev.exitNow, 0)} out now${st.doc.vault.type === "fixed" ? ` · ${st.doc.vault.termDays}-day term` : ""}`,
+      curator: st.by === "dawns" ? "Dawns" : `${st.strategist.slice(0, 8)}…${st.strategist.slice(-4)}`, state: { t: "info" as const, w: "Proposed" } }; }),
+    ...vs.filter((v) => v.status === "designed").map((v) => ({ key: v.id, href: v.href, name: v.name, color: KIND[v.kind].color, kind: KIND[v.kind].label, network: v.network,
+      deposits: "—", depositsSub: null, net: <span className="muted">—</span>, exit: EXIT[v.kind], curator: man(v.manager)?.name ?? v.manager, state: STATUS[v.status] })),
+  ];
   return (
     <>
       <Banner short crumb={[{ label: "Testnet" }]} title="Vaults"
         lede="A vault runs one investment mandate. Its rules are compiled into a Kaspa covenant: the manager cannot move capital outside them, because the network refuses the transaction." />
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
+
+        <div className="card flush"><div className="tbl-wrap"><table className="vault-tbl">
+          <thead><tr><th>Vault</th><th>Deposits</th><th>Expected net</th><th>Getting out</th><th>Curator</th><th>State</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key}>
+                <td>{(() => { const inner = <><i style={{ background: r.color }} /><span><b>{r.name}</b><small>{r.kind} · {r.network}</small></span></>; return r.href ? <Link href={r.href} className="vt-name">{inner}</Link> : <span className="vt-name off">{inner}</span>; })()}</td>
+                <td>{r.deposits}{r.depositsSub && <small className="muted" style={{ display: "block" }}>{r.depositsSub}</small>}</td>
+                <td>{r.net}</td>
+                <td className="soft">{r.exit}</td>
+                <td>{r.curator}</td>
+                <td><Pill t={r.state.t}>{r.state.w}</Pill></td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div></div>
+        <p className="muted" style={{ fontSize: 13, margin: "-14px 0 0" }}>Expected net is native yield after fees, from the strategy&apos;s live evaluation; token incentives are never added. Testnet vaults hold test KAS and earn nothing.</p>
 
         <div className="card">
           <div className="c-head"><h3>What stops a manager</h3><Link href="/strategies" className="tag">A vault runs a strategy: browse strategies →</Link></div>
@@ -32,55 +61,6 @@ export default async function VaultsHub() {
               ["Proof", "Each path is tested against the node's own script engine, every rule removed in turn to show a test catches it."]].map(([h, p], i) => (
               <div key={h} className="flow-step"><span>{i + 1}</span><b>{h}</b><small>{p}</small></div>
             ))}
-          </div>
-        </div>
-
-        <div className="vcards">
-          {vs.map((v) => {
-            const k = KIND[v.kind];
-            const body = (
-              <>
-                <span className="vc-top"><span className="vc-kind" style={{ ["--c" as string]: k.color }}><i />{k.label}</span><Pill t={STATUS[v.status].t}>{STATUS[v.status].w}</Pill></span>
-                <b className="vc-name">{v.name}</b>
-                <small className="muted">{v.pitch}</small>
-                {v.figures.length > 0 && <span className="vc-figs">{v.figures.map((f) => <span key={f.label}><small>{f.label}</small><b>{f.value}</b></span>)}</span>}
-                <ul className="vc-rules">{v.guarantees.map((g) => <li key={g}>{g}</li>)}</ul>
-                <span className="vc-foot"><span>Managed by <b>{man(v.manager)?.name ?? v.manager}</b></span><span className="muted">{v.network}</span></span>
-              </>
-            );
-            return v.href ? <Link key={v.id} href={v.href} className="card vcard">{body}</Link> : <div key={v.id} className="card vcard dim">{body}</div>;
-          })}
-        </div>
-
-        <div className="card">
-          <div className="c-head"><h3>Proposed from strategies</h3><Link href="/strategies" className="tag">All strategies →</Link></div>
-          <p className="muted" style={{ marginTop: 0 }}>Every published strategy is a vault waiting for a curator. Its terms become the vault&apos;s mandate at launch; until then nothing is deposited.</p>
-          <div className="vcards st-cards">
-            {proposed.map(({ st, ev }) => {
-              const k = KIND[st.doc.vault.type === "fixed" ? "fixed" : "nav"];
-              const igra = ev.legs.some((l) => l.o?.chain === "igra" || l.o?.chain === "kasplex");
-              return (
-                <Link key={st.id} href={`/strategies/${st.id}`} className="card vcard">
-                  <span className="vc-top"><span className="vc-kind" style={{ ["--c" as string]: k.color }}><i />{k.label}</span><Pill t="info">Proposed</Pill></span>
-                  <b className="vc-name">{st.doc.name}</b>
-                  <span className="st-fill" title={`0 of ${st.doc.vault.capacityKas.toLocaleString("en-US")} KAS deposited`}>
-                    <span className="st-fill-t"><i style={{ width: "0%" }} /></span>
-                    <small className="muted"><b style={{ color: "var(--ink)" }}>0</b> / {st.doc.vault.capacityKas.toLocaleString("en-US")} KAS capacity</small>
-                  </span>
-                  <span className="vc-figs">
-                    <span><small>Expected net</small><b>{ev.net != null ? pct(ev.net, 1) : "—"}</b></span>
-                    <span><small>Out now</small><b>{pct(ev.exitNow, 0)}</b></span>
-                    <span><small>Terms</small><b>{st.doc.vault.type === "fixed" ? `${st.doc.vault.termDays}d` : "Open"}</b></span>
-                  </span>
-                  <ul className="vc-rules">
-                    <li>{st.doc.legs.length} destination slots with hard caps</li>
-                    <li>{st.doc.reserveBps / 100}% reserve floor</li>
-                    <li>{st.doc.noticeDays}-day notice before a new version</li>
-                  </ul>
-                  <span className="vc-foot"><span>Strategy by <b>{st.by === "dawns" ? "Dawns" : `${st.strategist.slice(0, 12)}…${st.strategist.slice(-4)}`}</b></span><span className="muted">{igra ? "Needs the Igra bridge rule" : "Needs a curator"}</span></span>
-                </Link>
-              );
-            })}
           </div>
         </div>
 

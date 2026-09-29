@@ -8,16 +8,21 @@ import { BackToMobile } from "./m/shell";
 import { Arrow, Chevron } from "./icons";
 import { useWatchMap } from "./providers";
 
-/** One expanding group, like a product menu: everything to read lives under Explore. */
-const EXPLORE = [
+/** The four places capital decisions happen, always in view; everything to read lives under More. */
+const PRIMARY = [
+  { href: "/opportunities", label: "Opportunities" },
+  { href: "/vaults", label: "Vaults" },
+  { href: "/intelligence", label: "Intelligence" },
+  { href: "/portfolio", label: "Portfolio" },
+];
+const EXPLORE: { href: string; label: string; badge?: string; primary?: boolean }[] = [
+  ...PRIMARY.map((p) => ({ ...p, primary: true })),
   { href: "/", label: "Kaspa DeFi" },
-  { href: "/assets", label: "Assets", badge: "New" },
+  { href: "/assets", label: "Assets" },
   { href: "/protocols", label: "Protocols" },
-  { href: "/opportunities", label: "Opportunities", badge: "Beta" },
-  { href: "/intelligence", label: "Intelligence", badge: "New" },
-  { href: "/strategies", label: "Strategies", badge: "New" },
-  { href: "/vaults", label: "Vaults", badge: "Testnet" },
+  { href: "/strategies", label: "Strategies", badge: "Beta" },
   { href: "/bridge", label: "Igra bridge" },
+  { href: "/allocate", label: "Allocate" },
 ];
 
 export function Header() {
@@ -44,14 +49,14 @@ export function Header() {
     return () => { document.removeEventListener("pointerdown", down); document.removeEventListener("keydown", key); };
   }, [open]);
   const active = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
-  const inExplore = EXPLORE.some((n) => active(n.href));
+  const inExplore = EXPLORE.some((n) => !n.primary && active(n.href));
 
   const row = (
     <>
+      {PRIMARY.map((n) => <Link key={n.href} href={n.href} className={`hide-md ${active(n.href) ? "on" : ""}`} aria-current={active(n.href) ? "page" : undefined}>{n.label}</Link>)}
       <button type="button" className={`navbtn ${inExplore || open ? "on" : ""}`} aria-expanded={open} aria-controls="explore-menu" onClick={() => setOpen((v) => !v)}>
-        <span className="dot" />Explore<Chevron className={`chev ${open ? "up" : ""}`} />
+        <span className="dot" />More<Chevron className={`chev ${open ? "up" : ""}`} />
       </button>
-      <Link href="/allocate" className={`hide-sm ${active("/allocate") ? "on" : ""}`} aria-current={active("/allocate") ? "page" : undefined}>Allocate</Link>
       <Link href="/watchlist" className={active("/watchlist") ? "on" : ""}>
         <span className="hide-xs">Watchlist</span>
         {count > 0 && <span className="cnt">{count}</span>}
@@ -73,8 +78,8 @@ export function Header() {
             <div className="navcard" id="explore-menu">
               <nav className="pillnav bare" aria-label="Main">{row}</nav>
               <ul>
-                {[...EXPLORE, { href: "/allocate", label: "Allocate", badge: undefined as string | undefined, sm: true }].map((n) => (
-                  <li key={n.href} className={"sm" in n ? "only-sm" : undefined}>
+                {EXPLORE.map((n) => (
+                  <li key={n.href} className={n.primary ? "only-md" : undefined}>
                     <Link href={n.href} className={active(n.href) ? "on" : ""} aria-current={active(n.href) ? "page" : undefined}>
                       <span>{n.label}{n.badge && <span className={`badge ${n.badge === "New" ? "new" : ""}`}>{n.badge}</span>}</span>
                       <Arrow className="arr" />
@@ -96,6 +101,8 @@ export function Footer() {
       <div className="wrap">
         <Link href="/" aria-label="dawns.money home"><Logo id="ftr" height={26} /></Link>
         <nav>
+          <Link href="/opportunities">Opportunities</Link>
+          <Link href="/intelligence">Intelligence</Link>
           <Link href="/assets">Assets</Link>
           <Link href="/protocols">Protocols</Link>
           <Link href="/bridge">Igra bridge</Link>
