@@ -58,9 +58,14 @@ export function PositionTable({ rows, tags }: { rows: Position[]; tags: Record<s
 export function PosActions({ a }: { a: NonNullable<Position["actions"]> }) {
   return (
     <span className="pf-acts">
-      {a.map((x) => x.ext
-        ? <a key={x.label} href={x.href} target="_blank" rel="noopener noreferrer">{x.label} ↗</a>
-        : <Link key={x.label} href={x.href}>{x.label}</Link>)}
+      {a.map((x, i) => {
+        const icon = /^deposit|^supply|^add/i.test(x.label) ? "+" : /^withdraw|^redeem|^remove/i.test(x.label) ? "−" : null;
+        const cls = i === 0 ? "pf-act on" : "pf-act";
+        const inner = <>{icon && <i aria-hidden>{icon}</i>}{x.label}{x.ext && <em aria-hidden>↗</em>}</>;
+        return x.ext
+          ? <a key={x.label} className={cls} href={x.href} target="_blank" rel="noopener noreferrer">{inner}</a>
+          : <Link key={x.label} className={cls} href={x.href}>{inner}</Link>;
+      })}
     </span>
   );
 }

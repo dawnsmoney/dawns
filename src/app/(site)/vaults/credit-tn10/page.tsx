@@ -4,6 +4,8 @@ import { Banner } from "@/components/Banner";
 import { Pill } from "@/components/bits";
 import { SplitBar, Ring, CopyId } from "@/components/viz";
 import { NavPanel } from "@/components/nav-panel";
+import { SharePriceChart } from "@/components/share-chart";
+import { sharePoints } from "@/lib/vaults/share-history";
 import { LoanCard, LOAN_COLORS, LIQUID, CREDIT_STEPS, kas, dur } from "@/components/credit-vault";
 import { getCredit, creditFigures, readCreditLive, SOMPI, FIRST_PRICE, DAA_PER_SEC } from "@/lib/vaults/credit";
 
@@ -37,6 +39,9 @@ export default async function CreditVaultPage() {
     return { ...t, key: x.txid, at: x.at, sub: `${x.txid.slice(0, 16)}… · NAV ${kas(x.navAfter / SOMPI)} after${x.owner ? ` · ${short(x.owner)}` : ""}` };
   });
 
+  const firstDep = l.moves.findIndex((x) => x.kind === "deposit");
+  const seedJump = firstDep >= 0 && l.moves[firstDep].sharesAfter > 0 && l.moves[firstDep].navAfter / l.moves[firstDep].sharesAfter > FIRST_PRICE * 1.005;
+  const history = sharePoints(l.createdAt, l.moves, FIRST_PRICE / SOMPI, f.price, (x) => { const e = log.find((y) => y.key === x.txid); return { title: e?.title ?? x.kind, amt: e?.amt || undefined }; });
   return (
     <>
       <Banner short crumb={[{ href: "/vaults", label: "Vaults" }, { label: "Credit · testnet-10" }]} title="Credit vault"
@@ -64,6 +69,12 @@ export default async function CreditVaultPage() {
             <SplitBar label="NAV by place" parts={[...f.loans.filter((x) => x.counts > 0).map((x) => ({ key: `l${x.slot}`, label: x.label, color: LOAN_COLORS[x.slot], share: x.counts, note: x.status === "free" ? "free" : `${kas(x.counts, 4)} counted · ${kas(x.principal, 4)} owed` })),
               { key: "liquid", label: "Liquid in the vault", color: LIQUID, share: Math.max(0, f.liquid), note: kas(f.liquid) }]} />
           </div>
+        </div>
+
+        <div className="card">
+          <div className="c-head"><h3>Share price since launch</h3><span className="tag">after every move · KAS</span></div>
+          <SharePriceChart points={history} launch={FIRST_PRICE / SOMPI} label="Share price since launch" />
+          <p className="foot" style={{ marginBottom: 0 }}>The price moves only when value changes for everyone already in: interest, marks, markdowns and exit fees. Deposits and withdrawals happen at NAV and leave it where it is{seedJump ? <>, except the first deposit: shares were minted at the launch price while the vault&apos;s opening seed already counted in NAV, so the first holders received it</> : null}.</p>
         </div>
 
         <div className="card">

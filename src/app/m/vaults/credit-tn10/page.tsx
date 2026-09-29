@@ -4,6 +4,8 @@ import { getCredit, creditFigures, readCreditLive, SOMPI, FIRST_PRICE } from "@/
 import { MCard, MFlags, MHead, MHero, MKv, MList, MNote, MRow, MStats } from "@/components/m/kit";
 import { MMore, MTabs } from "@/components/m/tabs";
 import { NavPanel } from "@/components/nav-panel";
+import { SharePriceChart } from "@/components/share-chart";
+import { sharePoints } from "@/lib/vaults/share-history";
 import { CopyId, SplitBar } from "@/components/viz";
 import { Pill } from "@/components/bits";
 import { LoanCard, LOAN_COLORS, LIQUID, kas } from "@/components/credit-vault";
@@ -29,6 +31,7 @@ export default async function MCredit() {
     title: x.kind === "deposit" ? "Deposit" : x.kind === "redeem" ? "Withdrawal" : x.kind === "lend" ? `Lent to ${name(x.slot)}` : x.kind === "repay" ? `Repaid by ${name(x.slot)}` : x.kind === "markdown" ? `${name(x.slot)} marked down` : x.kind === "writeoff" ? `${name(x.slot)} written off` : x.kind === "mark" ? "Loans marked" : x.kind === "halt" ? "Guardian halted the vault" : x.kind === "token" ? "Share token created" : x.kind,
     amt: x.kind === "deposit" ? `+${kas((x.paid ?? 0) / SOMPI)}` : x.kind === "redeem" ? `−${kas((x.payout ?? 0) / SOMPI)}` : x.kind === "lend" ? `−${kas((x.amount ?? 0) / SOMPI)}` : x.kind === "repay" ? `+${kas((x.amount ?? 0) / SOMPI, 4)}` : x.kind === "markdown" ? `→ ${kas((x.to ?? 0) / SOMPI)}` : "",
   }));
+  const history = sharePoints(l.createdAt, l.moves, FIRST_PRICE / SOMPI, f.price, (x) => { const e = log.find((y) => y.key === x.txid); return { title: e?.title ?? x.kind, amt: e?.amt || undefined }; });
   return (
     <>
       <MHead back={{ href: "/vaults", label: "Vaults" }} eyebrow="Credit · testnet-10 · not audited" title={m.name}
@@ -42,6 +45,7 @@ export default async function MCredit() {
           { label: "Payable now", value: pct(payable), sub: "of NAV held liquid" },
           { label: "Holders", value: String(f.holders), sub: `${f.shares.toLocaleString("en-US")} shares` },
         ]} />
+        <MCard title="Share price since launch"><SharePriceChart points={history} launch={FIRST_PRICE / SOMPI} label="Share price since launch" /></MCard>
         <MTabs tabs={[{ key: "y", label: "Deposit & withdraw" }, { key: "o", label: "Loans" }, { key: "l", label: "History", badge: l.moves.length }, { key: "r", label: "Rules" }]}>
           <div className="m-panel">
             <MCard><NavPanel vault={l.covenantId} template={l.accountTemplate} price={f.price} minDeposit={m.minDepositSompi / SOMPI} noteValue={m.noteValueSompi / SOMPI} maxFee={m.maxFeeSompi / SOMPI} exitFeeBps={m.exitFeeBps} halted={l.state.halted} maturityOpen={maturityOpen} /></MCard>

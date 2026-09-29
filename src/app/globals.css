@@ -1470,3 +1470,37 @@ a.vlog-row:hover b{color:var(--ink)}
 .lt-cap span:last-child{text-align:right}
 .lt-now.lft small{left:0;transform:none}
 .lt-now.rgt small{left:auto;right:0;transform:none}
+.loan details,.loan .navp-alt>div{min-width:0}
+.loan .copyid{display:flex;width:100%;margin-left:0;min-width:0}
+.loan .copyid span{flex:1;min-width:0;max-width:none}
+.loan .navp-alt,.loan .navp-alt>div{grid-template-columns:minmax(0,1fr)}
+/* position actions: a compact pair, the first one primary */
+.vt-name .pf-acts,.pf-acts{display:flex;flex-direction:row;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
+.pf-acts .pf-act{display:inline-flex;align-items:center;gap:6px;width:auto;padding:5px 12px 5px 8px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:12.5px;font-weight:600;color:var(--ink-2);text-decoration:none;white-space:nowrap;line-height:1.2;transition:background .15s,border-color .15s}
+.pf-acts .pf-act i{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;font-style:normal;font-size:13px;line-height:1;background:rgba(255,255,255,.1);color:var(--ink)}
+.pf-acts .pf-act em{font-style:normal;color:var(--ink-3)}
+.pf-acts .pf-act:hover{background:rgba(255,255,255,.1);color:var(--ink)}
+.pf-acts .pf-act.on{border-color:rgba(255,174,94,.55);background:rgba(255,150,90,.12);color:var(--ink)}
+.pf-acts .pf-act.on i{background:var(--sunrise);color:#2A1405}
+.pf-acts .pf-act.on:hover{background:rgba(255,150,90,.2)}
+.vt-name .pf-act i{width:18px;height:18px;border-radius:50%;flex:none}
+
+/* ---- share price since inception ---- */
+.spc{position:relative;display:grid;gap:10px;min-width:0}
+.spc-head{display:flex;gap:28px;flex-wrap:wrap}
+.spc-head div{display:grid;gap:2px}
+.spc-head b{font:600 22px var(--display)}
+.spc-head small{font-size:12.5px;color:var(--ink-3)}
+.spc-grid{stroke:rgba(255,255,255,.07);stroke-width:1}
+.spc-ax{fill:var(--ink-3);font-size:11px;font-family:var(--body,inherit)}
+.spc-launch{stroke:rgba(255,255,255,.28);stroke-width:1;stroke-dasharray:4 4}
+.spc-line{fill:none;stroke:var(--ink-2);stroke-width:2;stroke-linejoin:round}
+.spc-dot{stroke:var(--card);stroke-width:2}
+.spc-now{fill:var(--ink);stroke:var(--card);stroke-width:2}
+.spc-cross{stroke:rgba(255,255,255,.35);stroke-width:1}
+.spc-tip{position:absolute;transform:translate(-50%,-100%);pointer-events:none;display:grid;gap:2px;padding:8px 10px;border-radius:10px;background:#0E0A26;border:1px solid var(--line-2);font-size:12px;color:var(--ink-2);white-space:nowrap;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:3}
+.spc-tip b{color:var(--ink);font-size:12.5px}
+.spc-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2)}
+.spc-leg span{display:inline-flex;align-items:center;gap:6px}
+.spc-leg i{width:9px;height:9px;border-radius:50%}
+.spc-plot{position:relative;min-width:0}

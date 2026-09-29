@@ -3,6 +3,8 @@ import { getNav, navFigures, readNavLive, SOMPI, FIRST_PRICE } from "@/lib/vault
 import { MCard, MFlags, MHead, MHero, MKv, MList, MNote, MRow, MStats } from "@/components/m/kit";
 import { MMore, MTabs } from "@/components/m/tabs";
 import { NavPanel } from "@/components/nav-panel";
+import { SharePriceChart } from "@/components/share-chart";
+import { sharePoints } from "@/lib/vaults/share-history";
 import { CapBars, CopyId, SplitBar } from "@/components/viz";
 import { Pill } from "@/components/bits";
 
@@ -31,6 +33,7 @@ export default async function MNav() {
     title: x.kind === "deposit" ? "Deposit" : x.kind === "redeem" ? "Withdrawal" : x.kind === "allocate" ? `Sent to ${name(x.slot)}` : x.kind === "recall" ? `Returned from ${name(x.slot)}` : x.kind === "mark" ? "Positions marked" : x.kind === "halt" ? "Guardian halted the vault" : x.kind === "token" ? "Share token created" : x.kind,
     amt: x.kind === "deposit" ? `+${kas((x.paid ?? 0) / SOMPI)}` : x.kind === "redeem" ? `−${kas((x.payout ?? 0) / SOMPI)}` : x.kind === "allocate" ? `−${kas((x.amount ?? 0) / SOMPI)}` : x.kind === "recall" ? `+${kas((x.amount ?? 0) / SOMPI)}` : "",
   }));
+  const history = sharePoints(l.createdAt, l.moves, FIRST_PRICE / SOMPI, f.price, (x) => { const e = log.find((y) => y.key === x.txid); return { title: e?.title ?? x.kind, amt: e?.amt || undefined }; });
   return (
     <>
       <MHead back={{ href: "/vaults", label: "Vaults" }} eyebrow="NAV · testnet-10 · not audited" title={m.name}
@@ -44,6 +47,7 @@ export default async function MNav() {
           { label: "Payable now", value: pct(payable), sub: "of NAV held liquid" },
           { label: "Exit fee", value: `${m.exitFeeBps / 100}%`, sub: "kept for holders" },
         ]} />
+        <MCard title="Share price since launch"><SharePriceChart points={history} launch={FIRST_PRICE / SOMPI} label="Share price since launch" /></MCard>
         <MTabs tabs={[{ key: "y", label: "Deposit & withdraw" }, { key: "h", label: "Holdings" }, { key: "l", label: "History", badge: l.moves.length }, { key: "r", label: "Rules" }]}>
           <div className="m-panel">
             <MCard><NavPanel vault={l.covenantId} template={l.accountTemplate} price={f.price} minDeposit={m.minDepositSompi / SOMPI} noteValue={m.noteValueSompi / SOMPI} maxFee={m.maxFeeSompi / SOMPI} exitFeeBps={m.exitFeeBps} halted={l.state.halted} maturityOpen={maturityOpen} /></MCard>

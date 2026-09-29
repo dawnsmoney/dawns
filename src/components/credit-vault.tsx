@@ -61,7 +61,12 @@ export function LoanCard({ loan, m, color }: { loan: LoanView; m: CreditMandateD
     : loan.status === "current" ? `Due in ${dur(loan.secondsToDue ?? 0)} · ${kas(loan.owedAtTerm, 4)} with interest`
     : loan.status === "grace" ? `${dur(loan.lateSeconds ?? 0)} late · counts in full until the grace ends in ${dur(m.graceDaa / DAA_PER_SEC - (loan.lateSeconds ?? 0))}`
     : loan.status === "late" ? `${dur(loan.lateSeconds ?? 0)} late · counts ${Math.round((loan.counts / Math.max(1e-9, loan.principal)) * 100)}% of principal${loan.nextCutIn != null ? `, ${kas(loan.nextCounts ?? 0)} in ${dur(loan.nextCutIn)}` : ""}`
-    : "Counts nothing in NAV. The valuer may write it off; any later payment is a recovery.";
+    : (() => {
+      const toGraceEnd = loan.secondsToDue != null ? loan.secondsToDue + m.graceDaa / DAA_PER_SEC : m.graceDaa / DAA_PER_SEC - (loan.lateSeconds ?? 0);
+      return toGraceEnd > 0
+        ? `Marked to zero: counts nothing in NAV. A repayment still closes it normally; it can be written off once the grace ends, in ${dur(toGraceEnd)}.`
+        : "Counts nothing in NAV. The valuer may write it off; any later payment is a recovery.";
+    })();
   return (
     <div className={`loan ${loan.status}`} style={{ ["--c" as string]: color }}>
       <div className="loan-h">

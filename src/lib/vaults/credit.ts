@@ -89,7 +89,7 @@ export function creditFigures(l: CreditLedger, m: CreditMandateDoc, daa: number 
     const cap = limitOf(m, i, s, at);
     const counts = Math.min(mark, cap);
     const late = due > 0 ? at - due : null;
-    const status: LoanStatus = p === 0 ? "free" : late == null || late < 0 ? "current" : late < m.graceDaa ? "grace" : counts === 0 ? "zero" : "late";
+    const status: LoanStatus = p === 0 ? "free" : counts === 0 ? "zero" : late == null || late < 0 ? "current" : late < m.graceDaa ? "grace" : "late";
     let nextCutIn: number | null = null, nextCounts: number | null = null;
     if (p > 0 && due > 0 && counts > 0) {
       const start = due + m.graceDaa;
