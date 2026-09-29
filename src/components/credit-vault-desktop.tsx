@@ -4,6 +4,7 @@ import { Pill } from "@/components/bits";
 import { SplitBar, Ring, CopyId } from "@/components/viz";
 import { NavPanel } from "@/components/nav-panel";
 import { SharePriceChart } from "@/components/share-chart";
+import { BalanceSheet } from "@/components/balance-sheet";
 import { sharePoints } from "@/lib/vaults/share-history";
 import { LoanCard, LOAN_COLORS, LIQUID, CREDIT_STEPS, kas, dur } from "@/components/credit-vault";
 import { creditFigures, readCreditLive, SOMPI, FIRST_PRICE, DAA_PER_SEC, type CreditLedger, type CreditMandateDoc } from "@/lib/vaults/credit";
@@ -71,6 +72,17 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
             <SplitBar label="NAV by place" parts={[...f.loans.filter((x) => x.counts > 0).map((x) => ({ key: `l${x.slot}`, label: x.label, color: LOAN_COLORS[x.slot], share: x.counts, note: x.status === "free" ? "free" : `${kas(x.counts, 4)} counted · ${kas(x.principal, 4)} owed` })),
               { key: "liquid", label: "Liquid in the vault", color: LIQUID, share: Math.max(0, f.liquid), note: kas(f.liquid) }]} />
           </div>
+        </div>
+
+        <div className="card">
+          <div className="c-head"><h3>Balance sheet</h3><span className="tag">{live.matches ? "the chain agrees" : "operator's ledger"}</span></div>
+          <BalanceSheet fmt={(x) => kas(x)}
+            assets={[{ key: "liquid", label: "KAS in the vault", value: f.held, color: LIQUID, note: `pays withdrawals now; includes the ${kas(f.keep)} seed` },
+              ...f.loans.filter((x) => x.principal > 0).map((x) => ({ key: `l${x.slot}`, label: `Loan · ${x.label}`, value: x.counts, color: LOAN_COLORS[x.slot], note: x.counts < x.principal ? `${kas(x.principal)} owed; counted lower (${x.status === "zero" ? "marked to zero" : "late"})` : `${kas(x.principal)} owed` }))]}
+            claims={[{ key: "holders", label: "Shareholders", value: f.nav, color: "#3987e5", note: `${f.shares.toLocaleString("en-US")} shares at ${f.price.toFixed(6)} KAS` }]}
+            below={{ label: "The vault's own seed", value: f.keep, note: "never shares; kept so the vault can always price and pay" }}
+            assetsTag="liquid + loans at their counted value" claimsTag="redeemable at NAV" ratioLabel="Assets ÷ claims"
+            basis={<>Loans count at the lower of the valuer&apos;s mark and the covenant&apos;s schedule, exactly as every deposit and withdrawal prices them, so claims equal assets less the seed by construction. What this cannot show is whether borrowers will repay: that is the off-chain part.</>} />
         </div>
 
         <div className="card">

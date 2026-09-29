@@ -7,6 +7,7 @@ import { sharePoints } from "@/lib/vaults/share-history";
 import { CopyId, SplitBar } from "@/components/viz";
 import { Pill } from "@/components/bits";
 import { LoanCard, LOAN_COLORS, LIQUID, kas } from "@/components/credit-vault";
+import { BalanceSheet } from "@/components/balance-sheet";
 
 
 const pct = (x: number, d = 0) => `${(x * 100).toFixed(d)}%`;
@@ -49,6 +50,12 @@ export async function CreditVaultMobile({ l, m }: { l: CreditLedger; m: CreditMa
           <div className="m-panel">
             <MCard title="Where the NAV is">
               <SplitBar label="NAV by place" height={18} parts={[...f.loans.filter((x) => x.counts > 0).map((x) => ({ key: `l${x.slot}`, label: x.label, color: LOAN_COLORS[x.slot], share: x.counts })), { key: "liquid", label: "Liquid in the vault", color: LIQUID, share: Math.max(0, f.liquid) }]} />
+            </MCard>
+            <MCard title="Balance sheet">
+              <BalanceSheet fmt={(x) => kas(x)}
+                assets={[{ key: "liquid", label: "KAS in the vault", value: f.held, color: LIQUID, note: `incl. the ${kas(f.keep)} seed` }, ...f.loans.filter((x) => x.principal > 0).map((x) => ({ key: `l${x.slot}`, label: `Loan · ${x.label}`, value: x.counts, color: LOAN_COLORS[x.slot], note: `${kas(x.principal)} owed` }))]}
+                claims={[{ key: "holders", label: "Shareholders", value: f.nav, color: "#3987e5" }]}
+                below={{ label: "The vault's own seed", value: f.keep, note: "never shares" }} ratioLabel="Assets ÷ claims" />
             </MCard>
             <div className="loans">{f.loans.map((x) => <LoanCard key={x.slot} loan={x} m={m} color={LOAN_COLORS[x.slot]} />)}</div>
           </div>

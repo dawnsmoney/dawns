@@ -1521,3 +1521,23 @@ a.vlog-row:hover b{color:var(--ink)}
 .cl-field input[aria-invalid=true]{border-color:rgba(255,122,122,.6)}
 .cl-err{color:var(--crit)!important}
 .cl-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---- balance sheet: held vs owed ---- */
+.bs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.bs-side{display:grid;gap:12px;align-content:start;padding:18px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.025);min-width:0}
+.bs-h{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.bs-big{font:600 30px/1 var(--display)}
+.bs-rows{display:grid}
+.bs-row{display:grid;grid-template-columns:10px minmax(0,1fr) auto 44px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.bs-row:last-child{border-bottom:0}
+.bs-row i{width:10px;height:10px;border-radius:3px}
+.bs-row span{display:grid;min-width:0}
+.bs-row small{font-size:12px;color:var(--ink-3)}
+.bs-row b{font-weight:600;white-space:nowrap}
+.bs-row em{font-style:normal;text-align:right;color:var(--ink-2);font-weight:600;font-size:13px}
+.bs-below{display:grid;gap:4px;border-top:1px dashed var(--line-2);padding-top:10px}
+.bs-sum{grid-column:1 / -1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:16px 18px;border-radius:16px;background:rgba(255,255,255,.05)}
+.bs-sum div{display:grid;gap:4px}
+.bs-sum b{font:600 22px var(--display)}
+.bs-basis{grid-column:1 / -1;margin:0;font-size:13px;color:var(--ink-3)}
+@media (max-width:760px){.bs{grid-template-columns:minmax(0,1fr)}.bs-sum b{font-size:18px}}
