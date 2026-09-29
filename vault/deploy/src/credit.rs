@@ -778,8 +778,16 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
             let at = claimed(&c)?;
             let s = c.state;
             if slot >= SLOTS || s.principal[slot] == 0 { return Err("no open loan in that slot".into()); }
-            if at < s.due[slot] + c.m.grace { return Err(format!("not late past its grace until DAA {}", s.due[slot] + c.m.grace).into()); }
-            if s.marks[slot] != 0 { return Err("mark it to zero first (`credit mark`), or let the markdown schedule reach zero".into()); }
+            let mins = |daa: i64| (daa - at).max(0) / 600; // 10 DAA a second
+            let steps = (10_000 + c.m.step_bps - 1) / c.m.step_bps.max(1);
+            let zero_at = s.due[slot] + c.m.grace + (steps - 1) * c.m.period;
+            if at < s.due[slot] + c.m.grace {
+                return Err(format!("slot {slot} is not past its grace yet: that is DAA {} (about {} min from now, chain at {}). A loan can be written off only once it counts for nothing: the schedule reaches zero at DAA {zero_at} (about {} min), or the valuer marks it to zero after the grace (`credit mark`).",
+                    s.due[slot] + c.m.grace, mins(s.due[slot] + c.m.grace), c.daa, mins(zero_at)).into());
+            }
+            if s.marks[slot] != 0 {
+                return Err(format!("slot {slot} still counts {}: a write-off needs its mark at zero. The keeper writes the schedule's cap in as it falls (zero at DAA {zero_at}, about {} min), or the valuer can mark it to zero now: `credit mark - - 0`.", kas(s.marks[slot]), mins(zero_at)).into());
+            }
             let mut n = s;
             n.principal[slot] = 0;
             n.due[slot] = 0;
