@@ -155,6 +155,7 @@ function lendingView(k: KaskadState, book: PriceBook): { markets: MarketView[]; 
       utilization: m.utilization, supplyApy: m.supplyApy, borrowApr: m.borrowApr,
       ltv: m.ltv, liquidationThreshold: m.liquidationThreshold, frozen: m.frozen, paused: m.paused, borrowingEnabled: m.borrowingEnabled,
       supplyCap: m.supplyCap, borrowCap: m.borrowCap, aToken: m.aToken, decimals: m.decimals,
+      ...(m.incentives?.length ? { incentives: m.incentives } : {}),
     };
   });
   return {
@@ -297,6 +298,11 @@ export async function buildSnapshot(): Promise<Snapshot> {
         { n: "Price oracle", addr: kaskad.oracle, chain: "igra", up: "Per-asset sources", admin: "ACL", pause: "—", t: "info" },
         { n: "Pool data provider", addr: kaskad.dataProvider, chain: "igra", up: "Read-only", admin: "—", pause: "—", t: "good" },
       ];
+      const inc = kaskad.incentives;
+      const day = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
+      const tok = (x: number) => Math.round(x).toLocaleString("en-US");
+      if (inc) base.contracts.push({ n: "Rewards controller", addr: inc.controller, chain: "igra", up: "Read from each aToken", admin: inc.emissionManager ? `Emission manager ${inc.emissionManager.slice(0, 6)}…${inc.emissionManager.slice(-4)}` : "—", pause: "Sets emissions", t: "info" });
+      const wr = kaskad.wrapped;
       base.canVerify = [
         ["Supplier claims per market", "getReserveData().totalAToken", "On-chain"],
         ["Outstanding borrows per market", "variable + stable debt totals", "On-chain"],
@@ -304,12 +310,23 @@ export async function buildSnapshot(): Promise<Snapshot> {
         ["Rates, caps, LTVs, frozen and paused flags", "getReserveConfigurationData, getReserveCaps, getPaused", "On-chain"],
         ["Oracle price vs market price", "getAssetPrice vs DefiLlama coins API", "On-chain + API"],
         ["Who controls upgrades", "EIP-1967 implementation slot, owner and ACL admin code size", "On-chain"],
+        ...inc?.rewards.map((r): [string, string, string] => [`${r.symbol} incentives per market`,
+          r.perDay > 0 ? `${tok(r.perDay)} ${r.symbol} a day across both sides of every market, until ${day(r.end)} (getRewardsData on the live controller)` : `No ${r.symbol} is being emitted now (getRewardsData)`, "On-chain"]) ?? [],
+        ...inc?.rewards.filter((r) => r.perDay > 0).map((r): [string, string, string] => [`${r.symbol} funding of what is still to emit`,
+          `${r.payer === inc.controller ? "The controller holds" : "The rewards vault holds"} ${tok(r.funded)} ${r.symbol}: ${r.fundedDays != null ? `${r.fundedDays < 1 ? "under a day" : `${Math.round(r.fundedDays)} days`} at today's rate` : ""}, against ${tok(r.dueToEnd)} still to emit by ${day(r.end)}`, "On-chain"]) ?? [],
+        ...(wr ? [[`${wr.symbol} backing`, `${tok(wr.held)} native iKAS held by the ${wr.symbol} contract for ${tok(wr.supply)} ${wr.symbol} issued (${pct(wr.supply ? wr.held / wr.supply : 0, 2)})`, "On-chain"] as [string, string, string]] : []),
+        ...(bridge ? [["iKAS backing behind it", `${tok(bridge.lockedKas)} KAS locked at the bridge's L1 Entry address for ${tok(bridge.ikasSupply)} iKAS on Igra (${pct(bridge.coverage, 2)}); details on the Bridge page`, "On-chain + L1"] as [string, string, string]] : []),
       ];
       base.cannotVerify = [
-        ["KSKD incentive obligations", "Rewards emissions are not yet decoded by dawns"],
-        ["iKAS bridge backing at the account level", "Bridge-wide backing is on the Bridge page; per-deposit matching is not indexed"],
+        ...(inc ? [[`${inc.rewards.map((r) => r.symbol).join(", ") || "Rewards"} earned but not yet claimed`, "Accrues to each account separately; the total owed to past users needs a per-account index"] as [string, string]] : [["Token incentives", "The rewards controller did not answer on this read"] as [string, string]]),
+        ...(bridge ? [] : [["iKAS bridge backing", "The bridge read did not answer this time"] as [string, string]]),
         ["Bad debt at the account level", "Needs per-account positions from an indexer"],
       ];
+      for (const r of inc?.rewards ?? []) {
+        if (r.perDay > 0 && r.fundedDays != null && r.fundedDays < 14) signals.push({ key: `${it.slug}:incentive-runway:${r.symbol}`, t: r.fundedDays < 3 ? "crit" : "warn", p: it.slug, rule: "contract",
+          strong: `Kaskad's ${r.symbol} incentives are funded for ${r.fundedDays < 1 ? "less than a day" : `${Math.round(r.fundedDays)} days`}`,
+          rest: `. The rewards ${r.payer === inc!.controller ? "controller" : "vault"} holds ${tok(r.funded)} ${r.symbol}; markets emit ${tok(r.perDay)} a day until ${day(r.end)} (${tok(r.dueToEnd)} in all). Unless it is topped up, claims fail once it runs out. Native yield is unaffected.` });
+      }
 
       // signals
       for (const m of view.markets) {

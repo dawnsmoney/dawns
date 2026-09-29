@@ -18,6 +18,8 @@ export interface MarketView {
   utilization: number; supplyApy: number; borrowApr: number;
   ltv: number; liquidationThreshold: number; frozen: boolean; paused: boolean | null; borrowingEnabled: boolean;
   supplyCap: number; borrowCap: number; decimals: number;
+  /** token incentives, decoded from the rewards controller; never part of supplyApy / borrowApr */
+  incentives?: { symbol: string; supplyPerDay: number; borrowPerDay: number; supplyApr: number | null; borrowApr: number | null; end: number }[];
 }
 
 export interface PoolView {

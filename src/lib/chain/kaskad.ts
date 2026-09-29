@@ -6,6 +6,7 @@ import { clients, pool } from "./clients";
 export const KASKAD = {
   poolAddressesProvider: "0x4e718714BF19c7BBcf402ecA92f971B8a65c716D" as Address,
   pool: "0x1Fc4f91E99eFDC90c4B2B8F69fE0b4BFd819a330" as Address,
+  /** the controller named in the docs; the live one is read from each aToken (getIncentivesController) */
   rewardsController: "0xf8dbB86662B63c4a8cF5a88d9517c22bD78C73dB" as Address,
   governor: "0x89fB31943F1bF5f1FB0315283d915c9f4643f930" as Address,
   kaskadOracle: "0x43B93376ed3Cd2E95e576AD4b59222036493Dd1d" as Address,
@@ -31,7 +32,28 @@ const oracleAbi = parseAbi([
   "function BASE_CURRENCY_UNIT() view returns (uint256)",
   "function getSourceOfAsset(address) view returns (address)",
 ]);
-const erc20 = parseAbi(["function balanceOf(address) view returns (uint256)"]);
+const erc20 = parseAbi(["function balanceOf(address) view returns (uint256)", "function totalSupply() view returns (uint256)", "function symbol() view returns (string)", "function decimals() view returns (uint8)", "function allowance(address, address) view returns (uint256)"]);
+const incAbi = parseAbi([
+  "function getIncentivesController() view returns (address)",
+  "function getRewardsList() view returns (address[])",
+  "function getRewardsByAsset(address) view returns (address[])",
+  "function getRewardsData(address asset, address reward) view returns (uint256 index, uint256 emissionPerSecond, uint256 lastUpdateTimestamp, uint256 distributionEnd)",
+  "function getEmissionManager() view returns (address)",
+  "function getTransferStrategy(address) view returns (address)",
+  "function getRewardsVault() view returns (address)",
+]);
+
+/** A reward token the controller emits, and whether what it still has to pay is funded. */
+export interface KaskadReward {
+  token: Address; symbol: string; price: number | null;
+  perDay: number;              // tokens a day, all markets and both sides
+  end: number;                 // unix seconds, the latest distribution end
+  dueToEnd: number;            // tokens still to emit until each market's end at today's rates
+  funded: number;              // tokens the payer holds (and may pay out)
+  payer: Address;              // the controller itself, or the rewards vault behind a transfer strategy
+  fundedDays: number | null;   // how long `funded` lasts at today's rate
+}
+export interface KaskadIncentives { controller: Address; emissionManager: Address | null; rewards: KaskadReward[] }
 
 const EIP1967_IMPL = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
@@ -65,6 +87,8 @@ export interface KaskadMarket {
   paused: boolean | null;
   supplyCap: number;
   borrowCap: number;
+  /** token incentives, never part of supplyApy / borrowApr */
+  incentives?: { symbol: string; supplyPerDay: number; borrowPerDay: number; supplyApr: number | null; borrowApr: number | null; end: number }[];
 }
 
 export interface KaskadState {
@@ -78,6 +102,9 @@ export interface KaskadState {
   ownerIsContract: boolean;
   poolImplementation: Address | null;
   markets: KaskadMarket[];
+  incentives: KaskadIncentives | null;
+  /** the wrapped native token behind the KAS market: native iKAS held vs tokens issued */
+  wrapped: { symbol: string; token: Address; held: number; supply: number } | null;
   totals: { suppliedUsd: number; borrowedUsd: number; cashUsd: number; utilization: number; coverage: number };
 }
 
@@ -143,6 +170,11 @@ export async function readKaskad(fallbackPrice?: (symbol: string) => number | nu
   ).filter((m): m is KaskadMarket => m !== null);
 
   if (!markets.length) throw new Error("Kaskad: no reserves read");
+  const nowSec = Number(block.timestamp);
+  const [incentives, wrapped] = await Promise.all([
+    readIncentives(markets, nowSec, fallbackPrice).catch(() => null),
+    readWrapped(markets).catch(() => null),
+  ]);
   const suppliedUsd = markets.reduce((s, m) => s + m.suppliedUsd, 0);
   const borrowedUsd = markets.reduce((s, m) => s + m.borrowedUsd, 0);
   const cashUsd = markets.reduce((s, m) => s + m.cashUsd, 0);
@@ -154,6 +186,82 @@ export async function readKaskad(fallbackPrice?: (symbol: string) => number | nu
     ownerIsContract: !!ownerCode && ownerCode !== "0x",
     poolImplementation: impl,
     markets: markets.sort((a, b) => b.suppliedUsd - a.suppliedUsd),
+    incentives, wrapped,
     totals: { suppliedUsd, borrowedUsd, cashUsd, utilization: suppliedUsd ? borrowedUsd / suppliedUsd : 0, coverage: suppliedUsd ? (cashUsd + borrowedUsd) / suppliedUsd : 0 },
   };
+}
+
+const DAY = 86_400;
+const units = (x: bigint, dec: number) => Number(x / BigInt(10) ** BigInt(Math.max(0, dec - 6))) / 10 ** Math.min(dec, 6);
+
+/**
+ * Token incentives, decoded from the live RewardsController (the one every aToken
+ * points at): emission per second and end per market side, and what the payer
+ * holds against what is still to be emitted. Mutates `markets` with per-market
+ * figures; returns the per-token totals.
+ */
+async function readIncentives(markets: KaskadMarket[], nowSec: number, price?: (symbol: string) => number | null): Promise<KaskadIncentives | null> {
+  const c = clients.igra;
+  const rc = await c.readContract({ address: markets[0].aToken, abi: incAbi, functionName: "getIncentivesController" });
+  if (!rc || /^0x0{40}$/i.test(rc)) return null;
+  const [list, em] = await Promise.all([
+    c.readContract({ address: rc, abi: incAbi, functionName: "getRewardsList" }),
+    c.readContract({ address: rc, abi: incAbi, functionName: "getEmissionManager" }).catch(() => null),
+  ]);
+  const rewards: KaskadReward[] = [];
+  for (const token of list) {
+    const [symbol, decimals] = await Promise.all([
+      c.readContract({ address: token, abi: erc20, functionName: "symbol" }),
+      c.readContract({ address: token, abi: erc20, functionName: "decimals" }).then(Number),
+    ]);
+    const px = price?.(symbol) ?? null;
+    // who pays: the controller itself, or a vault behind a transfer strategy (the lesser of its balance and allowance)
+    const strategy = await c.readContract({ address: rc, abi: incAbi, functionName: "getTransferStrategy", args: [token] }).catch(() => null);
+    let payer: Address = rc, funded: number;
+    const vault = strategy && !/^0x0{40}$/i.test(strategy) ? await c.readContract({ address: strategy, abi: incAbi, functionName: "getRewardsVault" }).catch(() => null) : null;
+    if (vault && strategy) {
+      payer = vault;
+      const [bal, allow] = await Promise.all([
+        c.readContract({ address: token, abi: erc20, functionName: "balanceOf", args: [vault] }),
+        c.readContract({ address: token, abi: erc20, functionName: "allowance", args: [vault, strategy] }),
+      ]);
+      funded = units(bal < allow ? bal : allow, decimals);
+    } else {
+      funded = units(await c.readContract({ address: token, abi: erc20, functionName: "balanceOf", args: [rc] }), decimals);
+    }
+    let perSec = 0, due = 0, end = 0;
+    await pool(markets, 4, async (m) => {
+      const [s, b] = await Promise.all([m.aToken, m.debtToken].map((a) => c.readContract({ address: a, abi: incAbi, functionName: "getRewardsData", args: [a, token] }).catch(() => null)));
+      const side = (d: typeof s) => {
+        if (!d) return { perSec: 0, end: 0 };
+        const e = Number(d[3]);
+        return { perSec: e > nowSec ? units(d[1], decimals) : 0, end: e };
+      };
+      const S = side(s), B = side(b);
+      perSec += S.perSec + B.perSec;
+      due += S.perSec * Math.max(0, S.end - nowSec) + B.perSec * Math.max(0, B.end - nowSec);
+      end = Math.max(end, S.end, B.end);
+      const yr = 365 * DAY;
+      (m.incentives ??= []).push({
+        symbol, supplyPerDay: S.perSec * DAY, borrowPerDay: B.perSec * DAY, end: Math.max(S.end, B.end),
+        supplyApr: px != null && m.suppliedUsd > 0 ? (S.perSec * yr * px) / m.suppliedUsd : null,
+        borrowApr: px != null && m.borrowedUsd > 0 ? (B.perSec * yr * px) / m.borrowedUsd : null,
+      });
+      return null;
+    });
+    rewards.push({ token, symbol, price: px, perDay: perSec * DAY, end, dueToEnd: due, funded, payer, fundedDays: perSec > 0 ? funded / (perSec * DAY) : null });
+  }
+  return { controller: rc, emissionManager: em, rewards };
+}
+
+/** The KAS market holds WiKAS: native iKAS locked in the wrapper against WiKAS issued. */
+async function readWrapped(markets: KaskadMarket[]) {
+  const m = markets.find((x) => /^wikas$/i.test(x.symbol));
+  if (!m) return null;
+  const c = clients.igra;
+  const [held, supply] = await Promise.all([
+    c.getBalance({ address: m.asset }),
+    c.readContract({ address: m.asset, abi: erc20, functionName: "totalSupply" }),
+  ]);
+  return { symbol: m.symbol, token: m.asset, held: units(held, 18), supply: units(supply, 18) };
 }

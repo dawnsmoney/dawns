@@ -31,7 +31,9 @@ export function buildOpportunities(protocols: ProtocolView[], own: OwnData | nul
         else if (!m.oracleOk) notes.push("Kaskad's price oracle reverts for this asset.");
         else if (m.oracleDeviation != null && Math.abs(m.oracleDeviation) >= 0.02) notes.push(`Oracle price is ${pct(Math.abs(m.oracleDeviation))} off market.`);
         if (!p.lending.aclAdminIsContract) notes.push("The protocol admin is a single key.");
-        notes.push("KSKD incentives are not included.");
+        const inc = m.incentives?.filter((x) => x.supplyPerDay > 0) ?? [];
+        if (inc.length) for (const x of inc) notes.push(`${x.symbol} incentives: ${Math.round(x.supplyPerDay).toLocaleString("en-US")} ${x.symbol} a day to this market's suppliers${x.supplyApr != null ? `, ${pct(x.supplyApr, 1)} a year at the ${x.symbol} market price` : ""}, until ${new Date(x.end * 1000).toISOString().slice(0, 10)}. Paid in ${x.symbol}, never added to yield.`);
+        else notes.push("No token incentives on this market now.");
         out.push({
           id: `${p.id}:${m.symbol}`, kind: "supply", protocol: p.id, pname: p.name, chain: "igra",
           name: `Supply ${m.symbol}`, assets: [m.symbol],
