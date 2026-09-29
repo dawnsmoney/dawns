@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Banner } from "@/components/Banner";
 import { Pill } from "@/components/bits";
-import { SplitBar, Ring, CapBars, CopyId } from "@/components/viz";
+import { SplitBar, CapBars, CopyId } from "@/components/viz";
 import { NavPanel } from "@/components/nav-panel";
 import { Basis, TokenFamily, type Stamp } from "@/components/research";
-import { SharePriceChart } from "@/components/share-chart";
-import { sharePoints } from "@/lib/vaults/share-history";
+import { SharePriceChart, HoldingGrid, LiquidityChart } from "@/components/share-chart";
+import { sharePoints, liquidPoints } from "@/lib/vaults/share-history";
 import { getNav, navFigures, readNavLive, SOMPI, FIRST_PRICE } from "@/lib/vaults/nav";
 import { VaultProof } from "@/components/vault-proof";
 
@@ -94,7 +94,6 @@ export default async function NavVaultPage() {
   const since = f.price / (FIRST_PRICE / SOMPI) - 1;
   const lastAt = (l.moves[l.moves.length - 1]?.at ?? l.createdAt) * 1000;
   const vs: Stamp = live.matches ? { kind: "onchain", by: "the vault's coin matches this ledger", at: lastAt } : { kind: "reported", by: "the operator's ledger", at: lastAt };
-  const payable = f.nav > 0 ? Math.min(1, Math.max(0, f.liquid / f.nav)) : 1;
   const dests = m.destinations;
   const name = (i: number | undefined) => (i != null ? dests[i]?.label.replace(" (test wallet)", "") ?? "" : "");
   const log = [...l.moves].reverse().map((x) => {
@@ -112,6 +111,8 @@ export default async function NavVaultPage() {
   const firstDep = l.moves.findIndex((x) => x.kind === "deposit");
   const seedJump = firstDep >= 0 && l.moves[firstDep].sharesAfter > 0 && l.moves[firstDep].navAfter / l.moves[firstDep].sharesAfter > FIRST_PRICE * 1.005;
   const history = sharePoints(l.createdAt, l.moves, FIRST_PRICE / SOMPI, f.price, (x) => { const e = log.find((y) => y.key === x.txid); return { title: e?.title ?? x.kind, amt: e?.amt || undefined }; });
+  const liquidity = liquidPoints(l.moves, m.minKeepSompi, { liquid: f.liquid, nav: f.nav }, (x) => log.find((y) => y.key === x.txid)?.title ?? x.kind);
+  const redeems = l.moves.filter((x) => x.kind === "redeem").length;
   return (
     <>
       <Banner short crumb={[{ href: "/vaults", label: "Vaults" }, { label: "NAV · testnet-10" }]} title="NAV vault"
@@ -143,6 +144,18 @@ export default async function NavVaultPage() {
         </div>
 
         <div className="card">
+          <div className="c-head"><h3>What holders made</h3><span className="tag">every entry and exit pair</span></div>
+          <HoldingGrid points={history} exitFeeBps={m.exitFeeBps} />
+          <p className="foot" style={{ marginBottom: 0 }}>Each cell is one holder who came in at the start of a step and left at the end of another, at the share price then, less the exit fee that stays with the others. Not a forecast: it is what the recorded price did.</p>
+        </div>
+
+        <div className="card">
+          <div className="c-head"><h3>Could holders leave?</h3><span className="tag">cash payable ÷ NAV, after every move</span></div>
+          <LiquidityChart points={liquidity} floor={m.reserveFloorBps / 1e4} redeems={redeems} paid={kas(f.paidOut)} />
+          <p className="foot" style={{ marginBottom: 0 }}>There is no withdrawal queue to time: a withdrawal is one transaction the network pays at once or refuses. What decides it is the cash in the vault, shown here. The allocator can&apos;t send capital out below the reserve floor.</p>
+        </div>
+
+        <div className="card">
           <div className="c-head"><h3>Tokens and coins</h3><span className="tag">everything this vault is made of</span></div>
           <TokenFamily caption="Outstanding claims and the coins behind them" rows={[
             { letter: "S", color: "#3987e5", name: "Share token", role: `KCC-20 bound to the vault · ${f.shares.toLocaleString("en-US")} shares in ${f.liveNotes} note${f.liveNotes === 1 ? "" : "s"} · at ${f.price.toFixed(6)} KAS`, amount: kas(f.nav), id: l.shareCovid, main: true },
@@ -164,12 +177,8 @@ export default async function NavVaultPage() {
             <CapBars rows={m.destinations.map((d, i) => ({ key: d.address, label: d.label.replace(" (test wallet)", ""), sub: short(d.address), share: valueTotal ? (f.cost[i] ?? 0) / valueTotal : 0, cap: d.capBps / 1e4, display: `${pct(valueTotal ? (f.cost[i] ?? 0) / valueTotal : 0, 1)} / ${pct(d.capBps / 1e4)}`, color: COLORS[i] }))} />
           </div>
           <div className="card">
-            <div className="c-head"><h3>Liquidity</h3><span className="tag">what can leave now</span></div>
-            <div className="rings">
-              <Ring value={payable} label="Payable now" sub="share of NAV held liquid" color={LIQUID} />
-              <Ring value={m.reserveFloorBps / 1e4} label="Reserve floor" sub="the allocator can't go below" color="#199e70" />
-            </div>
-            <dl className="kv" style={{ marginTop: 14 }}>
+            <div className="c-head"><h3>Entry and exit terms</h3><span className="tag">set in the mandate</span></div>
+<dl className="kv">
               <dt>Exit fee</dt><dd>{m.exitFeeBps / 100}% of the payout, kept for remaining holders</dd>
               <dt>Minimum deposit</dt><dd>{kas(m.minDepositSompi / SOMPI)} after the note&apos;s {kas(m.noteValueSompi / SOMPI)} and the fee</dd>
               <dt>Mark step</dt><dd>at most {m.maxMarkStepBps / 100}% per position per period</dd>

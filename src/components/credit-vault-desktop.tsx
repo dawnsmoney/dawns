@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Banner } from "@/components/Banner";
 import { Pill } from "@/components/bits";
-import { SplitBar, Ring, CopyId } from "@/components/viz";
+import { SplitBar, CopyId } from "@/components/viz";
 import { NavPanel } from "@/components/nav-panel";
-import { SharePriceChart } from "@/components/share-chart";
+import { SharePriceChart, HoldingGrid, LiquidityChart } from "@/components/share-chart";
 import { BalanceSheet } from "@/components/balance-sheet";
 import { Basis, TokenFamily, type Stamp } from "@/components/research";
 import { VaultProof } from "@/components/vault-proof";
-import { sharePoints } from "@/lib/vaults/share-history";
+import { sharePoints, liquidPoints } from "@/lib/vaults/share-history";
 import { LoanCard, LOAN_COLORS, LIQUID, CREDIT_STEPS, kas, dur } from "@/components/credit-vault";
 import { creditFigures, readCreditLive, SOMPI, FIRST_PRICE, DAA_PER_SEC, type CreditLedger, type CreditMandateDoc } from "@/lib/vaults/credit";
 
@@ -24,7 +24,6 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
   const since = f.price / (FIRST_PRICE / SOMPI) - 1;
   const lastAt = (l.moves[l.moves.length - 1]?.at ?? l.createdAt) * 1000;
   const vs: Stamp = live.matches ? { kind: "onchain", by: "the vault's coin matches this ledger", at: lastAt } : { kind: "reported", by: "the operator's ledger", at: lastAt };
-  const payable = f.nav > 0 ? Math.min(1, Math.max(0, f.liquid / f.nav)) : 1;
   const name = (i: number | undefined) => (i != null ? f.loans[i]?.label ?? "" : "");
   const log = [...l.moves].reverse().map((x) => {
     const t = x.kind === "deposit" ? { c: "#199e70", title: `Deposit · ${(x.shares ?? 0).toLocaleString("en-US")} shares minted`, amt: `+${kas((x.paid ?? 0) / SOMPI)}` }
@@ -43,6 +42,8 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
   const firstDep = l.moves.findIndex((x) => x.kind === "deposit");
   const seedJump = firstDep >= 0 && l.moves[firstDep].sharesAfter > 0 && l.moves[firstDep].navAfter / l.moves[firstDep].sharesAfter > FIRST_PRICE * 1.005;
   const history = sharePoints(l.createdAt, l.moves, FIRST_PRICE / SOMPI, f.price, (x) => { const e = log.find((y) => y.key === x.txid); return { title: e?.title ?? x.kind, amt: e?.amt || undefined }; });
+  const liquidity = liquidPoints(l.moves, m.minKeepSompi, { liquid: f.liquid, nav: f.nav }, (x) => log.find((y) => y.key === x.txid)?.title ?? x.kind);
+  const redeems = l.moves.filter((x) => x.kind === "redeem").length;
   return (
     <>
       <Banner short crumb={[{ href: "/vaults", label: "Vaults" }, { label: reference ? "Credit · testnet-10" : `${m.name} · testnet-10` }]} title={reference ? "Credit vault" : m.name}
@@ -103,6 +104,18 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
         </div>
 
         <div className="card">
+          <div className="c-head"><h3>What holders made</h3><span className="tag">every entry and exit pair</span></div>
+          <HoldingGrid points={history} exitFeeBps={m.exitFeeBps} />
+          <p className="foot" style={{ marginBottom: 0 }}>Each cell is one holder who came in at the start of a step and left at the end of another, at the share price then, less the exit fee that stays with the others. Not a forecast: it is what the recorded price did.</p>
+        </div>
+
+        <div className="card">
+          <div className="c-head"><h3>Could holders leave?</h3><span className="tag">cash payable ÷ NAV, after every move</span></div>
+          <LiquidityChart points={liquidity} floor={m.reserveFloorBps / 1e4} redeems={redeems} paid={kas(f.paidOut)} />
+          <p className="foot" style={{ marginBottom: 0 }}>There is no withdrawal queue to time: a withdrawal is one transaction the network pays at once or refuses. What decides it is the cash in the vault, shown here. Loaned KAS comes back only when borrowers repay; no loan may take cash below the reserve floor.</p>
+        </div>
+
+        <div className="card">
           <div className="c-head"><h3>Loans</h3><span className="tag">one per slot · read at DAA {f.at.toLocaleString("en-US")}</span></div>
           <div className="loans">{f.loans.map((x) => <LoanCard key={x.slot} loan={x} m={m} color={LOAN_COLORS[x.slot]} />)}</div>
           <p className="foot" style={{ marginBottom: 0 }}>A loan counts at the lower of the valuer&apos;s mark and the schedule: principal plus the contract interest while current; after {dur(m.graceDaa / DAA_PER_SEC)} of grace, {m.markdownStepBps / 100}% of principal less for every {dur(m.markdownPeriodDaa / DAA_PER_SEC)} late. Every deposit and withdrawal is priced this way by the covenant itself.</p>
@@ -113,15 +126,7 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
           <NavPanel vault={l.covenantId} template={l.accountTemplate} price={f.price} minDeposit={m.minDepositSompi / SOMPI} noteValue={m.noteValueSompi / SOMPI} maxFee={m.maxFeeSompi / SOMPI} exitFeeBps={m.exitFeeBps} halted={l.state.halted} maturityOpen={maturityOpen} />
         </div>
 
-        <div className="grid gA">
-          <div className="card">
-            <div className="c-head"><h3>Liquidity</h3><span className="tag">what can leave now</span></div>
-            <div className="rings">
-              <Ring value={payable} label="Payable now" sub="share of NAV held liquid" color={LIQUID} />
-              <Ring value={m.reserveFloorBps / 1e4} label="Reserve floor" sub="no loan may go below it" color="#199e70" />
-            </div>
-            <p className="foot" style={{ marginBottom: 0 }}>Loaned KAS is back only when borrowers repay. A withdrawal larger than the liquid part waits for repayments.</p>
-          </div>
+        <div>
           <div className="card">
             <div className="c-head"><h3>What is enforced, what is trusted</h3></div>
             <ul className="findings">
