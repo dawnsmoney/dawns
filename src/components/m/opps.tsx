@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AssetCoin, Pill } from "../bits";
 import { usd, pct } from "@/lib/format";
 import type { Opportunity } from "@/lib/types";
+import { takeHref } from "@/lib/act";
 import type { Trend } from "../opportunities";
 import { Tags } from "../intel";
 
@@ -31,7 +32,7 @@ export function MOpp({ o, t }: { o: Opportunity; t?: Trend }) {
           <div><dt>Stability</dt><dd>{o.kind === "supply" ? (o.apyRange ? `${pct(o.apyRange[0], 1)} – ${pct(o.apyRange[1], 1)} over ${hrs(o.rangeHours)}` : "building history") : o.ilAtMove != null ? `${pct(o.priceMove ?? 0, 0)} price move · trails holding by ${pct(o.ilAtMove, 1)}` : "building history"}</dd></div>
         </dl>
         <ul className="m-opp-notes">{o.notes.map((n) => <li key={n}>{n}</li>)}{t?.tags.filter((x) => x.key !== "new").map((x) => <li key={x.key}>Dawns view · {x.text}: {x.why}.</li>)}</ul>
-        <Link className="m-btn ghost" href={`/protocols/${o.protocol}`}>{o.pname} health</Link>
+        <div style={{ display: "flex", gap: 8 }}><Link className="m-btn" href={takeHref(o.id)}>Use it</Link><Link className="m-btn ghost" href={`/protocols/${o.protocol}`}>{o.pname} health</Link></div>
       </div>
     </details>
   );

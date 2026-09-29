@@ -72,8 +72,9 @@ async function walletConnect(): Promise<Eip1193> {
   if (wcProvider) return wcProvider;
   const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
   const p = await EthereumProvider.init({
-    projectId: WC_PROJECT, showQrModal: true, optionalChains: [1],
-    optionalMethods: ["personal_sign", "eth_requestAccounts", "eth_accounts"],
+    projectId: WC_PROJECT, showQrModal: true, optionalChains: [1, 38833, 202555],
+    rpcMap: { 38833: "https://rpc.igralabs.com:8545", 202555: "https://evmrpc.kasplex.org" },
+    optionalMethods: ["personal_sign", "eth_requestAccounts", "eth_accounts", "eth_chainId", "eth_sendTransaction", "wallet_switchEthereumChain", "wallet_addEthereumChain"],
     metadata: { name: "dawns.money", description: "The capital intelligence layer for Kaspa DeFi", url: window.location.origin, icons: [`${window.location.origin}/icon.svg`] },
   });
   if (!p.connected) await p.connect();
@@ -123,6 +124,17 @@ export async function connectWith(key: string): Promise<{ kind: "kaspa" | "evm";
   if (!address) throw new Error("The wallet did not share an address.");
   return { kind, address, sign };
 }
+
+/** An EVM wallet to send transactions with (Use it on an opportunity). */
+export async function evmProvider(key: string): Promise<{ provider: Eip1193; address: string }> {
+  const prov = key === "walletconnect" ? await walletConnect() : key === "metamask-sdk" ? await metamaskSdk()
+    : key.startsWith("6963:") ? providers.find((p) => `6963:${p.info.uuid}` === key)?.provider : window.ethereum;
+  if (!prov) throw new Error("No EVM wallet found in this browser.");
+  const address = ((await prov.request({ method: "eth_requestAccounts" })) as string[])[0];
+  if (!address) throw new Error("The wallet did not share an address.");
+  return { provider: prov, address };
+}
+export type { Eip1193 };
 
 export type SignStep = "connect" | "sign" | "verify";
 /** Connect a wallet, sign dawns' one-time message, and start a session. `onStep` reports progress. */

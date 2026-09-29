@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Fragment, useState } from "react";
 import { AssetCoin, Pill } from "./bits";
 import { usd, pct } from "@/lib/format";
+import { takeHref } from "@/lib/act";
 import type { FarmView, InfinityView, Opportunity, Status } from "@/lib/types";
 import type { Tag } from "@/lib/intel";
 import { Tags } from "./intel";
@@ -103,6 +104,10 @@ export function OpportunityTable({ rows, known: knownIds = [], trend = {}, filte
                         <li>Assets: {o.assets.map((a, i) => { const id = o.assetIds[i]; return <Fragment key={a + i}>{i ? " · " : ""}{id && known.has(id) ? <Link href={pathOf(id)}>{a} profile</Link> : a}</Fragment>; })}</li>
                       )}
                     </ul>
+                    <div style={{ display: "flex", gap: 10, margin: "12px 0 4px" }}>
+                      <Link className="btn sun sm" href={takeHref(o.id)}>Use it →</Link>
+                      <Link className="btn ghost sm" href={`/protocols/${o.protocol}`}>{o.pname} health</Link>
+                    </div>
                   </td>
                 </tr>
               )}
