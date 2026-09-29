@@ -53,6 +53,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 mod nav;
+mod credit;
 
 type Res<T> = Result<T, Box<dyn Error>>;
 
@@ -871,6 +872,7 @@ async fn run() -> Res<()> {
         }
 
         "nav" => nav::run_nav(&args).await?,
+        "credit" => credit::run_credit(&args).await?,
 
         _ => return Err(format!("unknown command {cmd}").into()),
     }

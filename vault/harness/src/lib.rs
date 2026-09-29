@@ -189,7 +189,10 @@ pub fn execute(tx: &Transaction, entries: Vec<UtxoEntry>, input_idx: usize) -> R
         EngineCtx::new(&sig_cache).with_reused(&reused).with_covenants_ctx(&cov_ctx),
         EngineFlags { covenants_enabled: true, sigop_script_units: 0.into() },
     );
-    vm.execute()
+    let r = vm.execute();
+    // DAWNS_UNITS=1: report script units per input (signatures priced at 0 here)
+    if r.is_ok() && std::env::var("DAWNS_UNITS").is_ok() { eprintln!("units input {input_idx}: {}", vm.used_script_units().0); }
+    r
 }
 
 /// 64-byte Schnorr + SIG_HASH_ALL = 65 bytes, over the covenant-aware sighash.
@@ -225,3 +228,4 @@ pub fn new_tx(inputs: Vec<TransactionInput>, outputs: Vec<TransactionOutput>, lo
     Transaction::new(1, inputs, outputs, lock_time, Default::default(), 0, vec![])
 }
 pub mod nav;
+pub mod credit;

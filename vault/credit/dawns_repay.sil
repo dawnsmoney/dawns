@@ -1,0 +1,32 @@
+pragma silverscript ^0.1.0;
+
+// Dawns — loan repayment account (TESTNET-10 ONLY, NOT AUDITED)
+//
+// The address a borrower pays a credit vault back to: a plain P2SH address any
+// wallet can pay. Its state says which vault and which loan slot the money is
+// for. The coin can only go one way:
+//   enter   : into its own vault, in the vault's `repay` shape (2 inputs,
+//             1 output, the vault at input 0, this coin at input 1). The vault
+//             reads the slot (template-authenticated) and books the repayment.
+//             No key is needed, so nobody (not the allocator, not dawns) can
+//             redirect a repayment: it lands in the vault or stays here.
+//   reclaim : the borrower, before it is swept (a payment not yet swept is not
+//             yet a repayment; the vault books only what arrives)
+contract DawnsRepay(byte[32] initOwner, byte[32] initVault, int initSlot) {
+    byte[32] owner = initOwner;
+    byte[32] vault = initVault;
+    int slot = initSlot;
+
+    entry enter() {
+        require(OpInputCovenantId(0) == vault);
+        require(this.activeInputIndex == 1);
+        require(tx.inputs.length == 2);
+        require(tx.outputs.length == 1);
+        require(slot >= 0);
+        require(slot <= 2);
+    }
+
+    entry reclaim(sig s) {
+        require(checkSig(s, pubkey(owner)));
+    }
+}

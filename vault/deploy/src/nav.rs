@@ -28,26 +28,26 @@ static NAV_VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 fn nav_source() -> &'static str {
     match NAV_VERSION.get().map(String::as_str) { Some("dawns-nav/1") => NAV_V1, _ => NAV_V11 }
 }
-const KCC_SOURCE: &str = include_str!("../../nav/kcc20.sil");
-const ACC_SOURCE: &str = include_str!("../../nav/dawns_account.sil");
+pub(crate) const KCC_SOURCE: &str = include_str!("../../nav/kcc20.sil");
+pub(crate) const ACC_SOURCE: &str = include_str!("../../nav/dawns_account.sil");
 const NAV_STANDARD: &str = "dawns-nav/1";
-const MAX_COV: i64 = 2;
-const ID_SCRIPT_HASH: u8 = 0x01;
-const ID_COVENANT: u8 = 0x02;
-const FIRST_PRICE: i64 = 1_000_000;
+pub(crate) const MAX_COV: i64 = 2;
+pub(crate) const ID_SCRIPT_HASH: u8 = 0x01;
+pub(crate) const ID_COVENANT: u8 = 0x02;
+pub(crate) const FIRST_PRICE: i64 = 1_000_000;
 /// Compute budgets (×10,000 script units), from the harness's budget_report at
 /// the real signature price: vault deposit 115k / redeem 109k units without a
 /// signature, signed paths add one checksig (100k); token inputs 13–20k,
 /// accounts under 1k. Headroom ~25%; budget is charged as mass.
 const NAV_BUDGET: u16 = 28;
-const KCC_BUDGET: u16 = 3;
-const ACC_BUDGET: u16 = 1;
+pub(crate) const KCC_BUDGET: u16 = 3;
+pub(crate) const ACC_BUDGET: u16 = 1;
 /// Vault-path transactions carry a ~10.5 KB covenant script; the node asks
 /// 100 sompi per gram of transient mass (~2.5 M sompi for the token tx), so
 /// every vault move pays the mandate's maxFee (0.05 KAS on testnet), the most
 /// the covenant allows. Plain P2PK transactions keep the small FEE.
 /// KAS the share token's minter branch carries (paid once, at token creation).
-const MINTER_DUST: i64 = KAS;
+pub(crate) const MINTER_DUST: i64 = KAS;
 
 // ---------------------------------------------------------------------------
 // mandate
@@ -139,22 +139,22 @@ impl Nav {
     fn nav(&self, held: i64, m: &NavMandate) -> i64 { held - m.min_keep + self.marks.iter().sum::<i64>() }
 }
 
-fn template_parts(c: &CompiledContract) -> (Vec<u8>, Vec<u8>, [u8; 32]) {
+pub(crate) fn template_parts(c: &CompiledContract) -> (Vec<u8>, Vec<u8>, [u8; 32]) {
     let l = c.state_layout;
     (c.bytecode[..l.start].to_vec(), c.bytecode[l.start + l.len..].to_vec(), c.template_hash())
 }
-fn compile_kcc(owner: &[u8], id_type: u8, amount: i64, is_minter: bool) -> Res<CompiledContract<'static>> {
+pub(crate) fn compile_kcc(owner: &[u8], id_type: u8, amount: i64, is_minter: bool) -> Res<CompiledContract<'static>> {
     compile_contract(KCC_SOURCE, &[Expr::bytes(owner.to_vec()), Expr::int(amount), Expr::byte(id_type), Expr::bool(is_minter), Expr::int(MAX_COV), Expr::int(MAX_COV)], CompileOptions::default())
         .map_err(|e| format!("kcc20: {e:?}").into())
 }
-fn compile_account(owner: [u8; 32], vault: &[u8], kind: i64) -> Res<CompiledContract<'static>> {
+pub(crate) fn compile_account(owner: [u8; 32], vault: &[u8], kind: i64) -> Res<CompiledContract<'static>> {
     compile_contract(ACC_SOURCE, &[Expr::bytes(owner.to_vec()), Expr::bytes(vault.to_vec()), Expr::int(kind)], CompileOptions::default())
         .map_err(|e| format!("account: {e:?}").into())
 }
-fn kcc_template() -> Res<(Vec<u8>, Vec<u8>, [u8; 32])> { Ok(template_parts(&compile_kcc(&[0; 32], ID_COVENANT, 0, true)?)) }
-fn account_template() -> Res<(Vec<u8>, Vec<u8>, [u8; 32])> { Ok(template_parts(&compile_account([0; 32], &[0; 32], 0)?)) }
-fn redeem_hash(owner: [u8; 32], vault: &[u8]) -> Res<[u8; 32]> { Ok(b2b(&compile_account(owner, vault, 1)?.bytecode)) }
-fn p2sh_addr(c: &CompiledContract<'_>) -> Res<Address> { Ok(extract_script_pub_key_address(&pay_to_script_hash_script(&c.bytecode), Prefix::Testnet)?) }
+pub(crate) fn kcc_template() -> Res<(Vec<u8>, Vec<u8>, [u8; 32])> { Ok(template_parts(&compile_kcc(&[0; 32], ID_COVENANT, 0, true)?)) }
+pub(crate) fn account_template() -> Res<(Vec<u8>, Vec<u8>, [u8; 32])> { Ok(template_parts(&compile_account([0; 32], &[0; 32], 0)?)) }
+pub(crate) fn redeem_hash(owner: [u8; 32], vault: &[u8]) -> Res<[u8; 32]> { Ok(b2b(&compile_account(owner, vault, 1)?.bytecode)) }
+pub(crate) fn p2sh_addr(c: &CompiledContract<'_>) -> Res<Address> { Ok(extract_script_pub_key_address(&pay_to_script_hash_script(&c.bytecode), Prefix::Testnet)?) }
 
 fn nav_ctor(m: &NavMandate, s: &Nav) -> Res<Vec<Expr<'static>>> {
     let (kp, ks, kh) = kcc_template()?;
@@ -193,19 +193,19 @@ fn nav_state(s: &Nav) -> Expr<'static> {
         ("epochIndex", Expr::int(s.epoch_index)), ("epochSpent", Expr::int(s.epoch_spent)), ("markEpoch", Expr::int(s.mark_epoch)), ("halted", Expr::bool(s.halted)),
     ])
 }
-fn kcc_states(v: Vec<(Vec<u8>, u8, i64, bool)>) -> Expr<'static> {
+pub(crate) fn kcc_states(v: Vec<(Vec<u8>, u8, i64, bool)>) -> Expr<'static> {
     Expr::array(
         silverscript_lang::ast::parse_type_ref("State[]").expect("type"),
         v.into_iter().map(|(o, t, a, mi)| struct_object("State", vec![("ownerIdentifier", Expr::bytes(o)), ("identifierType", Expr::byte(t)), ("amount", Expr::int(a)), ("isMinter", Expr::bool(mi))])).collect(),
     )
 }
-fn empty_sigs() -> Expr<'static> { Expr::array(silverscript_lang::ast::parse_type_ref("sig[]").expect("type"), vec![]) }
-fn leader_sigscript(c: &CompiledContract<'_>, f: &str, args: Vec<Expr<'_>>) -> Res<Vec<u8>> {
+pub(crate) fn empty_sigs() -> Expr<'static> { Expr::array(silverscript_lang::ast::parse_type_ref("sig[]").expect("type"), vec![]) }
+pub(crate) fn leader_sigscript(c: &CompiledContract<'_>, f: &str, args: Vec<Expr<'_>>) -> Res<Vec<u8>> {
     let mut s = c.build_sig_script_for_covenant_decl(f, args, CovenantDeclCallOptions { is_leader: true }).map_err(|e| format!("{f} leader sigscript: {e:?}"))?;
     s.extend_from_slice(&push_redeem(&c.bytecode)?);
     Ok(s)
 }
-fn cov_out(c: &CompiledContract<'_>, value: i64, auth: u16, cov: Hash) -> TransactionOutput {
+pub(crate) fn cov_out(c: &CompiledContract<'_>, value: i64, auth: u16, cov: Hash) -> TransactionOutput {
     TransactionOutput { value: value as u64, script_public_key: pay_to_script_hash_script(&c.bytecode), covenant: Some(CovenantBinding { authorizing_input: auth, covenant_id: cov }) }
 }
 
@@ -310,7 +310,7 @@ fn claimed_nav(c: &NCtx) -> Res<i64> {
     Ok(d)
 }
 
-fn price_up(nav: i64, shares: i64) -> i64 { if shares > 0 { (nav + shares - 1) / shares } else { FIRST_PRICE } }
+pub(crate) fn price_up(nav: i64, shares: i64) -> i64 { if shares > 0 { (nav + shares - 1) / shares } else { FIRST_PRICE } }
 
 async fn minter_coin(c: &NCtx) -> Res<(Coin, CompiledContract<'static>)> {
     let sc = c.led.share_cov()?;
@@ -324,13 +324,13 @@ async fn minter_coin(c: &NCtx) -> Res<(Coin, CompiledContract<'static>)> {
 // ---------------------------------------------------------------------------
 // accounts
 // ---------------------------------------------------------------------------
-fn owner_of(addr: &str) -> Res<[u8; 32]> { xonly_of(&parse_addr(addr)?) }
-fn accounts_of(owner: [u8; 32], cov: &Hash) -> Res<(Address, Address, CompiledContract<'static>, CompiledContract<'static>)> {
+pub(crate) fn owner_of(addr: &str) -> Res<[u8; 32]> { xonly_of(&parse_addr(addr)?) }
+pub(crate) fn accounts_of(owner: [u8; 32], cov: &Hash) -> Res<(Address, Address, CompiledContract<'static>, CompiledContract<'static>)> {
     let d = compile_account(owner, &cov.as_bytes(), 0)?;
     let r = compile_account(owner, &cov.as_bytes(), 1)?;
     Ok((p2sh_addr(&d)?, p2sh_addr(&r)?, d, r))
 }
-fn registered(cov: &Hash) -> Vec<String> {
+pub(crate) fn registered(cov: &Hash) -> Vec<String> {
     let mut out: Vec<String> = std::fs::read_to_string("nav-accounts.txt").unwrap_or_default().lines().map(|l| l.trim().to_string()).filter(|l| l.starts_with("kaspatest:")).collect();
     let site = std::env::var("DAWNS_SITE").unwrap_or_else(|_| "https://www.dawns.money".into());
     match ureq::get(&format!("{site}/api/vaults/accounts?vault={cov}")).timeout(Duration::from_secs(10)).call() {
