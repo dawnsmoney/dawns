@@ -23,9 +23,9 @@ export async function POST(req: Request) {
   const q = sql();
 
   if (b.action === "create") {
-    const kind = b.kind === "asset" || b.kind === "opp" ? (b.kind as CardKind) : null;
-    if (!kind || !b.ref) return Response.json({ error: "Pick an asset or opportunity." }, { status: 400 });
-    const id = await makeCard(kind, b.ref, await getSnapshot());
+    const kind = b.kind === "asset" || b.kind === "opp" || b.kind === "count" ? (b.kind as CardKind) : null;
+    if (!kind || (kind !== "count" && !b.ref)) return Response.json({ error: "Pick an asset or opportunity." }, { status: 400 });
+    const id = await makeCard(kind, b.ref ?? "", await getSnapshot());
     return id ? Response.json({ id }) : Response.json({ error: "Not found in today's data." }, { status: 404 });
   }
 
@@ -49,7 +49,10 @@ export async function POST(req: Request) {
     if (!hasBot() || !channel) return Response.json({ error: "TELEGRAM_BOT_TOKEN or TELEGRAM_CHANNEL_ID is not set." }, { status: 400 });
     if (d.status !== "approved" && d.status !== "sent") return Response.json({ error: "Approve the card first." }, { status: 400 });
     const png = await (await renderCard(d.data, d.reading)).blob();
-    const caption = `<b>${esc(d.data.title)}</b> · ${d.data.kind === "asset" ? "dawns reading" : "opportunity"}\n\n${esc(d.reading)}\n\n${SITE}${d.data.path}\n<i>Research, not advice.</i>`;
+    const url = `${SITE}${d.data.path}`;
+    const caption = d.data.caption
+      ? esc(d.data.caption.replace("{reading}", d.reading).replace("{url}", url))
+      : `<b>${esc(d.data.title)}</b>\n\n${esc(d.reading)}\n\n${url}\n<i>Research, not advice.</i>`;
     await sendPhoto(channel, png, caption);
     await q.query("update card_drafts set status = 'sent', sent_at = now(), updated_at = now() where id = $1", [d.id]);
     return Response.json({ ok: true });

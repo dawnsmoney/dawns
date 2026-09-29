@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AssetCoin, Pill } from "./bits";
 import { SplitBar } from "./viz";
+import { PlanShare } from "./plan-share";
 import { allocate, checkPlan, project, usdPolicy, defaultPerProtocol, parsePolicy, DEFAULT_POLICY, type Avoid, type ExitNeed, type Policy, type Risk, type Unit } from "@/lib/allocator";
 import { usd, pct } from "@/lib/format";
 import type { Opportunity } from "@/lib/types";
@@ -241,6 +242,7 @@ export function Allocator({ opps, kasUsd }: { opps: Opportunity[]; kasUsd: numbe
               </div>
             </div>
           )}
+          <PlanShare policy={policy} disabled={!plan.lines.length} />
           <p className="foot" style={{ margin: 0 }}>dawns never moves funds. This is not financial advice: rates and liquidity change every block.</p>
         </div>
       </div>

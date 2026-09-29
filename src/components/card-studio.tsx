@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUI } from "./providers";
 
-export type StudioDraft = { id: string; day: string; kind: "asset" | "opp"; title: string; sub: string; reading: string; status: "draft" | "approved" | "skipped" | "sent"; origin: string; v: string; path: string };
+export type StudioDraft = { id: string; day: string; kind: "asset" | "opp" | "count" | "plan"; title: string; sub: string; reading: string; status: "draft" | "approved" | "skipped" | "sent"; origin: string; v: string; path: string; caption: string | null };
+const KIND_LABEL: Record<StudioDraft["kind"], string> = { asset: "Asset", opp: "Opportunity · Capital Report", count: "Weekly count", plan: "Plan" };
 export type StudioOption = { id: string; label: string };
 
 const STATUS_PILL: Record<StudioDraft["status"], [string, string]> = {
@@ -21,7 +22,7 @@ async function post(body: Record<string, unknown>) {
 export function CardMaker({ assets, opps }: { assets: StudioOption[]; opps: StudioOption[] }) {
   const router = useRouter();
   const { toast } = useUI();
-  const [kind, setKind] = useState<"asset" | "opp">("asset");
+  const [kind, setKind] = useState<"asset" | "opp" | "count">("asset");
   const [ref, setRef] = useState("");
   const [busy, setBusy] = useState(false);
   const list = kind === "asset" ? assets : opps;
@@ -32,13 +33,14 @@ export function CardMaker({ assets, opps }: { assets: StudioOption[]; opps: Stud
         <div className="seg">
           <button type="button" className={kind === "asset" ? "on" : ""} onClick={() => { setKind("asset"); setRef(""); }}>Asset</button>
           <button type="button" className={kind === "opp" ? "on" : ""} onClick={() => { setKind("opp"); setRef(""); }}>Opportunity</button>
+          <button type="button" className={kind === "count" ? "on" : ""} onClick={() => { setKind("count"); setRef(""); }}>Weekly count</button>
         </div>
-        <select value={ref} onChange={(e) => setRef(e.target.value)} aria-label="Subject"
+        {kind !== "count" && <select value={ref} onChange={(e) => setRef(e.target.value)} aria-label="Subject"
           style={{ flex: "1 1 260px", minWidth: 0, height: 42, borderRadius: 12, background: "rgba(0,0,0,.2)", color: "#fff", border: "1px solid var(--line-2)", padding: "0 12px", font: "500 15px var(--body)" }}>
           <option value="">{kind === "asset" ? "Pick an asset…" : "Pick an opportunity…"}</option>
           {list.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-        </select>
-        <button className="btn iris sm" type="button" disabled={!ref || busy} onClick={async () => {
+        </select>}
+        <button className="btn iris sm" type="button" disabled={(kind !== "count" && !ref) || busy} onClick={async () => {
           setBusy(true);
           try { await post({ action: "create", kind, ref }); toast("Card drafted from live data."); router.refresh(); } catch (e) { toast((e as Error).message); }
           setBusy(false);
@@ -69,7 +71,7 @@ export function CardDraftView({ d, canTelegram }: { d: StudioDraft; canTelegram:
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0 }}>
           <b style={{ font: "600 18px var(--display)" }}>{d.title}</b>
-          <span className="muted" style={{ fontSize: 13.5, marginLeft: 10 }}>{d.kind === "asset" ? "Asset" : "Opportunity"} · {d.sub} · {d.origin === "daily" ? "daily pick" : "made by hand"}</span>
+          <span className="muted" style={{ fontSize: 13.5, marginLeft: 10 }}>{KIND_LABEL[d.kind]} · {d.sub} · {d.origin === "daily" ? "daily pick" : "made by hand"}</span>
         </div>
         <span className={`pill ${tone}`}>{label}</span>
       </div>
@@ -88,7 +90,11 @@ export function CardDraftView({ d, canTelegram }: { d: StudioDraft; canTelegram:
         {(d.status === "approved" || d.status === "sent") && (
           <>
             <a className="btn sun sm" href={`${src}&dl=1`} download>Download PNG</a>
-            <button className="btn ghost sm" type="button" disabled={dirty} onClick={async () => { try { await navigator.clipboard.writeText(`${text}\n\nhttps://www.dawns.money${d.path}`); toast("Post text copied. Attach the PNG on X."); } catch { toast("Couldn't copy."); } }}>Copy post text</button>
+            <button className="btn ghost sm" type="button" disabled={dirty} onClick={async () => {
+              const url = `https://www.dawns.money${d.path}`;
+              const post = d.caption ? d.caption.replace("{reading}", text).replace("{url}", url) : `${text}\n\n${url}`;
+              try { await navigator.clipboard.writeText(post); toast("Post text copied. Attach the PNG on X."); } catch { toast("Couldn't copy."); }
+            }}>{d.kind === "opp" && d.caption ? "Copy Capital Report" : "Copy post text"}</button>
             {canTelegram && (confirm
               ? <button className="btn sun sm" type="button" disabled={!!busy} onClick={() => act("tg", { action: "telegram" }, "Posted to the Telegram channel.")}>{busy === "tg" ? "Sending…" : "Confirm: post to channel"}</button>
               : <button className="btn ghost sm" type="button" disabled={dirty || !!busy} onClick={() => setConfirm(true)}>{d.status === "sent" ? "Send to Telegram again" : "Send to Telegram"}</button>)}

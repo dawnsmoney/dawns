@@ -14,7 +14,7 @@ import { usd, pct } from "./format";
  * numbers are frozen when drafted, so what you review is what gets posted. Nothing is
  * published until an admin approves it.
  */
-export type CardKind = "asset" | "opp";
+export type CardKind = "asset" | "opp" | "count" | "plan";
 export interface CardTile { title: string; big: string; small: string; t: Status }
 export interface CardData {
   kind: CardKind; ref: string;
@@ -26,6 +26,10 @@ export interface CardData {
   asOf: number;                  // ms: when the numbers were read
   block: number | null;          // Igra block of the snapshot
   foot: string;
+  lead?: string;                 // left of the footer (default: "Every number traceable on-chain")
+  readingLabel?: string;         // default "WHAT WE FOUND"
+  /** post text for X / Telegram; {reading} and {url} are filled in when copied */
+  caption?: string;
 }
 export interface CardDraft { id: string; day: string; kind: CardKind; ref: string; data: CardData; reading: string; status: "draft" | "approved" | "skipped" | "sent"; origin: string; updated_at: string; sent_at: string | null }
 
@@ -53,6 +57,7 @@ export function assetCard(a: Asset, s: Snapshot): { data: CardData; reading: str
       kind: "asset", ref: a.id, kicker: "DAWNS READING", title: a.symbol, sub: `${STANDARD_NAME[a.standard]} · ${CHAIN_NAME[a.chain]}`,
       tiles, grade: r.grade, path: assetPath(a.id), asOf: s.asOf, block: s.blocks.igra?.block ?? null,
       foot: "Research, not advice",
+      caption: `DAWNS READING · ${a.symbol}\n\n{reading}\n\nFull profile, every number traceable: {url}\nResearch, not advice.`,
     },
     reading: joinFindings(flags),
   };
@@ -71,26 +76,87 @@ export function oppCard(o: Opportunity, s: Snapshot): { data: CardData; reading:
     tiles.push({ title: "Traded, 24h", big: o.vol24 != null ? usd(o.vol24) : "—", small: o.turnover != null ? `${o.turnover.toFixed(1)}× the pool` : "measuring", t: o.turnover != null && o.turnover >= 3 ? "warn" : "info" });
     if (o.priceMove != null) tiles.push({ title: "Price range, 7d", big: pct(o.priceMove, 0), small: o.ilAtMove != null ? `LP trails holding by ${pct(o.ilAtMove, 1)}` : "move within the week", t: o.ilAtMove != null && o.ilAtMove >= 0.05 ? "warn" : "info" });
   }
-  const notes = o.notes.filter((n) => !/^Yield:|incentives are not included/i.test(n));
+  const f = o.farm;
+  if (f?.on && f.apr != null) {
+    const inc: CardTile = { title: "Incentives", big: pct(f.apr), small: `paid in ${f.reward}, not added in`, t: "warn" };
+    if (tiles.length >= 4) tiles[3] = inc; else tiles.push(inc);
+  }
+  const notes = o.notes.filter((n) => !/^Yield:|incentives are not included|^Farm rewards:/i.test(n));
+  const risk = notes[0] ?? "No flags raised by dawns' checks today.";
+  const exitLine = o.kind === "supply"
+    ? `• Withdrawable now: ${o.exitNow != null ? usd(o.exitNow) : "unknown"}${o.exitShare != null ? ` (${pct(o.exitShare, 0)} of supplied)` : ""}`
+    : `• Liquidity: ${usd(o.size)} in the pool${o.vol24 != null ? `, ${usd(o.vol24)} traded in 24h` : ""}`;
+  const caption = [
+    "DAWNS // KASPA CAPITAL REPORT", "",
+    `${o.name} · ${o.pname}`, "",
+    `• ${o.kind === "lp" ? "In the pool" : "Supplied"}: ${usd(o.size)}`,
+    `• Native yield: ${o.apy != null ? pct(o.apy) : "still measuring"}`,
+    ...(f?.on && f.apr != null ? [`• Incentives: ${pct(f.apr)} in ${f.reward}, shown separately, never added in`] : []),
+    `• Source of yield: ${o.apyBasis}`,
+    `• Main risk: ${risk}`,
+    exitLine, "",
+    "The interesting part isn't the yield. It's why the yield exists.", "",
+    "Dawns reading: {reading}", "",
+    "{url}", "Research, not advice.",
+  ].join("\n");
   return {
     data: {
       kind: "opp", ref: o.id, kicker: "OPPORTUNITY", title: o.name, sub: `${o.pname} · ${o.chain === "igra" ? "Igra" : "Kasplex L2"}`,
       tiles, grade: { t: o.status, label: o.statusText }, path: "/opportunities", asOf: s.asOf, block: s.blocks.igra?.block ?? null,
       foot: "Native yield only · incentives never added in",
+      caption,
     },
     reading: joinFindings(notes.length ? notes : [`${o.statusText}. ${o.apyBasis}.`]),
+  };
+}
+
+/**
+ * The weekly count: how many listed opportunities have a yield source dawns has measured
+ * on-chain, how many can't be left right now, how many pay token incentives on top.
+ */
+export function countCard(s: Snapshot): { data: CardData; reading: string } {
+  const all = s.opportunities;
+  const traced = all.filter((o) => o.apy != null).length;
+  const blocked = all.filter((o) => o.status === "crit").length;
+  const flagged = all.filter((o) => o.status === "warn").length;
+  const farms = all.filter((o) => o.farm?.on).length;
+  const reading = `Dawns lists ${all.length} Kaspa DeFi opportunities of $5K or more. ${traced} have a yield source dawns has measured on-chain${traced < all.length ? `; the other ${all.length - traced} are still being measured or have an unknown fee` : ""}. ${blocked ? `${blocked} can't be left right now. ` : ""}${farms ? `${farms} pay token incentives, shown separately and never added to the yield.` : ""}`.trim();
+  return {
+    data: {
+      kind: "count", ref: `week:${athens(s.asOf).day}`, kicker: "DAWNS // WEEKLY COUNT", title: `${traced} of ${all.length} opportunities`, sub: "yield source traced on-chain",
+      tiles: [
+        { title: "Listed", big: String(all.length), small: "Kaspa DeFi, $5K or more", t: "info" },
+        { title: "Yield traced", big: String(traced), small: "source measured on-chain", t: "good" },
+        { title: "Flagged", big: String(flagged), small: "tight, volatile or unusual", t: flagged ? "warn" : "good" },
+        { title: "Exit blocked", big: String(blocked), small: "can't be left right now", t: blocked ? "crit" : "good" },
+      ],
+      grade: { t: "info", label: "Every Monday" }, path: "/opportunities", asOf: s.asOf, block: s.blocks.igra?.block ?? null,
+      foot: "Research, not advice",
+      caption: [
+        "DAWNS // KASPA CAPITAL COUNT", "",
+        "We checked every Kaspa DeFi opportunity of $5K or more.", "",
+        `• Listed: ${all.length}`, `• Yield source measured on-chain: ${traced}`, `• Flagged: ${flagged}`, `• Exit blocked right now: ${blocked}`,
+        ...(farms ? [`• Paying token incentives: ${farms} (never added to the yield)`] : []), "",
+        "A high APY is easy to find. A yield you can explain is not.", "",
+        "{url}",
+      ].join("\n"),
+    },
+    reading,
   };
 }
 
 /** Today in Athens (YYYY-MM-DD) and the hour, the same clock as the morning report. */
 function athens(t: number) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(new Date(t)).map((x) => [x.type, x.value]));
-  return { day: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour) };
+  const weekday = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Athens", weekday: "short" }).format(new Date(t));
+  return { day: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour), weekday };
 }
 const rid = () => `c_${[...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
 
 /** Look up one asset or opportunity and build its card from the live data. */
 export async function cardFor(kind: CardKind, ref: string, s: Snapshot, assets?: Asset[]) {
+  if (kind === "count") return countCard(s);
+  if (kind === "plan") return null;
   if (kind === "opp") { const o = s.opportunities.find((x) => x.id === ref); return o ? oppCard(o, s) : null; }
   const a = (assets ?? (await getAssets())).find((x) => x.id === ref);
   return a ? assetCard(a, s) : null;
@@ -109,7 +175,7 @@ async function save(day: string, kind: CardKind, ref: string, c: { data: CardDat
 export async function makeCard(kind: CardKind, ref: string, s: Snapshot) {
   const c = await cardFor(kind, ref, s);
   if (!c) return null;
-  return save(athens(Date.now()).day, kind, ref, c, "manual", true);
+  return save(athens(Date.now()).day, kind, c.data.ref, c, "manual", true);
 }
 
 /**
@@ -117,7 +183,8 @@ export async function makeCard(kind: CardKind, ref: string, s: Snapshot) {
  * - assets: the 3 most traded over 7 days (with a real market, value that could be realized),
  *   skipping any featured in the last 7 days;
  * - opportunities of at least $25K: the largest, the highest native yield, and one with a
- *   warning, skipping any featured in the last 3 days.
+ *   warning, skipping any featured in the last 3 days;
+ * - on Mondays, the weekly count (see countCard).
  */
 export function pickDaily(s: Snapshot, assets: Asset[], recent: Set<string>) {
   const flow = (a: Asset) => Math.max(a.vol7 ?? 0, (a.vol24 ?? 0) * 7);
@@ -136,7 +203,7 @@ export function pickDaily(s: Snapshot, assets: Asset[], recent: Set<string>) {
 
 /** From the cron tick: once a day after 07:00 Athens, draft today's cards. Never posts anything. */
 export async function maybeDailyCards(s: Snapshot) {
-  const { day, hour } = athens(s.asOf);
+  const { day, hour, weekday } = athens(s.asOf);
   if (hour < 7) return "not yet";
   if ((await getMeta("daily_cards")) === day) return "done";
   await setMeta("daily_cards", day); // claim first so parallel ticks cannot double-draft
@@ -148,6 +215,7 @@ export async function maybeDailyCards(s: Snapshot) {
   let n = 0;
   for (const a of as) if (await save(day, "asset", a.id, assetCard(a, s), "daily", false)) n++;
   for (const o of opps) if (await save(day, "opp", o.id, oppCard(o, s), "daily", false)) n++;
+  if (weekday === "Mon") { const c = countCard(s); if (await save(day, "count", c.data.ref, c, "daily", false)) n++; }
   return `drafted ${n}`;
 }
 

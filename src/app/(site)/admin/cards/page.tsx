@@ -29,14 +29,14 @@ export default async function CardsPage() {
 
   const view: StudioDraft[] = drafts.map((d) => ({
     id: d.id, day: d.day, kind: d.kind, title: d.data.title, sub: d.data.sub, reading: d.reading, status: d.status, origin: d.origin,
-    v: String(new Date(d.updated_at).getTime()), path: d.data.path,
+    v: String(new Date(d.updated_at).getTime()), path: d.data.path, caption: d.data.caption ?? null,
   }));
   const days = [...new Set(view.map((d) => d.day))];
 
   return (
     <>
       <Banner short crumb={[{ href: "/admin", label: "Admin" }, { label: "Share cards" }]} title="Share cards"
-        lede="Each morning after 07:00 dawns drafts cards by a fixed rule: the 3 most-traded assets over 7 days not featured in the last week, and the largest, highest-yield and one flagged opportunity. Numbers are frozen when drafted. Nothing is posted until you approve it." />
+        lede="Each morning after 07:00 dawns drafts cards by a fixed rule: the 3 most-traded assets over 7 days not featured in the last week, the largest, highest-yield and one flagged opportunity, and on Mondays the weekly count. Numbers are frozen when drafted. Nothing is posted until you approve it." />
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 24 }}>
         <CardMaker assets={assetOpts} opps={oppOpts} />
         {!days.length && <div className="card"><p className="muted" style={{ margin: 0 }}>No cards yet. The first daily drafts appear after the next run past 07:00 Athens time, or make one above.</p></div>}

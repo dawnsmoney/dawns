@@ -68,7 +68,7 @@ export async function renderCard(d: CardData, reading: string, headers?: Record<
               <div style={{ display: "flex", alignItems: "center", fontSize: 14.5, color: C.muted, textTransform: "uppercase", letterSpacing: 1.2 }}>
                 <div style={{ display: "flex", width: 9, height: 9, borderRadius: 99, backgroundColor: TONE[t.t], marginRight: 8 }} />{clean(t.title)}
               </div>
-              <div style={{ display: "flex", fontFamily: "Outfit", fontWeight: 600, fontSize: 38, marginTop: 8, color: t.t === "warn" || t.t === "crit" ? TONE[t.t] : C.text }}>{clean(t.big)}</div>
+              <div style={{ display: "flex", fontFamily: "Outfit", fontWeight: 600, fontSize: t.big.length > 9 ? 31 : 38, marginTop: 8, color: t.t === "warn" || t.t === "crit" ? TONE[t.t] : C.text }}>{clean(t.big)}</div>
               <div style={{ display: "flex", fontSize: 16.5, color: C.muted, marginTop: 4, lineHeight: 1.3 }}>{clean(t.small)}</div>
             </div>
           ))}
@@ -77,13 +77,13 @@ export async function renderCard(d: CardData, reading: string, headers?: Record<
         <div style={{ display: "flex", flex: 1, marginTop: 26, marginBottom: 18 }}>
           <div style={{ display: "flex", width: 6, borderRadius: 99, backgroundImage: "linear-gradient(180deg, #FFD27A, #FF9A62, #F0679A)" }} />
           <div style={{ display: "flex", flexDirection: "column", marginLeft: 20, flex: 1 }}>
-            <div style={{ display: "flex", fontFamily: "Outfit", fontWeight: 600, fontSize: 15, letterSpacing: 2.5, color: C.sun }}>WHAT WE FOUND</div>
+            <div style={{ display: "flex", fontFamily: "Outfit", fontWeight: 600, fontSize: 15, letterSpacing: 2.5, color: C.sun }}>{d.readingLabel ?? "WHAT WE FOUND"}</div>
             <div style={{ display: "flex", fontSize: textSize, lineHeight: 1.38, marginTop: 8 }}>{text}</div>
           </div>
         </div>
         {/* foot */}
         <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 16, borderTop: `1px solid ${C.line}`, fontSize: 17, color: C.muted }}>
-          <div style={{ display: "flex" }}>Every number traceable on-chain&nbsp;<span style={{ color: C.text }}>dawns.money{shortPath(d.path)}</span></div>
+          <div style={{ display: "flex" }}>{d.lead ?? "Every number traceable on-chain"}&nbsp;<span style={{ color: C.text }}>dawns.money{shortPath(d.path)}</span></div>
           <div style={{ display: "flex" }}>{clean(d.foot)}{d.block ? ` · Igra block ${d.block.toLocaleString("en-US")}` : ""}</div>
         </div>
       </div>

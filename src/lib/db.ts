@@ -116,6 +116,8 @@ const SCHEMA = [
     status text not null default 'draft', origin text not null default 'daily',
     created_at timestamptz not null default now(), updated_at timestamptz not null default now(), sent_at timestamptz,
     unique (day, kind, ref))`,
+  // plan share cards: the rules of a plan someone chose to share (no user id, no wallet), drawn at /api/share/plan/[id]
+  `create table if not exists plan_shares (id text primary key, data jsonb not null, reading text not null, created_at timestamptz not null default now())`,
   // strategies strategists publish: content-addressed (hash of the canonical document), signed in with a wallet
   `create table if not exists strategies (
     id text primary key, hash text not null unique, doc jsonb not null, user_id text not null, strategist text not null,
