@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { BalanceSheet } from "@/components/balance-sheet";
+import { ProtocolBalance } from "@/components/protocol-balance";
 import { notFound } from "next/navigation";
 import { getSnapshot, findProtocol } from "@/lib/snapshot";
 import { MCard, MFlags, MHead, MKv, MList, MNote, MRow, MStats } from "@/components/m/kit";
@@ -32,6 +32,7 @@ const COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9"
 function Overview({ p, sig }: { p: ProtocolView; sig: { t: Status; strong: string }[] }) {
   return (
     <div className="m-panel">
+      <ProtocolBalance p={p} />
       <MCard title="dawns' reading" tag={<Pill t={p.status}>{p.statusText}</Pill>}>
         <MStats items={protocolTiles(p).map((t) => ({ label: t.title, value: t.big, sub: t.small, tone: t.t === "info" ? undefined : t.t }))} />
       </MCard>
@@ -57,9 +58,7 @@ function Overview({ p, sig }: { p: ProtocolView; sig: { t: Status; strong: strin
 
 function Lending({ p }: { p: ProtocolView }) {
   const L = p.lending!;
-  const mk = [...L.markets].sort((a, b) => b.suppliedUsd - a.suppliedUsd);
-  const COL = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9"];
-  const reserves = mk.reduce((x, m) => x + m.cashUsd + m.borrowedUsd - m.suppliedUsd, 0);
+
   return (
     <div className="m-panel">
       <MStats items={[
@@ -68,12 +67,6 @@ function Lending({ p }: { p: ProtocolView }) {
         { label: "Withdrawable now", value: usd(L.cashUsd), sub: <Change v={p.d24} /> },
         { label: "Asset coverage", value: pct(L.coverage), sub: L.coverage >= 1 ? "claims covered" : "claims not covered", tone: L.coverage >= 1 ? "good" : "crit" },
       ]} />
-      <MCard title="Balance sheet" tag="held vs owed">
-        <BalanceSheet fmt={usd}
-          assets={[{ key: "cash", label: "Cash in the markets", value: mk.reduce((x, m) => x + m.cashUsd, 0), color: "#199e70", note: "withdrawable now" }, { key: "loans", label: "Outstanding loans", value: mk.reduce((x, m) => x + m.borrowedUsd, 0), color: "#3987e5", note: "owed by borrowers" }]}
-          claims={mk.map((m, i) => ({ key: m.symbol, label: `${m.symbol} suppliers`, value: m.suppliedUsd, color: COL[i % COL.length] }))}
-          below={reserves > 0 ? { label: "Protocol reserves", value: reserves, note: "on top of what suppliers are owed" } : null} ratioLabel="Coverage" />
-      </MCard>
       <MCard title="Markets" tag="can suppliers leave?" flush>
         <MList>
           {[...L.markets].sort((a, b) => b.suppliedUsd - a.suppliedUsd).map((m) => {

@@ -8,6 +8,7 @@ import { CopyId, SplitBar } from "@/components/viz";
 import { Pill } from "@/components/bits";
 import { LoanCard, LOAN_COLORS, LIQUID, kas } from "@/components/credit-vault";
 import { BalanceSheet } from "@/components/balance-sheet";
+import { TokenFamily } from "@/components/research";
 
 
 const pct = (x: number, d = 0) => `${(x * 100).toFixed(d)}%`;
@@ -75,6 +76,14 @@ export async function CreditVaultMobile({ l, m }: { l: CreditLedger; m: CreditMa
                 ["good", "Repayments can only return into the vault; no key can redirect them."],
                 ["good", "Late loans lose value on a schedule anyone can write in; NAV always applies it."],
                 ["warn", "That a borrower repays at all is a loan agreement off-chain."],
+              ]} />
+            </MCard>
+            <MCard title="Tokens and coins">
+              <TokenFamily caption="Claims and the coins behind them" rows={[
+                { letter: "S", color: "#3987e5", name: "Share token", role: `${f.shares.toLocaleString("en-US")} shares in ${f.liveNotes} notes`, amount: kas(f.nav), id: l.shareCovid, main: true },
+                { letter: "V", color: LIQUID, name: "Vault coin", role: "the covenant itself", amount: kas(f.held), id: l.address, href: `https://tn10.kaspa.stream/addresses/${l.address}` },
+                { letter: "K", color: "#6E6788", name: "Seed", role: "the vault's own, never shares", amount: kas(f.keep) },
+                ...f.loans.filter((x) => x.repay && x.principal > 0).map((x) => ({ letter: "R", color: LOAN_COLORS[x.slot], name: `Repayment · ${x.label}`, role: "pays only into this vault", amount: kas(x.principal), id: x.repay, href: `https://tn10.kaspa.stream/addresses/${x.repay}` })),
               ]} />
             </MCard>
             <MCard title="The mandate">

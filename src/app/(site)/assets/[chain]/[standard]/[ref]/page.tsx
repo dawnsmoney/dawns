@@ -13,6 +13,9 @@ import { SplitBar, Ring, Tiles, Bars, Compare, Columns, CopyId, StackedCols } fr
 import { DepthCard, UnlocksCard, MovesCard } from "@/components/asset-sections";
 import { AssetCoin } from "@/components/bits";
 import { External } from "@/components/icons";
+import { ResearchHead, KeyFigure, Basis, StampLine } from "@/components/research";
+import { ResearchTabs } from "@/components/research-tabs";
+import { keyFigures, oneLine } from "@/lib/assets/basis";
 import { CURATED } from "@/lib/assets/profiles";
 import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, valueCredible, type Asset, type AssetDay, type AssetChain, type AssetStandard } from "@/lib/assets/types";
 import { getSnapshot } from "@/lib/snapshot";
@@ -75,15 +78,6 @@ function holderFlow(hist: AssetDay[]) {
   return { cols, since: days[0].day, weekly };
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string | null }) {
-  return (
-    <div className="card">
-      <span className="eyebrow muted">{label}</span>
-      <b style={{ display: "block", font: "600 26px var(--display)", margin: "8px 0 4px" }}>{value}</b>
-      {sub && <span className="muted" style={{ fontSize: 14 }}>{sub}</span>}
-    </div>
-  );
-}
 
 async function ReceiptView({ r, s }: { r: Receipt; s: Snapshot }) {
   const opp = s.opportunities.filter((o) => o.id === r.opp);
@@ -130,20 +124,29 @@ export default async function AssetPage({ params }: P) {
   const holdersHist = hist.filter((d) => d.holders != null).length >= 3;
   const explorer = a.standard === "kcc20" || a.standard === "kron" ? `https://kcc20.info/v1/tokens/${a.ref}` : a.chain === "igra" ? `https://explorer.igralabs.com/token/${a.ref}` : a.standard === "krc20" ? `https://kaspa.com/tokens/marketplace/token/${a.ref}` : a.chain === "kasplex" ? `https://explorer.kasplex.org/token/${a.ref}` : a.chain === "zkas" ? "https://explorer.zkas.info/analytics" : "https://explorer.kaspa.org";
 
+  const figs = keyFigures(a, s, heldTotal, hist);
+  const tabs = [
+    { key: "overview", label: "Overview" },
+    { key: "holders", label: "Holders", badge: a.holders != null ? (a.holders >= 1000 ? `${(a.holders / 1000).toFixed(a.holders >= 1e4 ? 0 : 1)}K` : String(a.holders)) : null },
+    { key: "supply", label: a.net ? "Supply & network" : "Supply" },
+    { key: "markets", label: "Markets", badge: opps.length || null },
+    ...(sameTicker.length ? [{ key: "related", label: isKas ? "Other chains" : "Same ticker", badge: sameTicker.length }] : []),
+    { key: "sources", label: "Sources" },
+  ];
   return (
     <>
       <Banner short crumb={[{ href: "/assets", label: "Assets" }, { label: `${STANDARD_NAME[a.standard]} · ${CHAIN_NAME[a.chain]}` }]}
         title={<>{a.symbol}{a.name.toLowerCase() !== a.symbol.toLowerCase() && <span className="muted" style={{ fontWeight: 400 }}> {a.name}</span>}</>}
-        lede={r.what} />
+        lede={oneLine(r.what)} />
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
-        <div className="grid g3">
-          <Stat label="Price" value={price(a.price)} sub={a.priceSrc} />
-          <Stat label={a.standard === "native" ? "Market value" : "Value on chain"} value={a.mcap != null ? usd(a.mcap) : "—"} sub={`${whole(a.supply, a.symbol)} circulating${a.mcap != null && !valueCredible(a) ? " · not realizable: too little trading" : ""}`} />
-          <Stat label="Holders" value={a.holders != null ? a.holders.toLocaleString("en-US") : a.chain === "zkas" ? "Shielded" : "—"} sub={a.chain === "zkas" ? "balances are private by design" : a.holdersAt ? `top holders read ${when(a.holdersAt)}` : null} />
-        </div>
+        <ResearchHead coin={<AssetCoin a={a.symbol} size={56} />} title={a.symbol} subtitle={a.name !== a.symbol ? a.name : undefined}
+          line={r.what}
+          tags={<><Pill t={r.grade.t}>{r.grade.label}</Pill><span className="tag">{STANDARD_NAME[a.standard]}</span><span className="tag">{CHAIN_NAME[a.chain]}</span>{a.launched && <span>launched {when(a.launched)}</span>}{cur?.sources[0] && <a href={cur.sources[0][1]} target="_blank" rel="noopener noreferrer">{cur.sources[0][0]} ↗</a>}</>}
+          figures={figs.map((f) => <KeyFigure key={f.label} label={f.label} value={f.value} sub={f.sub} tone={f.tone} basis={<Basis text={f.basis} stamp={f.stamp} sources={f.sources} />} />)} />
 
+        <ResearchTabs tabs={tabs}>
+          <div className="rt-pane">
         {under && <Underneath r={under} />}
-
         <div className="card">
           <div className="c-head"><h3>dawns&apos; reading</h3><Pill t={r.grade.t}>{r.grade.label}</Pill></div>
           <Tiles tiles={tiles} />
@@ -156,7 +159,6 @@ export default async function AssetPage({ params }: P) {
           </details>
           <p className="muted" style={{ fontSize: 13, marginTop: 14, marginBottom: 0 }}>Research, not advice: dawns shows what the data says and what it cannot show. It never says buy or sell.</p>
         </div>
-
         {gap && a.price != null && a.poolPrice != null && (
           <div className="card">
             <div className="c-head"><h3>Two prices</h3><span className="tag">{a.price > a.poolPrice ? `${(a.price / a.poolPrice).toFixed(1)}× apart` : `${(a.poolPrice / a.price).toFixed(1)}× apart`}</span></div>
@@ -164,13 +166,16 @@ export default async function AssetPage({ params }: P) {
             <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>What you could sell for on {CHAIN_NAME[a.chain]} is the pool price.</p>
           </div>
         )}
-
-        {a.depth && a.depth.d10 > 0 && <DepthCard a={a} />}
-        {a.unlocks && <UnlocksCard a={a} />}
         {a.moves && a.moves.length > 0 && <MovesCard a={a} />}
-
-        <div className={(parts.length > 0 || !a.net ? 1 : 0) + (supplyVisual ? 1 : 0) + (a.net ? 1 : 0) > 1 ? "grid gA" : "grid"} style={{ alignItems: "start" }}>
-          {parts.length > 0 ? (
+        {priced && (
+          <div className="card">
+            <RangeChart title="Price, daily" label={`${a.symbol} price history`} dates={dates}
+              series={[{ name: "Price", color: "#8578E6", values: hist.map((d) => d.price ?? 0) }]} fmt="usdFull" area="first" />
+          </div>
+        )}
+          </div>
+          <div className="rt-pane">
+        {parts.length > 0 ? (
             <div className="card">
               <div className="c-head"><h3>Who holds it</h3>{a.top10 != null && <span className="tag">top 10: {pct(a.top10, 0)}</span>}</div>
               <SplitBar parts={parts.map((p) => ({ key: p.key, label: p.label, color: p.color, share: p.share }))} label={`${a.symbol} supply by holder kind`} />
@@ -186,10 +191,19 @@ export default async function AssetPage({ params }: P) {
               )}
               {a.standard === "krc20" && <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>Names from the list the Kaspa REST API publishes. An unnamed address may still be an exchange or a marketplace escrow.</p>}
             </div>
-          ) : a.net ? null : (
+          ) : a.net ? (
+            <div className="card"><div className="c-head"><h3>Who holds it</h3></div><p className="muted" style={{ margin: 0 }}>{a.symbol} lives in the UTXO set: there is no holder list to read, and coins are spread over countless addresses by design. Exchanges and custodians hold much of it for others. Mining, the other side of supply, is under Supply &amp; network.</p></div>
+          ) : (
             <div className="card"><div className="c-head"><h3>Who holds it</h3></div><p className="muted" style={{ margin: 0 }}>Not read yet. dawns reads the holder lists of the most significant assets first.</p></div>
           )}
-
+        {holdersHist && (
+          <div className="card">
+            <RangeChart title="Holders, daily" label={`${a.symbol} holders`} dates={hist.filter((d) => d.holders != null).map((d) => Date.parse(d.day))}
+              series={[{ name: "Holders", color: "#199e70", values: hist.filter((d) => d.holders != null).map((d) => d.holders!) }]} fmt="num" area="first" zero={false} />
+          </div>
+        )}
+          </div>
+          <div className="rt-pane">
           {supplyVisual && <div className="card">
             <div className="c-head"><h3>Supply</h3><span className="tag">{whole(a.supply, a.symbol)}</span></div>
             {a.net?.path?.length ? (
@@ -206,7 +220,6 @@ export default async function AssetPage({ params }: P) {
               {a.launched && <><dt>Launched</dt><dd>{when(a.launched)}</dd></>}
             </dl>
           </div>}
-
           {a.net && (
             <div className="card">
               <div className="c-head"><h3>Network</h3><span className="tag">{hash(a.net.hashrate)}</span></div>
@@ -225,8 +238,7 @@ export default async function AssetPage({ params }: P) {
               {cur && <dl className="kv" style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--line)" }}>{cur.facts.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>}
             </div>
           )}
-        </div>
-
+        {a.unlocks && <UnlocksCard a={a} />}
         {a.cov && (
           <div className="grid gA" style={{ alignItems: "start" }}>
             <div className="card">
@@ -251,21 +263,9 @@ export default async function AssetPage({ params }: P) {
             </div>
           </div>
         )}
-
-        {holdersHist && (
-          <div className="card">
-            <RangeChart title="Holders, daily" label={`${a.symbol} holders`} dates={hist.filter((d) => d.holders != null).map((d) => Date.parse(d.day))}
-              series={[{ name: "Holders", color: "#199e70", values: hist.filter((d) => d.holders != null).map((d) => d.holders!) }]} fmt="num" area="first" zero={false} />
           </div>
-        )}
-
-        {priced && (
-          <div className="card">
-            <RangeChart title="Price, daily" label={`${a.symbol} price history`} dates={dates}
-              series={[{ name: "Price", color: "#8578E6", values: hist.map((d) => d.price ?? 0) }]} fmt="usdFull" area="first" />
-          </div>
-        )}
-
+          <div className="rt-pane">
+        {a.depth && a.depth.d10 > 0 && <DepthCard a={a} />}
         {held.length > 0 && (
           <div className="card">
             <div className="c-head"><h3>Held in protocols</h3><span className="tag">{usd(heldTotal)}</span></div>
@@ -273,7 +273,6 @@ export default async function AssetPage({ params }: P) {
             <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>Half of each pool&apos;s value per token, and what was supplied to each lending market.{a.id === "kaspa:native:KAS" ? " KAS includes WiKAS, iKAS and WKAS." : ""}</p>
           </div>
         )}
-
         <section>
           <div className="c-head" style={{ marginBottom: 14 }}><h3>Where capital can go with {a.symbol}</h3></div>
           {opps.length ? <OpportunityTable rows={opps} known={knownOf(all, opps.flatMap((o) => o.assetIds ?? []))} /> : (
@@ -283,7 +282,8 @@ export default async function AssetPage({ params }: P) {
             </p></div>
           )}
         </section>
-
+          </div>
+          {sameTicker.length > 0 && <div className="rt-pane">
         {sameTicker.length > 0 && (
           <section>
             <div className="c-head" style={{ marginBottom: 14 }}><h3>{isKas ? "KAS on other chains" : `Also called ${a.symbol}`}</h3><span className="muted" style={{ fontSize: 14 }}>{isKas ? "wrapped KAS: each depends on its bridge" : "separate assets: own supply, holders and risks"}</span></div>
@@ -302,7 +302,8 @@ export default async function AssetPage({ params }: P) {
             </div>
           </section>
         )}
-
+          </div>}
+          <div className="rt-pane">
         <div className="srcbar">
           <span className="eyebrow muted">Sources</span>
           <a href={explorer} target="_blank" rel="noopener noreferrer" className="srcchip"><External width={13} height={13} />{a.standard === "kcc20" || a.standard === "kron" ? "KCC20 indexer" : a.chain === "igra" ? "Igra explorer" : a.standard === "krc20" ? "KaspaCom market" : a.chain === "zkas" ? "ZKas explorer" : "Kaspa explorer"}</a>
@@ -311,6 +312,14 @@ export default async function AssetPage({ params }: P) {
           <CopyId text={a.id} />
           <Link href={`/assets/compare?ids=${encodeURIComponent(a.id)}`} className="btn ghost" style={{ marginLeft: "auto" }}>Compare with…</Link>
         </div>
+            <div className="card">
+              <div className="c-head"><h3>How each figure is valued</h3><span className="tag">{figs.length} figures</span></div>
+              <div className="vlist">
+                {figs.map((f) => <div key={f.label} className="vrow"><span /><div>{f.label}<small>{f.basis}</small><StampLine s={f.stamp} /></div><b>{f.value}</b></div>)}
+              </div>
+            </div>
+          </div>
+        </ResearchTabs>
       </div>
     </>
   );

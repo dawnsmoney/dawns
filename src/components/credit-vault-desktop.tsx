@@ -5,6 +5,7 @@ import { SplitBar, Ring, CopyId } from "@/components/viz";
 import { NavPanel } from "@/components/nav-panel";
 import { SharePriceChart } from "@/components/share-chart";
 import { BalanceSheet } from "@/components/balance-sheet";
+import { Basis, TokenFamily, type Stamp } from "@/components/research";
 import { sharePoints } from "@/lib/vaults/share-history";
 import { LoanCard, LOAN_COLORS, LIQUID, CREDIT_STEPS, kas, dur } from "@/components/credit-vault";
 import { creditFigures, readCreditLive, SOMPI, FIRST_PRICE, DAA_PER_SEC, type CreditLedger, type CreditMandateDoc } from "@/lib/vaults/credit";
@@ -20,6 +21,8 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
   const f = creditFigures(l, m, live.daa);
   const maturityOpen = m.maturityDaa === 0 || f.at >= m.maturityDaa;
   const since = f.price / (FIRST_PRICE / SOMPI) - 1;
+  const lastAt = (l.moves[l.moves.length - 1]?.at ?? l.createdAt) * 1000;
+  const vs: Stamp = live.matches ? { kind: "onchain", by: "the vault's coin matches this ledger", at: lastAt } : { kind: "reported", by: "the operator's ledger", at: lastAt };
   const payable = f.nav > 0 ? Math.min(1, Math.max(0, f.liquid / f.nav)) : 1;
   const name = (i: number | undefined) => (i != null ? f.loans[i]?.label ?? "" : "");
   const log = [...l.moves].reverse().map((x) => {
@@ -62,10 +65,11 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
               : <><b>The ledger is behind the chain.</b> The vault has moved since this page&apos;s ledger was published.</>}</span>
           </div>
           <div className="depth-top depth-4" style={{ margin: 0 }}>
-            <div><span className="eyebrow muted">NAV</span><b>{kas(f.nav)}</b><small>{kas(f.liquid)} liquid · {kas(f.lent)} in loans</small></div>
-            <div><span className="eyebrow muted">Per share</span><b>{f.price.toFixed(6)}</b><small>{f.shares ? `${since >= 0 ? "+" : "−"}${pct(Math.abs(since), 2)} since launch at ${(FIRST_PRICE / SOMPI).toFixed(2)}` : "launch price"}</small></div>
-            <div><span className="eyebrow muted">Loans</span><b>{f.loans.filter((x) => x.status !== "free").length} of {f.loans.length}</b><small>{kas(f.lentTotal, 0)} lent · {kas(f.repaidTotal, 2)} repaid</small></div>
-            <div><span className="eyebrow muted">Holders</span><b>{f.holders}</b><small>{f.shares.toLocaleString("en-US")} shares · {kas(f.deposited, 0)} deposited</small></div>
+            <div><span className="eyebrow muted">NAV</span><b>{kas(f.nav)}</b><small>{kas(f.liquid)} liquid · {kas(f.lent)} in loans</small>
+              <Basis stamp={vs} text={`KAS held by the vault's coin, less its ${kas(f.keep)} seed, plus each loan at the lower of the valuer's mark and the covenant's schedule. The same formula prices every deposit and withdrawal, inside the covenant.`} /></div>
+            <div><span className="eyebrow muted">Per share</span><b>{f.price.toFixed(6)}</b><small>{f.shares ? `${since >= 0 ? "+" : "−"}${pct(Math.abs(since), 2)} since launch at ${(FIRST_PRICE / SOMPI).toFixed(2)}` : "launch price"}</small><Basis stamp={vs} text={`NAV ÷ ${f.shares.toLocaleString("en-US")} shares. Deposits mint at this price rounded up; withdrawals pay it rounded down, less the ${m.exitFeeBps / 100}% exit fee that stays with holders.`} /></div>
+            <div><span className="eyebrow muted">Loans</span><b>{f.loans.filter((x) => x.status !== "free").length} of {f.loans.length}</b><small>{kas(f.lentTotal, 0)} lent · {kas(f.repaidTotal, 2)} repaid</small><Basis stamp={vs} text="Principal, due date and mark per slot, from the vault's state, which the covenant rewrites on every lend, repayment, markdown and mark. Whether a borrower will repay is the one figure no chain can give." /></div>
+            <div><span className="eyebrow muted">Holders</span><b>{f.holders}</b><small>{f.shares.toLocaleString("en-US")} shares · {kas(f.deposited, 0)} deposited</small><Basis stamp={vs} text="Owners of live share notes: each deposit mints one KCC-20 note to its owner's personal withdrawal account, and each withdrawal burns a whole note." /></div>
           </div>
           <div>
             <div className="eyebrow muted" style={{ marginBottom: 10 }}>Where the NAV is</div>
@@ -83,6 +87,17 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
             below={{ label: "The vault's own seed", value: f.keep, note: "never shares; kept so the vault can always price and pay" }}
             assetsTag="liquid + loans at their counted value" claimsTag="redeemable at NAV" ratioLabel="Assets ÷ claims"
             basis={<>Loans count at the lower of the valuer&apos;s mark and the covenant&apos;s schedule, exactly as every deposit and withdrawal prices them, so claims equal assets less the seed by construction. What this cannot show is whether borrowers will repay: that is the off-chain part.</>} />
+        </div>
+
+        <div className="card">
+          <div className="c-head"><h3>Tokens and coins</h3><span className="tag">everything this vault is made of</span></div>
+          <TokenFamily caption="Outstanding claims and the coins behind them" rows={[
+            { letter: "S", color: "#3987e5", name: "Share token", role: `KCC-20 bound to the vault · ${f.shares.toLocaleString("en-US")} shares in ${f.liveNotes} note${f.liveNotes === 1 ? "" : "s"} · at ${f.price.toFixed(6)} KAS`, amount: kas(f.nav), id: l.shareCovid, main: true },
+            { letter: "V", color: LIQUID, name: "Vault coin", role: "the covenant itself: one coin, its state in its script, moved only by its rules", amount: kas(f.held), id: l.address, href: `https://tn10.kaspa.stream/addresses/${l.address}` },
+            { letter: "K", color: "#6E6788", name: "Seed", role: "the vault's own, inside the vault coin: never shares, kept so it can always price and pay", amount: kas(f.keep) },
+            { letter: "N", color: "#9085e9", name: "Note deposits", role: `${kas(m.noteValueSompi / SOMPI)} held with each share note, returned with its withdrawal`, amount: kas((f.liveNotes * m.noteValueSompi) / SOMPI) },
+            ...f.loans.filter((x) => x.repay).map((x) => ({ letter: "R", color: LOAN_COLORS[x.slot], name: `Repayment account · ${x.label}`, role: x.principal > 0 ? `${kas(x.principal)} owed; pays only into this vault` : "no loan open; a payment here would be a recovery", amount: x.principal > 0 ? kas(x.principal) : "—", id: x.repay, href: `https://tn10.kaspa.stream/addresses/${x.repay}` })),
+          ]} />
         </div>
 
         <div className="card">

@@ -13,7 +13,7 @@ import { RangeChart, Bars, AreaChart } from "@/components/charts";
 import { Feed, SubNav } from "@/components/sections";
 import { DataBridge } from "@/components/providers";
 import { Fresh } from "@/components/Fresh";
-import { BalanceSheet } from "@/components/balance-sheet";
+import { ProtocolBalance } from "@/components/protocol-balance";
 import { getAssets } from "@/lib/assets";
 import { assetPath } from "@/lib/assets/types";
 
@@ -92,19 +92,9 @@ function History({ p }: { p: ProtocolView }) {
 function Financials({ p }: { p: ProtocolView }) {
   if (p.lending) {
     const L = p.lending;
-    const COL = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9"];
-    const mk = [...L.markets].sort((a, b) => b.suppliedUsd - a.suppliedUsd);
     return (
       <div style={{ display: "grid", gap: 28 }}>
-      <div className="card">
-        <div className="c-head"><h3>Balance sheet</h3>{p.asOf && <span className="tag">read at block #{p.asOf.block.toLocaleString("en-US")}</span>}</div>
-        <BalanceSheet fmt={usd}
-          assets={[{ key: "cash", label: "Cash in the markets", value: mk.reduce((x, m) => x + m.cashUsd, 0), color: "#199e70", note: "withdrawable now" }, { key: "loans", label: "Outstanding loans", value: mk.reduce((x, m) => x + m.borrowedUsd, 0), color: "#3987e5", note: "owed by borrowers, collateralised" }]}
-          claims={mk.map((m, i) => ({ key: m.symbol, label: `${m.symbol} suppliers`, value: m.suppliedUsd, color: COL[i % COL.length] }))}
-          below={mk.reduce((x, m) => x + m.cashUsd + m.borrowedUsd - m.suppliedUsd, 0) > 0 ? { label: "Protocol reserves", value: mk.reduce((x, m) => x + m.cashUsd + m.borrowedUsd - m.suppliedUsd, 0), note: "accrued reserves on top of what suppliers are owed" } : null}
-          assetsTag="cash + loans" claimsTag="redeemable by suppliers" ratioLabel="Asset coverage"
-          basis={<>Assets: each aToken&apos;s underlying balance plus variable and stable debt; claims: each market&apos;s totalAToken; all read from the pool data provider at the block above and priced at Kaskad&apos;s own oracle (the price it would liquidate at). Coverage assumes loans are repaid or liquidated at those prices; click any figure in the calculation card for its trail.</>} />
-      </div>
+      <ProtocolBalance p={p} />
       <div className="grid gA">
         <div className="card"><History p={p} /></div>
         <div className="card">
@@ -124,6 +114,8 @@ function Financials({ p }: { p: ProtocolView }) {
   if (p.dex) {
     const d = p.dex;
     return (
+      <div style={{ display: "grid", gap: 28 }}>
+      <ProtocolBalance p={p} />
       <div className="grid gA">
         <div className="card"><History p={p} /></div>
         <div className="card">
@@ -138,10 +130,12 @@ function Financials({ p }: { p: ProtocolView }) {
           </div>
         </div>
       </div>
+      </div>
     );
   }
-  return <div className="card"><History p={p} /></div>;
+  return <div style={{ display: "grid", gap: 28 }}><ProtocolBalance p={p} /><div className="card"><History p={p} /></div></div>;
 }
+
 
 function Markets({ p, links }: { p: ProtocolView; links: Links }) {
   if (p.lending)

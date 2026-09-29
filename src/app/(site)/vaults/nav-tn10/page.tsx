@@ -4,6 +4,7 @@ import { Banner } from "@/components/Banner";
 import { Pill } from "@/components/bits";
 import { SplitBar, Ring, CapBars, CopyId } from "@/components/viz";
 import { NavPanel } from "@/components/nav-panel";
+import { Basis, TokenFamily, type Stamp } from "@/components/research";
 import { SharePriceChart } from "@/components/share-chart";
 import { sharePoints } from "@/lib/vaults/share-history";
 import { getNav, navFigures, readNavLive, SOMPI, FIRST_PRICE } from "@/lib/vaults/nav";
@@ -90,6 +91,8 @@ export default async function NavVaultPage() {
   const maturityOpen = m.maturityDaa === 0 || (daa != null && daa - 100 >= m.maturityDaa);
   const valueTotal = f.liquid + f.marks.reduce((s, x) => s + x, 0);
   const since = f.price / (FIRST_PRICE / SOMPI) - 1;
+  const lastAt = (l.moves[l.moves.length - 1]?.at ?? l.createdAt) * 1000;
+  const vs: Stamp = live.matches ? { kind: "onchain", by: "the vault's coin matches this ledger", at: lastAt } : { kind: "reported", by: "the operator's ledger", at: lastAt };
   const payable = f.nav > 0 ? Math.min(1, Math.max(0, f.liquid / f.nav)) : 1;
   const dests = m.destinations;
   const name = (i: number | undefined) => (i != null ? dests[i]?.label.replace(" (test wallet)", "") ?? "" : "");
@@ -125,10 +128,10 @@ export default async function NavVaultPage() {
               : <><b>The ledger is behind the chain.</b> The vault has moved since this page&apos;s ledger was published.</>}</span>
           </div>
           <div className="depth-top depth-4" style={{ margin: 0 }}>
-            <div><span className="eyebrow muted">NAV</span><b>{kas(f.nav)}</b><small>{kas(f.liquid)} liquid · {kas(f.marks.reduce((s, x) => s + x, 0))} in positions</small></div>
-            <div><span className="eyebrow muted">Per share</span><b>{f.price.toFixed(6)}</b><small>{f.shares ? `${since >= 0 ? "+" : "−"}${pct(Math.abs(since), 2)} since launch at ${(FIRST_PRICE / SOMPI).toFixed(2)}` : "launch price"}</small></div>
-            <div><span className="eyebrow muted">Holders</span><b>{f.holders}</b><small>{f.shares.toLocaleString("en-US")} shares in {f.liveNotes} notes</small></div>
-            <div><span className="eyebrow muted">In / out</span><b>{kas(f.deposited, 0)}</b><small>deposited · {kas(f.paidOut, 0)} paid out</small></div>
+            <div><span className="eyebrow muted">NAV</span><b>{kas(f.nav)}</b><small>{kas(f.liquid)} liquid · {kas(f.marks.reduce((s, x) => s + x, 0))} in positions</small><Basis stamp={vs} text={`KAS held by the vault's coin, less its ${kas(f.keep)} seed, plus each destination at the valuer's mark. The same formula prices every deposit and withdrawal, inside the covenant.`} /></div>
+            <div><span className="eyebrow muted">Per share</span><b>{f.price.toFixed(6)}</b><small>{f.shares ? `${since >= 0 ? "+" : "−"}${pct(Math.abs(since), 2)} since launch at ${(FIRST_PRICE / SOMPI).toFixed(2)}` : "launch price"}</small><Basis stamp={vs} text={`NAV ÷ ${f.shares.toLocaleString("en-US")} shares. Deposits mint at this price rounded up; withdrawals pay it rounded down, less the ${m.exitFeeBps / 100}% exit fee that stays with holders.`} /></div>
+            <div><span className="eyebrow muted">Holders</span><b>{f.holders}</b><small>{f.shares.toLocaleString("en-US")} shares in {f.liveNotes} notes</small><Basis stamp={vs} text="Owners of live share notes: each deposit mints one KCC-20 note to its owner's personal withdrawal account; each withdrawal burns a whole note." /></div>
+            <div><span className="eyebrow muted">In / out</span><b>{kas(f.deposited, 0)}</b><small>deposited · {kas(f.paidOut, 0)} paid out</small><Basis stamp={vs} text="Sums of every recorded deposit and withdrawal in the ledger; each is a transaction you can open from the history below." /></div>
           </div>
           <div>
             <div className="eyebrow muted" style={{ marginBottom: 10 }}>Where the NAV is</div>
@@ -141,6 +144,17 @@ export default async function NavVaultPage() {
           <div className="c-head"><h3>Share price since launch</h3><span className="tag">after every move · KAS</span></div>
           <SharePriceChart points={history} launch={FIRST_PRICE / SOMPI} label="Share price since launch" />
           <p className="foot" style={{ marginBottom: 0 }}>The price moves only when value changes for everyone already in: interest, marks, markdowns and exit fees. Deposits and withdrawals happen at NAV and leave it where it is{seedJump ? <>, except the first deposit: shares were minted at the launch price while the vault&apos;s opening seed already counted in NAV, so the first holders received it</> : null}.</p>
+        </div>
+
+        <div className="card">
+          <div className="c-head"><h3>Tokens and coins</h3><span className="tag">everything this vault is made of</span></div>
+          <TokenFamily caption="Outstanding claims and the coins behind them" rows={[
+            { letter: "S", color: "#3987e5", name: "Share token", role: `KCC-20 bound to the vault · ${f.shares.toLocaleString("en-US")} shares in ${f.liveNotes} note${f.liveNotes === 1 ? "" : "s"} · at ${f.price.toFixed(6)} KAS`, amount: kas(f.nav), id: l.shareCovid, main: true },
+            { letter: "V", color: LIQUID, name: "Vault coin", role: "the covenant itself: one coin, its state in its script, moved only by its rules", amount: kas(f.held), id: l.address, href: `https://tn10.kaspa.stream/addresses/${l.address}` },
+            { letter: "K", color: "#6E6788", name: "Seed", role: "the vault's own, inside the vault coin: never shares", amount: kas(f.keep) },
+            { letter: "N", color: "#9085e9", name: "Note deposits", role: `${kas(m.noteValueSompi / SOMPI)} held with each share note, returned with its withdrawal`, amount: kas((f.liveNotes * m.noteValueSompi) / SOMPI) },
+            ...m.destinations.map((d, i) => ({ letter: String(i + 1), color: COLORS[i], name: `Destination · ${d.label.replace(" (test wallet)", "")}`, role: `at most ${d.capBps / 100}% of NAV · marked ${kas(f.marks[i] ?? 0)}, cost ${kas(f.cost[i] ?? 0)}`, amount: kas(f.marks[i] ?? 0), id: d.address, href: `https://tn10.kaspa.stream/addresses/${d.address}` })),
+          ]} />
         </div>
 
         <div className="card">

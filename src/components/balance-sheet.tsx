@@ -6,10 +6,12 @@ export type Line = { key: string; label: string; value: number; color: string; n
  * What is held against what is owed, each as one bar, then the ratio. Every
  * figure is read on-chain by whoever renders it; `basis` says how.
  */
-export function BalanceSheet({ assets, claims, below, fmt, assetsTag, claimsTag, ratioLabel = "Coverage", basis }: {
+export function BalanceSheet({ assets, claims, below, fmt, assetsTag, claimsTag, ratioLabel = "Coverage", basis, claimsEmpty }: {
   assets: Line[]; claims: Line[];
+  /** when what is owed is not read: say so instead of a zero */
+  claimsEmpty?: string;
   /** capital that stands behind the claims without being one (a seed, a junior tranche, reserves) */
-  below?: { label: string; value: number; note: string } | null;
+  below?: { label: string; value: number; note: string; title?: string } | null;
   fmt: (x: number) => string; assetsTag?: string; claimsTag?: string; ratioLabel?: string; basis?: React.ReactNode;
 }) {
   const A = assets.reduce((s, x) => s + x.value, 0), C = claims.reduce((s, x) => s + x.value, 0);
@@ -32,16 +34,18 @@ export function BalanceSheet({ assets, claims, below, fmt, assetsTag, claimsTag,
       </div>
       <div className="bs-side">
         <div className="bs-h"><span className="eyebrow muted">Claims · what is owed</span>{claimsTag && <span className="tag">{claimsTag}</span>}</div>
-        <b className="bs-big">{fmt(C)}</b>
-        <SplitBar label="Claims" parts={part(claims)} height={12} legend={false} tip={false} />
-        {rows(claims, C)}
+        {C > 0 ? <>
+          <b className="bs-big">{fmt(C)}</b>
+          <SplitBar label="Claims" parts={part(claims)} height={12} legend={false} tip={false} />
+          {rows(claims, C)}
+        </> : <><b className="bs-big muted">Not read</b><p className="muted" style={{ margin: 0, fontSize: 14 }}>{claimsEmpty ?? "What this protocol owes is not decoded by dawns yet."}</p></>}
         {below && below.value > 0 && (
-          <div className="bs-below"><span className="eyebrow muted">Standing behind the claims</span><div className="bs-row"><i style={{ background: "#6E6788" }} /><span>{below.label}<small>{below.note}</small></span><b>{fmt(below.value)}</b><em /></div></div>
+          <div className="bs-below"><span className="eyebrow muted">{below.title ?? "Standing behind the claims"}</span><div className="bs-row"><i style={{ background: "#6E6788" }} /><span>{below.label}<small>{below.note}</small></span><b>{fmt(below.value)}</b><em /></div></div>
         )}
       </div>
       <div className="bs-sum">
         <div><span className="eyebrow muted">Total assets</span><b>{fmt(A)}</b></div>
-        <div><span className="eyebrow muted">Total claims</span><b>{fmt(C)}</b></div>
+        <div><span className="eyebrow muted">Total claims</span><b>{C > 0 ? fmt(C) : "—"}</b></div>
         <div><span className="eyebrow muted">{ratioLabel}</span><b className={ratio == null ? undefined : ratio >= 1 ? "up" : "down"}>{ratio == null ? "—" : `${(ratio * 100).toFixed(1)}%`}</b></div>
       </div>
       {basis && <p className="bs-basis">{basis}</p>}

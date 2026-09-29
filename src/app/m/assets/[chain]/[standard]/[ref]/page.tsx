@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import { keyFigures } from "@/lib/assets/basis";
+import { StampLine } from "@/components/research";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAssets, getAssetHistory } from "@/lib/assets";
 import { analyse, dimensions } from "@/lib/assets/analysis";
 import { supplyParts, holderCat, catOf } from "@/lib/assets/holders";
-import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, valueCredible, type Asset, type AssetChain, type AssetStandard } from "@/lib/assets/types";
+import { CHAIN_NAME, STANDARD_NAME, assetId, assetPath, type Asset, type AssetChain, type AssetStandard } from "@/lib/assets/types";
 import { holdingsOf } from "@/lib/assets/view";
 import { getSnapshot } from "@/lib/snapshot";
 import { receiptOf, KIND_LABEL, type Receipt } from "@/lib/underneath";
@@ -79,6 +81,7 @@ export default async function MAsset({ params }: P) {
   const isKas = a.id === "kaspa:native:KAS";
   const twins = all.filter((x) => x.id !== a.id && (isKas ? /^(w?i?kas|wikas|ikas|wkas)$/i.test(x.symbol) : x.symbol.toUpperCase() === a.symbol.toUpperCase())).slice(0, 6);
   const gap = a.poolPrice != null && a.price != null && Math.abs(a.price / a.poolPrice - 1) >= 0.05;
+  const figs = keyFigures(a, s, held.reduce((x, h) => x + h.usd, 0), hist);
   const tabs = [
     { key: "r", label: "Reading", badge: r.flags.length || null },
     { key: "m", label: "Market" },
@@ -90,12 +93,7 @@ export default async function MAsset({ params }: P) {
       <MHead back={{ href: "/assets", label: "Assets" }} eyebrow={`${STANDARD_NAME[a.standard]} · ${CHAIN_NAME[a.chain]}`}
         title={<span style={{ display: "flex", alignItems: "center", gap: 12 }}><AssetCoin a={a.symbol} size={40} />{a.symbol}</span>} sub={r.what} clamp />
       <div className="m-screen">
-        <MStats items={[
-          { label: "Price", value: price(a.price), sub: a.priceSrc ?? undefined },
-          { label: a.standard === "native" ? "Market value" : "Value on chain", value: a.mcap != null ? usd(a.mcap) : "—", sub: a.mcap != null && !valueCredible(a) ? "not realizable: too little trading" : `${whole(a.supply, a.symbol)}` },
-          { label: "Holders", value: a.holders != null ? a.holders.toLocaleString("en-US") : a.chain === "zkas" ? "Shielded" : "—", sub: a.top10 != null ? `top 10 hold ${pct(a.top10, 0)}` : undefined },
-          { label: "Traded 24h", value: a.vol24 != null ? usd(a.vol24) : "—", sub: a.liquidity ? `${usd(a.liquidity)} in DEX pools` : undefined },
-        ]} />
+        <MStats items={figs.map((f) => ({ label: f.label, value: f.value, sub: f.sub, tone: f.tone === "up" ? "good" : f.tone === "down" ? "crit" : undefined }))} />
         <MTabs tabs={tabs}>
           <div className="m-panel">
             {under && <Underneath r={under} />}
@@ -104,6 +102,9 @@ export default async function MAsset({ params }: P) {
             </MCard>
             {r.flags.length > 0 && <MCard title="Findings"><MFlags flags={r.flags} /></MCard>}
             {r.questions.length > 0 && <MCard title="Questions to investigate"><ol className="m-opp-notes" style={{ paddingLeft: 20 }}>{r.questions.map((q) => <li key={q}>{q}</li>)}</ol></MCard>}
+            <MCard title="How each figure is valued">
+              <div className="vlist">{figs.map((f) => <div key={f.label} className="vrow"><span /><div>{f.label} · {f.value}<small>{f.basis}</small><StampLine s={f.stamp} /></div><b /></div>)}</div>
+            </MCard>
             <MNote>Research, not advice: dawns shows what the data says and what it cannot show. It never says buy or sell.</MNote>
           </div>
           <div className="m-panel">
