@@ -722,6 +722,23 @@ async fn pay_exact(client: &KaspaRpcClient, role: &str, to: &Address, want: i64)
     Ok(Some((amount, id.to_string())))
 }
 
+/// What waiting withdrawals will pay, at today's price: each account with a coin at its
+/// redeem address, for its oldest live note (a fixed term pays nothing before maturity).
+async fn waiting_redeems(c: &CCtx, nav: i64) -> Res<i64> {
+    if c.state.shares == 0 { return Ok(0); }
+    if c.m.maturity > 0 && c.daa - DAA_BACKOFF < c.m.maturity { return Ok(0); }
+    let price = nav / c.state.shares;
+    let notes = c.led.v["notes"].as_array().cloned().unwrap_or_default();
+    let mut due = 0;
+    for a in registered(&c.cov) {
+        let Ok(owner) = owner_of(&a) else { continue };
+        let (_, red_addr, _, _) = accounts_of(owner, &c.cov)?;
+        if !coins(&c.client, &red_addr).await?.iter().any(|x| x.entry.covenant_id.is_none()) { continue; }
+        if let Some(n) = notes.iter().find(|n| n["owner"].as_str() == Some(a.as_str()) && n["redeemed"].is_null()) { due += n["shares"].as_i64().unwrap_or(0) * price; }
+    }
+    Ok(due)
+}
+
 async fn credit_manage_pass(c: &mut CCtx, st: &CStrategy) -> Res<Option<String>> {
     if c.state.halted { return Ok(None); }
     let at = claimed(c)?;
@@ -768,11 +785,14 @@ async fn credit_manage_pass(c: &mut CCtx, st: &CStrategy) -> Res<Option<String>>
         }
     }
 
-    // 3. idle cash above the liquid target: lend to an empty slot, within its cap,
-    //    the reserve floor, the per-move and per-period limits and any maturity
+    // 3. idle cash above the liquid target and any withdrawal already waiting: lend to
+    //    an empty slot, within its cap, the reserve floor, the per-move and per-period
+    //    limits and any maturity. Holders waiting to leave come before new loans.
     let held = c.coin.entry.amount as i64;
     let nav = c.m.nav(&c.state, held, at);
-    let keep = st.liquid_bps.max(c.m.reserve_floor_bps) * nav / 10_000;
+    let waiting = waiting_redeems(c, nav).await?;
+    if waiting > 0 && held - c.m.min_keep < waiting { return Ok(None); }
+    let keep = st.liquid_bps.max(c.m.reserve_floor_bps) * nav / 10_000 + waiting;
     let spare = held - c.m.min_keep - c.m.max_fee - keep;
     let spent = if epoch == c.state.epoch_index { c.state.epoch_spent } else { 0 };
     for i in 0..slots {
