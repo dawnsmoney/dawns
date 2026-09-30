@@ -57,7 +57,7 @@ export default async function MBridge() {
             </MCard>
             {b.history && b.history.length > 2 && (
               <MCard title="Backing ratio" tag="hourly">
-                <AreaChart series={[{ name: "Backing", color: "#4ADE9B", values: b.history.map((x) => x.v) }]} dates={b.history.map((x) => x.t)} label="Backing ratio" fmt="pct" height={170} hourly refLine={1} refLabel="100%" />
+                <AreaChart series={[{ name: "Backing", color: "#4ADE9B", values: b.history.map((x) => x.v) }]} dates={b.history.map((x) => x.t)} label="Backing ratio" fmt="pct" stats height={170} hourly refLine={1} refLabel="100%" />
               </MCard>
             )}
           </div>

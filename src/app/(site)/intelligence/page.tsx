@@ -93,17 +93,17 @@ export default async function IntelligencePage() {
         <div className="grid g2" style={{ marginBottom: 28 }}>
           <div className="card">
             <div className="c-head"><h3>Ecosystem TVL, daily</h3><span className="muted">{m.dates.length - 1} days</span></div>
-            {m.tvl.length >= 2 ? <AreaChart label="Ecosystem TVL, daily" dates={m.dates} series={[{ name: "TVL", color: "#9085e9", values: m.tvl }]} zero={false} height={220} /> : <p className="muted">Needs two days of readings.</p>}
+            {m.tvl.length >= 2 ? <AreaChart label="Ecosystem TVL, daily" dates={m.dates} series={[{ name: "TVL", color: "#9085e9", values: m.tvl }]} zero={false} stats height={220} /> : <p className="muted">Needs two days of readings.</p>}
           </div>
           <div className="card">
             <div className="c-head"><h3>Swap volume, daily</h3><span className="muted">Completed days</span></div>
-            {m.vol.length ? <DayBars label="Swap volume by day" values={m.vol} dates={m.volDates} pos="#3987e5" neg="#3987e5" posLabel="Volume" negLabel="" height={220} /> : <p className="muted">Needs one full day of indexed swaps.</p>}
+            {m.vol.length ? <DayBars label="Swap volume by day" values={m.vol} dates={m.volDates} pos="#3987e5" neg="#3987e5" posLabel="Volume" negLabel="" stats height={220} /> : <p className="muted">Needs one full day of indexed swaps.</p>}
           </div>
         </div>
         {m.util.length >= 2 && (
           <div className="card" style={{ marginBottom: 28 }}>
             <div className="c-head"><h3>Lending utilization, daily</h3><span className="muted">Borrowed / supplied, all markets</span></div>
-            <AreaChart label="Lending utilization, daily" dates={m.utilDates} series={[{ name: "Utilization", color: "#3987e5", values: m.util }]} fmt="pct" zero height={200} />
+            <AreaChart label="Lending utilization, daily" dates={m.utilDates} series={[{ name: "Utilization", color: "#3987e5", values: m.util }]} fmt="pct" zero stats height={200} />
           </div>
         )}
 

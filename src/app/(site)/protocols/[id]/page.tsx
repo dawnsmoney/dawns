@@ -252,7 +252,7 @@ function Activity({ p, s }: { p: ProtocolView; s: Snapshot }) {
           <div className="card">
             <div className="c-head"><h3>{p.lending ? "Withdrawable liquidity" : "Value locked"} · hourly</h3><span className="tag">dawns history</span></div>
             {p.intraday.length >= 3
-              ? <AreaChart label={`${p.name} hourly`} hourly zero={false} dates={p.intraday.map((x) => x.t)} series={[{ name: p.lending ? "Withdrawable" : "TVL", color: SERIES[2], values: p.intraday.map((x) => x.v) }]} height={230} />
+              ? <AreaChart label={`${p.name} hourly`} hourly zero={false} stats dates={p.intraday.map((x) => x.t)} series={[{ name: p.lending ? "Withdrawable" : "TVL", color: SERIES[2], values: p.intraday.map((x) => x.v) }]} height={230} />
               : <p className="muted">dawns started recording this protocol recently. The hourly chart appears after a few readings.</p>}
             <p className="foot">Read by dawns every 10 minutes and stored in its own database{p.d24Source === "dawns" ? ". The 24h change on this page uses these readings." : "."}</p>
           </div>

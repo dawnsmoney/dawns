@@ -59,7 +59,7 @@ export default async function MHome() {
             </MCard>
             <MCard title="Value locked" tag="daily">
               {s.eco.series.length > 2
-                ? <AreaChart series={[{ name: "TVL", color: "#8578E6", values: s.eco.series.map((p) => p.v) }]} dates={s.eco.series.map((p) => p.t)} label="Kaspa DeFi value locked" height={190} range="3M" />
+                ? <AreaChart series={[{ name: "TVL", color: "#8578E6", values: s.eco.series.map((p) => p.v) }]} dates={s.eco.series.map((p) => p.t)} label="Kaspa DeFi value locked" height={190} range="3M" stats />
                 : <MNote>History unavailable this run.</MNote>}
             </MCard>
           </div>

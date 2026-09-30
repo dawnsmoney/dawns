@@ -244,10 +244,12 @@ tr:last-child td{border-bottom:0}
 /* charts */
 .chart{position:relative;width:100%}
 .chart svg{display:block;width:100%;height:auto;overflow:visible}
-.axis text{fill:var(--ink-3);font:500 11.5px var(--display)}
+.axis text{fill:var(--ink-3);font:400 10.5px var(--mono);font-variant-numeric:tabular-nums}
 .grid-l{stroke:rgba(210,200,255,.07);stroke-width:1}
+.grid-v{stroke:rgba(210,200,255,.045);stroke-width:1}
 .tip{position:absolute;pointer-events:none;background:rgba(36,28,88,.96);border:1px solid var(--line-2);border-radius:14px;padding:10px 12px;font-size:13px;min-width:160px;box-shadow:0 14px 34px rgba(0,0,0,.4);transform:translate(-50%,-100%);white-space:nowrap;z-index:5}
-.tip .d{font:500 12px var(--display);color:var(--ink-3);margin-bottom:6px}
+.tip.below{transform:translate(-50%,0)}
+.tip .d{font:400 11.5px var(--mono);color:var(--ink-3);margin-bottom:6px}
 .tip .r{display:flex;justify-content:space-between;gap:16px;align-items:center;line-height:1.7}
 .tip .r span{display:flex;gap:7px;align-items:center;color:var(--ink-2)}
 .tip .r i{width:9px;height:9px;border-radius:50%}
@@ -1697,7 +1699,7 @@ a.tf-id:hover{color:var(--ink)}
 .vc-ramp{gap:0 !important;display:inline-grid !important;grid-template-columns:repeat(3,auto);column-gap:18px !important;row-gap:4px}
 .vc-ramp i{grid-column:1 / -1;width:180px !important;height:8px !important;border-radius:4px !important}
 .vc-ramp em{font-style:normal;font-size:11.5px}.vc-ramp em:nth-of-type(2){text-align:center}.vc-ramp em:nth-of-type(3){text-align:right}
-@media (max-width:640px){.vc-hero b{font-size:28px}.vc-stat b{font-size:17px}.vc-ranges{margin-left:0}.vc-head{display:grid;grid-template-columns:1fr 1fr;gap:14px 12px;align-items:start}.vc-hero,.vc-ranges{grid-column:1 / -1}.vc-ranges{justify-self:start}.vc-stat{padding:0 0 0 12px}}
+@media (max-width:640px){.vc-hero b{font-size:28px}.vc-stat b{font-size:17px}.vc-ranges{margin-left:0}.vc-head{gap:12px 0;align-items:flex-end}.vc-hero{padding-right:16px}.vc-stat{padding:0 16px 0 14px}.vc-ranges{flex-basis:100%;justify-content:flex-start;width:max-content}}
 
 /* Report a problem */
 .rep-btn{position:fixed;right:20px;bottom:20px;z-index:45;display:inline-flex;align-items:center;gap:8px;padding:8px 14px 8px 8px;border-radius:999px;border:1px solid var(--line-2);background:rgba(20,14,52,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:var(--ink-2);font:500 13px var(--body);cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,.35)}

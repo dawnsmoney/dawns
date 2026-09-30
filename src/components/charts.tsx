@@ -22,23 +22,24 @@ const CARD = "#241B58";
 
 /* ---------- range toggle + area chart ---------- */
 export function RangeChart(props: Omit<AreaProps, "range"> & { title: string; legend?: boolean }) {
-  const [range, setRange] = useState<"1M" | "3M">("3M");
+  const long = props.dates.length > 45;
+  const [range, setRange] = useState<"1M" | "3M">(long ? "3M" : "1M");
   return (
     <>
-      <div className="c-head">
-        <h3>{props.title}</h3>
-        <div className="seg" role="group" aria-label="Range">
-          {(["1M", "3M"] as const).map((r) => (
-            <button key={r} type="button" className={r === range ? "on" : ""} onClick={() => setRange(r)}>{r}</button>
-          ))}
-        </div>
-      </div>
+      <div className="c-head"><h3>{props.title}</h3></div>
+      <AreaChart {...props} range={long ? range : "3M"} stats
+        toggle={long ? (
+          <div className="vc-ranges" role="group" aria-label="Range">
+            {(["1M", "3M"] as const).map((r) => (
+              <button key={r} type="button" className={r === range ? "on" : ""} aria-pressed={r === range} onClick={() => setRange(r)}>{r}</button>
+            ))}
+          </div>
+        ) : null} />
       {props.legend && (
-        <div className="legend" style={{ marginBottom: 12 }}>
+        <div className="legend" style={{ marginTop: 12 }}>
           {props.series.map((s) => (<span key={s.name}><i style={{ background: s.color }} />{s.name}</span>))}
         </div>
       )}
-      <AreaChart {...props} range={range} />
     </>
   );
 }
@@ -56,9 +57,12 @@ type AreaProps = {
   label: string;
   range?: "1M" | "3M";
   hourly?: boolean;
+  /** a row above the plot: the latest value, and its change over what the chart shows */
+  stats?: boolean;
+  toggle?: React.ReactNode;
 };
 
-export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "usdFull", refLine, refLabel, area = "first", height, label, range = "3M", hourly }: AreaProps) {
+export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "usdFull", refLine, refLabel, area = "first", height, label, range = "3M", hourly, stats, toggle }: AreaProps) {
   const hh = (t: number) => `${String(new Date(t).getUTCHours()).padStart(2, "0")}:00`;
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
@@ -86,7 +90,8 @@ export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "
   const y = (v: number) => padT + ih - ((v - lo) / (hi - lo)) * ih;
   const line = (arr: number[]) => arr.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("L");
   // at most four date labels, never the same day twice (a short history has fewer points than labels)
-  const xt = [0, Math.round((n - 1) / 3), Math.round((2 * (n - 1)) / 3), n - 1]
+  const nx = W < 520 ? 3 : 5;
+  const xt = Array.from({ length: nx + 1 }, (_, k) => Math.round((k * (n - 1)) / nx))
     .filter((i, j, a) => a.indexOf(i) === j)
     .filter((i, j, a) => j === 0 || shortDate(dates[i]) !== shortDate(dates[a[j - 1]]));
   const step = ticks.length > 1 ? ticks[1] - ticks[0] : 0;
@@ -100,15 +105,29 @@ export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "
   const hv = hover;
   const topAt = (i: number) => (stacked ? tops[tops.length - 1][i] : Math.max(...series.map((s) => s.values[i])));
 
+  const total = (i: number) => (stacked ? tops[tops.length - 1][i] : series[0]?.values[i] ?? 0);
+  const now = n ? total(n - 1) : 0, first = n ? total(0) : 0;
+  const ch = fmt === "pct" ? now - first : first ? now / first - 1 : 0;
+  const chText = fmt === "pct" ? `${ch >= 0 ? "+" : "−"}${Math.abs(ch * 100).toFixed(1)}pp` : `${ch >= 0 ? "+" : "−"}${Math.abs(ch * 100).toFixed(ch !== 0 && Math.abs(ch) < 0.1 ? 2 : 1)}%`;
+  const days = n > 1 ? Math.round((dates[n - 1] - dates[0]) / 86_400_000) : 0;
   return (
+    <>
+    {stats && n > 1 && (
+      <div className="vc-head" style={{ marginBottom: 14 }}>
+        <div className="vc-hero"><b>{formatValue(now, fmt === "usdFull" ? "usd" : fmt)}</b><small>{stacked ? "total now" : series[0]?.name === "TVL" ? "now" : `${series[0]?.name ?? ""} now`}</small></div>
+        <div className="vc-stat"><b className={ch > 0 ? "up" : ch < 0 ? "down" : undefined}>{chText}</b><small>over {hourly && dates[n - 1] - dates[0] < 48 * 3_600_000 ? `${Math.max(1, Math.round((dates[n - 1] - dates[0]) / 3_600_000))} hours` : `${Math.max(1, days)} days`}</small></div>
+        {toggle}
+      </div>
+    )}
     <div className="chart" ref={ref}>
       {width > 0 && (
         <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={label}>
           <defs>
             {series.map((s, k) => (
               <linearGradient key={k} id={`${gid}g${k}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor={s.color} stopOpacity={stacked ? 0.9 : 0.28} />
-                <stop offset="1" stopColor={s.color} stopOpacity={stacked ? 0.55 : 0} />
+                <stop offset="0" stopColor={s.color} stopOpacity={stacked ? 0.9 : 0.46} />
+                <stop offset=".7" stopColor={s.color} stopOpacity={stacked ? 0.7 : 0.12} />
+                <stop offset="1" stopColor={s.color} stopOpacity={stacked ? 0.55 : 0.02} />
               </linearGradient>
             ))}
           </defs>
@@ -119,6 +138,7 @@ export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "
                 <text x={padL - 10} y={y(t) + 4} textAnchor="end">{formatAxis(t, fmt, step)}</text>
               </g>
             ))}
+            {xt.map((i, j) => j > 0 && j < xt.length - 1 && <line key={`v${j}`} className="grid-v" x1={x(i)} x2={x(i)} y1={padT} y2={padT + ih} />)}
             {xt.map((i, j) => (
               <text key={j} x={x(i)} y={H - 6} textAnchor={j === 0 ? "start" : j === xt.length - 1 ? "end" : "middle"}>{shortDate(dates[i])}{hourly && n < 60 ? ` ${hh(dates[i])}` : ""}</text>
             ))}
@@ -168,7 +188,7 @@ export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "
         </svg>
       )}
       {hv != null && width > 0 && (
-        <div className="tip" style={{ left: Math.max(80, Math.min(width - 80, (x(hv) * width) / W)), top: (y(topAt(hv)) * width) / W - 12 }}>
+        <div className={`tip${(y(topAt(hv)) * width) / W < 90 ? " below" : ""}`} style={{ left: Math.max(80, Math.min(width - 80, (x(hv) * width) / W)), top: (y(topAt(hv)) * width) / W + ((y(topAt(hv)) * width) / W < 90 ? 14 : -12) }}>
           <div className="d">{shortDate(dates[hv])}{hourly ? `, ${hh(dates[hv])} UTC` : ", 2026"}</div>
           {stacked && <div className="r"><span>Total</span><b>{formatValue(tops[tops.length - 1][hv], fmt)}</b></div>}
           {[...series].reverse().map((s) => (
@@ -177,11 +197,12 @@ export function AreaChart({ series: all, dates: allDates, stacked, zero, fmt = "
         </div>
       )}
     </div>
+    </>
   );
 }
 
 /* ---------- bars ---------- */
-export function Bars({ values, dates, pos, neg, posLabel, negLabel, diverging, height = 210, label }: { values: number[]; dates: number[]; pos: string; neg: string; posLabel: string; negLabel: string; diverging?: boolean; height?: number; label: string }) {
+export function Bars({ values, dates, pos, neg, posLabel, negLabel, diverging, height = 210, label, stats }: { values: number[]; dates: number[]; pos: string; neg: string; posLabel: string; negLabel: string; diverging?: boolean; height?: number; label: string; stats?: boolean }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hv, setHv] = useState<number | null>(null);
   const W = Math.max(280, width || 600), H = height, padL = 54, padR = 14, padT = 12, padB = 26;
@@ -191,10 +212,24 @@ export function Bars({ values, dates, pos, neg, posLabel, negLabel, diverging, h
   const lo = ticks[0], hi = ticks[ticks.length - 1];
   const y = (v: number) => padT + ih - ((v - lo) / (hi - lo)) * ih;
   const bw = iw / n, gap = Math.max(2, bw * 0.25);
+  const sum = values.reduce((t, v) => t + v, 0);
+  const gid = `b${label.replace(/\W+/g, "")}`;
   return (
+    <>
+    {stats && n > 0 && (
+      <div className="vc-head" style={{ marginBottom: 14 }}>
+        <div className="vc-hero"><b>{usd(values[n - 1])}</b><small>last full day, {shortDate(dates[n - 1])}</small></div>
+        <div className="vc-stat"><b>{usd(sum)}</b><small>over {n} day{n === 1 ? "" : "s"}</small></div>
+      </div>
+    )}
     <div className="chart" ref={ref}>
       {width > 0 && (
         <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={label} onPointerLeave={() => setHv(null)}>
+          <defs>
+            {[["p", pos], ["n", neg]].map(([k, c]) => (
+              <linearGradient key={k} id={`${gid}${k}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={c} /><stop offset="1" stopColor={c} stopOpacity=".45" /></linearGradient>
+            ))}
+          </defs>
           <g className="axis">
             {ticks.map((t) => (
               <g key={t}>
@@ -202,15 +237,15 @@ export function Bars({ values, dates, pos, neg, posLabel, negLabel, diverging, h
                 <text x={padL - 10} y={y(t) + 4} textAnchor="end">{usd(t, 0)}</text>
               </g>
             ))}
-            {[0, Math.round((n - 1) / 2), n - 1].map((i, j) => (
-              <text key={j} x={padL + i * bw + bw / 2} y={H - 6} textAnchor={j === 0 ? "start" : j === 2 ? "end" : "middle"}>{shortDate(dates[i])}</text>
+            {(W < 520 ? [0, Math.round((n - 1) / 2), n - 1] : [0, Math.round((n - 1) / 4), Math.round((n - 1) / 2), Math.round((3 * (n - 1)) / 4), n - 1]).filter((i, j, a) => a.indexOf(i) === j).map((i, j, a) => (
+              <text key={j} x={padL + i * bw + bw / 2} y={H - 6} textAnchor={j === 0 ? "start" : j === a.length - 1 ? "end" : "middle"}>{shortDate(dates[i])}</text>
             ))}
           </g>
           {values.map((v, i) => {
             const y0 = y(0), y1 = y(v), w = bw - gap;
             return (
-              <rect key={i} x={padL + i * bw + gap / 2} y={Math.min(y0, y1)} width={w} height={Math.max(1, Math.abs(y1 - y0))} rx={Math.min(3, w / 2)}
-                fill={v >= 0 ? pos : neg} opacity={hv == null || hv === i ? 1 : 0.45} />
+              <rect key={i} x={padL + i * bw + gap / 2} y={Math.min(y0, y1)} width={w} height={Math.max(1, Math.abs(y1 - y0))} rx={Math.min(4, w / 2)}
+                fill={`url(#${gid}${v >= 0 ? "p" : "n"})`} opacity={hv == null || hv === i ? 1 : 0.45} />
             );
           })}
           <line x1={padL} x2={W - padR} y1={y(0)} y2={y(0)} stroke="rgba(255,255,255,.3)" />
@@ -220,12 +255,13 @@ export function Bars({ values, dates, pos, neg, posLabel, negLabel, diverging, h
         </svg>
       )}
       {hv != null && width > 0 && (
-        <div className="tip" style={{ left: Math.max(80, Math.min(width - 80, ((padL + hv * bw + bw / 2) * width) / W)), top: (Math.min(y(values[hv]), y(0)) * width) / W - 10 }}>
+        <div className={`tip${(Math.min(y(values[hv]), y(0)) * width) / W < 90 ? " below" : ""}`} style={{ left: Math.max(80, Math.min(width - 80, ((padL + hv * bw + bw / 2) * width) / W)), top: (Math.min(y(values[hv]), y(0)) * width) / W + ((Math.min(y(values[hv]), y(0)) * width) / W < 90 ? 14 : -10) }}>
           <div className="d">{shortDate(dates[hv])}, 2026</div>
           <div className="r"><span><i style={{ background: values[hv] >= 0 ? pos : neg }} />{values[hv] >= 0 ? posLabel : negLabel}</span><b>{usd(values[hv])}</b></div>
         </div>
       )}
     </div>
+    </>
   );
 }
 

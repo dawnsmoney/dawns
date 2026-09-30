@@ -132,7 +132,7 @@ export default async function BridgePage() {
         {b.history && b.history.length >= 3 && (
           <div className="card" style={{ marginTop: 22 }}>
             <div className="c-head"><h3>Backing · hourly</h3><span className="tag">dawns history</span></div>
-            <AreaChart label="iKAS backing" hourly fmt="pct" refLine={1} refLabel="100%" area="none" dates={b.history.map((x) => x.t)} series={[{ name: "Backing", color: SERIES[2], values: b.history.map((x) => x.v) }]} height={220} />
+            <AreaChart label="iKAS backing" hourly fmt="pct" stats refLine={1} refLabel="100%" area="none" dates={b.history.map((x) => x.t)} series={[{ name: "Backing", color: SERIES[2], values: b.history.map((x) => x.v) }]} height={220} />
           </div>
         )}
 

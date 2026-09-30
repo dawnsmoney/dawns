@@ -54,9 +54,9 @@ export default async function MIntelligence() {
             {emerging.length ? <div className="m-opps">{emerging.map((o) => <MOpp key={o.id} o={o} t={I.byOpp[o.id]} />)}</div> : <MNote>Nothing meets all three this week.</MNote>}
           </div>
           <div className="m-panel">
-            <MCard title="Ecosystem TVL, daily">{m.tvl.length >= 2 ? <AreaChart label="Ecosystem TVL, daily" dates={m.dates} series={[{ name: "TVL", color: "#9085e9", values: m.tvl }]} zero={false} height={200} /> : <MNote>Needs two days of readings.</MNote>}</MCard>
-            <MCard title="Swap volume, daily">{m.vol.length ? <DayBars label="Swap volume by day" values={m.vol} dates={m.volDates} pos="#3987e5" neg="#3987e5" posLabel="Volume" negLabel="" height={190} /> : <MNote>Needs one full day of indexed swaps.</MNote>}</MCard>
-            {m.util.length >= 2 && <MCard title="Lending utilization, daily"><AreaChart label="Lending utilization, daily" dates={m.utilDates} series={[{ name: "Utilization", color: "#3987e5", values: m.util }]} fmt="pct" zero height={180} /></MCard>}
+            <MCard title="Ecosystem TVL, daily">{m.tvl.length >= 2 ? <AreaChart label="Ecosystem TVL, daily" dates={m.dates} series={[{ name: "TVL", color: "#9085e9", values: m.tvl }]} zero={false} stats height={200} /> : <MNote>Needs two days of readings.</MNote>}</MCard>
+            <MCard title="Swap volume, daily">{m.vol.length ? <DayBars label="Swap volume by day" values={m.vol} dates={m.volDates} pos="#3987e5" neg="#3987e5" posLabel="Volume" negLabel="" stats height={190} /> : <MNote>Needs one full day of indexed swaps.</MNote>}</MCard>
+            {m.util.length >= 2 && <MCard title="Lending utilization, daily"><AreaChart label="Lending utilization, daily" dates={m.utilDates} series={[{ name: "Utilization", color: "#3987e5", values: m.util }]} fmt="pct" zero stats height={180} /></MCard>}
           </div>
         </MTabs>
         <MLinkButton href="/opportunities" kind="ghost">Every opportunity, with its Dawns view</MLinkButton>

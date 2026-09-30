@@ -43,8 +43,8 @@ function Overview({ p, sig }: { p: ProtocolView; sig: { t: Status; strong: strin
       )}
       <MCard title={p.lending ? "Withdrawable liquidity" : "Value locked"} tag="dawns history">
         {p.intraday.length > 2
-          ? <AreaChart series={[{ name: p.name, color: "#8578E6", values: p.intraday.map((x) => x.v) }]} dates={p.intraday.map((x) => x.t)} label={`${p.name} value, hourly`} height={180} hourly />
-          : p.history.length > 2 ? <AreaChart series={[{ name: p.name, color: "#8578E6", values: p.history.map((x) => x.v) }]} dates={p.history.map((x) => x.t)} label={`${p.name} value, daily`} height={180} range="3M" />
+          ? <AreaChart series={[{ name: p.name, color: "#8578E6", values: p.intraday.map((x) => x.v) }]} dates={p.intraday.map((x) => x.t)} label={`${p.name} value, hourly`} height={180} hourly stats />
+          : p.history.length > 2 ? <AreaChart series={[{ name: p.name, color: "#8578E6", values: p.history.map((x) => x.v) }]} dates={p.history.map((x) => x.t)} label={`${p.name} value, daily`} stats height={180} range="3M" />
           : <MNote>Not enough history yet.</MNote>}
       </MCard>
       {p.tokens.length > 0 && (
