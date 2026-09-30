@@ -73,7 +73,15 @@ const FEE: u64 = 1_000_000;
 /// repayment, markdown, halt). The covenant allows up to the mandate's maxFee; paying
 /// all of it on every move would drain holders (0.1 KAS a move on a 100 KAS vault is
 /// 0.1% each time), so the vault pays what a transaction needs, never more than maxFee.
-fn move_fee(max_fee: i64) -> i64 { max_fee.min(FEE as i64) }
+///
+/// The node prices a transaction by its transient mass, about 2 grams per byte at
+/// 100 sompi a gram, and a vault move's bytes are mostly the covenant script it
+/// spends. So the fee follows the script's length plus room for the signature,
+/// state, outputs and a second (account) input, and never exceeds maxFee.
+fn move_fee(max_fee: i64, script_len: usize) -> i64 {
+    let need = (script_len as i64 + 2_500) * 220;
+    max_fee.min(need.max(FEE as i64))
+}
 
 /// Compute budget per input, in units of 10,000 script units. One signature
 /// check costs 100,000 on its own. Measured by the harness (tests/budget.rs)

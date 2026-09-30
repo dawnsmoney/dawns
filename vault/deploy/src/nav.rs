@@ -513,7 +513,7 @@ async fn do_allocate(c: &mut NCtx, slot: usize, amount: i64) -> Res<String> {
     n.epoch_index = epoch;
     n.epoch_spent = spent + amount;
     let succ = compile_nav(&c.m, &n)?;
-    let keep = held - amount - move_fee(c.m.max_fee);
+    let keep = held - amount - move_fee(c.m.max_fee, c.cur.bytecode.len());
     let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET)], vec![cont(&succ, keep, c.cov), out(amount, to)], daa as u64);
     let entries = vec![c.coin.entry.clone()];
     let sig = sighash_sig(&tx, &entries, 0, &load_key("allocator")?)?;
@@ -534,7 +534,7 @@ async fn do_recall(c: &mut NCtx, slot: usize, amount: i64) -> Res<String> {
     n.deployed[slot] = (n.deployed[slot] - amount).max(0);
     n.marks[slot] = (n.marks[slot] - amount).max(0);
     let succ = compile_nav(&c.m, &n)?;
-    let landed = held + amount - move_fee(c.m.max_fee);
+    let landed = held + amount - move_fee(c.m.max_fee, c.cur.bytecode.len());
     let mut outs = vec![cont(&succ, landed, c.cov)];
     if change > 0 { outs.push(out(change, pay_to_address_script(&from))); }
     let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET), input(&coin, P2PK_BUDGET)], outs, 0);
@@ -555,7 +555,7 @@ async fn do_mark(c: &mut NCtx, marks: [i64; 4]) -> Res<String> {
     n.mark_epoch = (daa - c.m.not_before) / c.m.epoch_length;
     let succ = compile_nav(&c.m, &n)?;
     let held = c.coin.entry.amount as i64;
-    let keep = held - move_fee(c.m.max_fee);
+    let keep = held - move_fee(c.m.max_fee, c.cur.bytecode.len());
     let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET)], vec![cont(&succ, keep, c.cov)], daa as u64);
     let entries = vec![c.coin.entry.clone()];
     let sig = sighash_sig(&tx, &entries, 0, &load_key("valuer")?)?;
@@ -988,7 +988,7 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
             let n = Nav { halted: true, ..c.state };
             let succ = compile_nav(&c.m, &n)?;
             let held = c.coin.entry.amount as i64;
-            let keep = held - move_fee(c.m.max_fee);
+            let keep = held - move_fee(c.m.max_fee, c.cur.bytecode.len());
             let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET)], vec![cont(&succ, keep, c.cov)], 0);
             let entries = vec![c.coin.entry.clone()];
             let sig = sighash_sig(&tx, &entries, 0, &load_key("guardian")?)?;
