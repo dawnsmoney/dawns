@@ -14,7 +14,7 @@ const STATUS_PILL: Record<StudioDraft["status"], [string, string]> = {
 async function post(body: Record<string, unknown>) {
   const r = await fetch("/api/admin/cards", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const j = (await r.json().catch(() => ({}))) as { error?: string; id?: string };
-  if (!r.ok) throw new Error(j.error ?? "Something went wrong.");
+  if (!r.ok) throw new Error(j.error ?? `Something went wrong (HTTP ${r.status}).`);
   return j;
 }
 

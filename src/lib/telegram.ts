@@ -23,17 +23,21 @@ export function send(chatId: number | string, html: string, extra: Record<string
   return tg("sendMessage", { chat_id: chatId, text: html, parse_mode: "HTML", link_preview_options: { is_disabled: true }, ...extra });
 }
 
-/** Post an image (PNG) with an HTML caption (at most 1024 characters). */
+/**
+ * Post an image (PNG) with a plain-text caption. Telegram caps captions at 1024 characters:
+ * a longer text goes out as a message right below the photo instead of being cut.
+ */
 export async function sendPhoto(chatId: number | string, png: Blob, caption: string) {
   if (!TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is not set");
+  const fits = caption.length <= 1024;
   const fd = new FormData();
   fd.set("chat_id", String(chatId));
-  fd.set("photo", png, "dawns.png");
-  fd.set("caption", caption.slice(0, 1024));
-  fd.set("parse_mode", "HTML");
+  fd.set("photo", new File([await png.arrayBuffer()], "dawns.png", { type: "image/png" }));
+  if (fits) fd.set("caption", caption);
   const r = await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, { method: "POST", body: fd, cache: "no-store", signal: AbortSignal.timeout(20_000) });
-  const j = (await r.json()) as { ok: boolean; description?: string };
-  if (!j.ok) throw new Error(`Telegram sendPhoto: ${j.description}`);
+  const j = (await r.json().catch(() => ({ ok: false, description: `HTTP ${r.status}` }))) as { ok: boolean; description?: string };
+  if (!j.ok) throw new Error(`Telegram: ${j.description}`);
+  if (!fits) await tg("sendMessage", { chat_id: chatId, text: caption.slice(0, 4096), link_preview_options: { is_disabled: true } });
 }
 
 export const COMMANDS = [

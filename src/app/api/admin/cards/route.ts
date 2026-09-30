@@ -4,7 +4,7 @@ import { sql, ensureSchema } from "@/lib/db";
 import { getSnapshot } from "@/lib/snapshot";
 import { getDraft, makeCard, type CardKind } from "@/lib/cards";
 import { renderCard } from "@/lib/card-image";
-import { sendPhoto, esc, hasBot, SITE } from "@/lib/telegram";
+import { sendPhoto, hasBot, SITE } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -48,12 +48,17 @@ export async function POST(req: Request) {
     const channel = process.env.TELEGRAM_CHANNEL_ID;
     if (!hasBot() || !channel) return Response.json({ error: "TELEGRAM_BOT_TOKEN or TELEGRAM_CHANNEL_ID is not set." }, { status: 400 });
     if (d.status !== "approved" && d.status !== "sent") return Response.json({ error: "Approve the card first." }, { status: 400 });
-    const png = await (await renderCard(d.data, d.reading)).blob();
     const url = `${SITE}${d.data.path}`;
     const caption = d.data.caption
-      ? esc(d.data.caption.replace("{reading}", d.reading).replace("{url}", url))
-      : `<b>${esc(d.data.title)}</b>\n\n${esc(d.reading)}\n\n${url}\n<i>Research, not advice.</i>`;
-    await sendPhoto(channel, png, caption);
+      ? d.data.caption.replace("{reading}", d.reading).replace("{url}", url)
+      : `${d.data.title}\n\n${d.reading}\n\n${url}\nResearch, not advice.`;
+    try {
+      const png = await (await renderCard(d.data, d.reading)).blob();
+      await sendPhoto(channel, png, caption);
+    } catch (e) {
+      console.error("card telegram", d.id, e);
+      return Response.json({ error: `Couldn't post: ${(e as Error).message}` }, { status: 502 });
+    }
     await q.query("update card_drafts set status = 'sent', sent_at = now(), updated_at = now() where id = $1", [d.id]);
     return Response.json({ ok: true });
   }
