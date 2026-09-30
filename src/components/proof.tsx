@@ -244,7 +244,7 @@ export function ProofBody({ p, h, origin, compact }: { p: Proof; h: ProofHistory
   return (
     <div className={`prf${compact ? " compact" : ""}`}>
       <Verified p={p} />
-      {p.kind === "vault" && <div style={{ marginTop: 18 }}><OwnVaultsNote id={p.id} here /></div>}
+      {p.kind === "vault" && <div style={{ marginTop: 18 }}><OwnVaultsNote id={p.id} here href={p.href} /></div>}
       <Headline p={p} />
       <section className="prf-sec"><h2>Reserves</h2><History p={p} h={h} /></section>
       <section className="prf-sec"><h2>Breakdown</h2><Breakdown p={p} /></section>

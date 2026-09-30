@@ -1,0 +1,7 @@
+{
+  "note": "Demo vault, accelerated clock: 60% lends through the demo credit vault (destination C's wallet deposits there), 15% + 15% sit in two test wallets, 10% stays liquid.",
+  "targetsBps": [1500, 1500, 6000],
+  "liquidBps": 1000,
+  "minMoveKas": "1",
+  "credit": { "slot": 2, "dir": "../demo-credit", "shared": [] }
+}

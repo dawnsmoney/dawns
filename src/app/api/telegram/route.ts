@@ -19,7 +19,7 @@ type Update = {
 
 const BRIDGE = { id: "igra-bridge", name: "Igra bridge" };
 // dawns' own vaults: watched and alerted like any protocol
-const OWN = [{ id: "nav-tn10", name: "dawns NAV vault (testnet)" }, { id: "fixed-tn10", name: "dawns fixed-term vault (testnet)" }, { id: "credit-tn10", name: "dawns credit vault (testnet)" }];
+const OWN = [{ id: "nav-tn10", name: "dawns NAV vault (testnet)" }, { id: "fixed-tn10", name: "dawns fixed-term vault (testnet)" }, { id: "credit-tn10", name: "dawns credit vault (testnet)" }, { id: "demo-tn10", name: "dawns demo vault (testnet)" }];
 
 /** Everything a chat can watch: protocols above the alert floor, the bridge, or all. */
 function targets(s: Snapshot) {

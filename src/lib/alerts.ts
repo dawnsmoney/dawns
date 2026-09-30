@@ -90,7 +90,7 @@ function dedupe(list: Signal[]) {
 
 /* ---------- 3. delivery ---------- */
 const ICON: Record<Status, string> = { crit: "🔴", warn: "🟠", info: "🔵", good: "🟢" };
-const VAULTS: Record<string, string> = { "nav-tn10": "dawns NAV vault (testnet)", "fixed-tn10": "dawns fixed-term vault (testnet)", "credit-tn10": "dawns credit vault (testnet)" };
+const VAULTS: Record<string, string> = { "nav-tn10": "dawns NAV vault (testnet)", "fixed-tn10": "dawns fixed-term vault (testnet)", "credit-tn10": "dawns credit vault (testnet)", "demo-tn10": "dawns demo vault (testnet)" };
 const link = (p: string | null) => (p === "igra-bridge" ? `${SITE}/bridge` : p && VAULTS[p] ? `${SITE}/vaults/${p}` : p ? `${SITE}/protocols/${p}` : SITE);
 
 export function formatAlert(e: AlertEvent, names: Record<string, string>) {

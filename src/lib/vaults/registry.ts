@@ -89,6 +89,18 @@ export async function vaults(): Promise<VaultCard[]> {
         figures: [{ label: "Launch price", value: `${(FIRST_PRICE / SOMPI).toFixed(2)} KAS / share` }] });
     }
   }
+  {
+    // the demo pair's NAV vault, once launched
+    const { l: dl, m: dm } = await getNav("demo-tn10");
+    if (dl && dm) {
+      const f = navFigures(dl, dm);
+      out.push({ id: "demo-tn10", kind: "nav", name: dm.name, href: "/vaults/demo-tn10", manager: dm.manager ?? "dawns", network: "testnet-10", status: "live",
+        yield: shareYield(dl.moves, f.price, Date.now() / 1000), liquidShare: f.nav > 0 ? Math.max(0, f.liquid) / f.nav : null,
+        pitch: "A demo on an accelerated clock (an hour stands in for a month): 60% lends through the demo credit vault to test borrowers who repay on schedule.",
+        figures: [{ label: "NAV", value: kas(f.nav) }, { label: "Per share", value: f.price.toFixed(4) }, { label: "Holders", value: String(f.holders) }],
+        guarantees: ["Shares minted only against KAS received", "Payout only to the owner's address", `${dm.exitFeeBps / 100}% exit fee stays with holders`] });
+    }
+  }
   const { l: cl, m: cm } = await getCredit();
   if (cl && cm) {
     const f = creditFigures(cl, cm, null);

@@ -19,9 +19,9 @@ const when = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 16).re
 const day = (ms: number | null) => (ms == null ? "—" : new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC");
 
 export async function MNavVault({ slug }: { slug: NavSlug }) {
-  const fixed = slug === "fixed-tn10";
+  const fixed = slug === "fixed-tn10", demo = slug === "demo-tn10";
   const { l, m } = await getNav(slug);
-  if (!l || !m) return (<><MHead back={{ href: "/vaults", label: "Vaults" }} title={fixed ? "Fixed-term vault" : "NAV vault"} sub={fixed ? "The NAV covenant with a deposit window and a maturity date. Launching on testnet-10." : "Launching on testnet-10."} /></>);
+  if (!l || !m) return (<><MHead back={{ href: "/vaults", label: "Vaults" }} title={fixed ? "Fixed-term vault" : demo ? "Demo vault" : "NAV vault"} sub={fixed ? "The NAV covenant with a deposit window and a maturity date. Launching on testnet-10." : "Launching on testnet-10."} /></>);
   const live = await readNavLive(l);
   const f = navFigures(l, m);
   const maturityOpen = m.maturityDaa === 0 || (live.daa != null && live.daa - 100 >= m.maturityDaa);
@@ -40,7 +40,7 @@ export async function MNavVault({ slug }: { slug: NavSlug }) {
   const liquidity = liquidPoints(l.moves, m.minKeepSompi, { liquid: f.liquid, nav: f.nav }, (x) => log.find((y) => y.key === x.txid)?.title ?? x.kind);
   return (
     <>
-      <MHead back={{ href: "/vaults", label: "Vaults" }} eyebrow={`${fixed ? "Fixed term" : "NAV"} · testnet-10 · not audited`} title={m.name}
+      <MHead back={{ href: "/vaults", label: "Vaults" }} eyebrow={`${fixed ? "Fixed term" : demo ? "Demo · accelerated clock" : "NAV"} · testnet-10 · not audited`} title={m.name}
         right={l.state.halted ? <Pill t="crit">Halted</Pill> : !depositOpen ? <Pill t="info">{maturityOpen ? "Matured" : "Window closed"}</Pill> : <Pill t="good">Open</Pill>} />
       <div className="m-screen">
         <VaultProof kind="nav" l={l} m={m} compact />

@@ -162,10 +162,10 @@ async function creditPosition(keys: Set<string | null>): Promise<Position[]> {
 }
 
 async function navPosition(keys: Set<string | null>): Promise<Position[]> {
-  return (await Promise.all((["nav-tn10", "fixed-tn10"] as const).map(async (slug) => navPositionIn(keys, slug, await getNav(slug))))).flat();
+  return (await Promise.all((["nav-tn10", "fixed-tn10", "demo-tn10"] as const).map(async (slug) => navPositionIn(keys, slug, await getNav(slug))))).flat();
 }
 
-async function navPositionIn(keys: Set<string | null>, slug: "nav-tn10" | "fixed-tn10", { l, m }: Awaited<ReturnType<typeof getNav>>): Promise<Position[]> {
+async function navPositionIn(keys: Set<string | null>, slug: "nav-tn10" | "fixed-tn10" | "demo-tn10", { l, m }: Awaited<ReturnType<typeof getNav>>): Promise<Position[]> {
   if (!l || !m) return [];
   const f = navFigures(l, m);
   const mine = l.notes.filter((n) => !n.redeemed && keys.has(keyOf(n.owner)));

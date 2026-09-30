@@ -1,7 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { NAV_VAULTS, getNav, navFigures, readNavLive, navVault, SOMPI, type NavSlug } from "./vaults/nav";
-import { getCredit, creditFigures, readCreditLive } from "./vaults/credit";
+import { getCredit, listCredit, creditFigures, readCreditLive, type CreditLedger, type CreditMandateDoc } from "./vaults/credit";
 import { accountAddress, fromHex, ownerOf } from "./vaults/account";
 import { sql, hasDb } from "./db";
 import { proofs, proofOf, type Proof } from "./proof";
@@ -46,19 +46,18 @@ async function waiting(vault: string, template: { prefix: string; suffix: string
 async function navProof(slug: NavSlug): Promise<{ p: Proof; sig: Signal[] } | null> {
   const { l, m } = await getNav(slug);
   if (!l || !m) return null;
-  const [live, all, credit] = await Promise.all([readNavLive(l), Promise.all(NAV_VAULTS.map((v) => getNav(v.slug))), getCredit()]);
+  const [live, all, credits] = await Promise.all([readNavLive(l), Promise.all(NAV_VAULTS.map((v) => getNav(v.slug))), listCredit().catch(() => [])]);
   const f = navFigures(l, m);
   const held = live.coin ? live.coin.amount / SOMPI : f.held;
   const liquid = held - f.keep;
   const st = navVault(slug).strategy;
   const creditSlot = st?.credit?.slot ?? -1;
-  // what a credit note of this wallet is worth at the credit vault's price now
-  const cf = credit.l && credit.m ? creditFigures(credit.l, credit.m, null) : null;
+  // what this wallet's credit notes are worth, in whichever credit vault holds them, at its price now
+  const priced = credits.map((c) => ({ c, f: creditFigures(c.l, c.m, null) }));
   const rows = await Promise.all(m.destinations.map(async (d, i) => {
     const b = await balance(d.address);
     const bal = b ?? 0;
-    const notes = i === creditSlot && credit.l && cf ? credit.l.notes.filter((n) => !n.redeemed && n.owner === d.address) : [];
-    const inCredit = notes.reduce((a, n) => a + (n.shares * cf!.price) + n.value / SOMPI, 0);
+    const inCredit = i !== creditSlot ? 0 : priced.reduce((a, { c, f: cf }) => a + c.l.notes.filter((n) => !n.redeemed && n.owner === d.address).reduce((b, n) => b + n.shares * cf.price + n.value / SOMPI, 0), 0);
     // the same wallet may hold other vaults' capital: this vault's part is its cost share
     const mine = l.state.deployed[i] ?? 0;
     const total = all.reduce((a, v) => a + (v.l?.moves && v.m?.destinations[i]?.address === d.address ? v.l.state.deployed[i] ?? 0 : 0), 0);
@@ -143,9 +142,12 @@ async function navProof(slug: NavSlug): Promise<{ p: Proof; sig: Signal[] } | nu
   return { p, sig };
 }
 
-async function creditProof(): Promise<{ p: Proof; sig: Signal[] } | null> {
-  const { l, m } = await getCredit();
+async function creditProof(v?: { l: CreditLedger; m: CreditMandateDoc; href: string }): Promise<{ p: Proof; sig: Signal[] } | null> {
+  const ref = v ? null : await getCredit();
+  const l = v?.l ?? ref?.l, m = v?.m ?? ref?.m;
   if (!l || !m) return null;
+  const pid = v ? `credit-${l.covenantId.slice(0, 10)}` : "credit-tn10";
+  const phref = v?.href ?? "/vaults/credit-tn10";
   const live = await readCreditLive(l);
   const f = creditFigures(l, m, live.daa);
   const held = live.coin ? live.coin.amount / SOMPI : f.held;
@@ -159,12 +161,12 @@ async function creditProof(): Promise<{ p: Proof; sig: Signal[] } | null> {
   const name = m.name;
   const hrs = (s: number | null) => (s == null ? "" : s < 5400 ? `${Math.max(1, Math.round(s / 60))} min` : s < 172_800 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86_400)} days`);
   const sig: Signal[] = [];
-  for (const x of late) sig.push({ key: `credit-tn10:late:${x.slot}`, t: x.status === "grace" ? "warn" : "crit", p: "credit-tn10", rule: "contract", strong: `${name}: ${x.label}'s loan is ${hrs(x.lateSeconds)} past due`, rest: `. ${kas(x.principal)} lent; it now counts for ${kas(x.counts)}${x.status === "grace" ? " (still in its grace period)" : ", marked down on the mandate's schedule"}.` });
-  if (w.count > 0 && w.kas > liquid) sig.push({ key: "credit-tn10:waiting", t: "warn", p: "credit-tn10", rule: "liq", strong: `${name}: ${kas(w.kas)} of withdrawals wait for loans to come back`, rest: `. The vault holds ${kas(Math.max(0, liquid))} in cash; ${kas(f.lent)} is out on loan.` });
-  if (l.state.halted) sig.push({ key: "credit-tn10:halted", t: "crit", p: "credit-tn10", rule: "contract", strong: `${name} is halted`, rest: ". No new loans or deposits; repayments and withdrawals go on." });
+  for (const x of late) sig.push({ key: `${pid}:late:${x.slot}`, t: x.status === "grace" ? "warn" : "crit", p: pid, rule: "contract", strong: `${name}: ${x.label}'s loan is ${hrs(x.lateSeconds)} past due`, rest: `. ${kas(x.principal)} lent; it now counts for ${kas(x.counts)}${x.status === "grace" ? " (still in its grace period)" : ", marked down on the mandate's schedule"}.` });
+  if (w.count > 0 && w.kas > liquid) sig.push({ key: `${pid}:waiting`, t: "warn", p: pid, rule: "liq", strong: `${name}: ${kas(w.kas)} of withdrawals wait for loans to come back`, rest: `. The vault holds ${kas(Math.max(0, liquid))} in cash; ${kas(f.lent)} is out on loan.` });
+  if (l.state.halted) sig.push({ key: `${pid}:halted`, t: "crit", p: pid, rule: "contract", strong: `${name} is halted`, rest: ". No new loans or deposits; repayments and withdrawals go on." });
 
   const p: Proof = {
-    id: "credit-tn10", name, kind: "vault", href: "/vaults/credit-tn10", site: null,
+    id: pid, name, kind: "vault", href: phref, site: null,
     unit: "KAS", kasUsd: null,
     reserves, owed, coverage: owed > 0 ? reserves / owed : 1,
     reservesLabel: "Cash + loans", reservesSub: "the vault coin's cash, plus each open loan at what it counts for today",
@@ -224,7 +226,9 @@ async function creditProof(): Promise<{ p: Proof; sig: Signal[] } | null> {
 }
 
 async function build() {
-  const out = await Promise.all([navProof("nav-tn10"), navProof("fixed-tn10"), creditProof()].map((x) => x.catch(() => null)));
+  // dawns-run credit vaults launched outside git (the demo pair's), under the same rules
+  const own = (await listCredit().catch(() => [])).filter((x) => !x.reference && x.m.manager === "dawns");
+  const out = await Promise.all([navProof("nav-tn10"), navProof("fixed-tn10"), navProof("demo-tn10"), creditProof(), ...own.map((x) => creditProof(x))].map((x) => x.catch(() => null)));
   const ok = out.filter(Boolean) as { p: Proof; sig: Signal[] }[];
   return { proofs: ok.map((x) => x.p), signals: ok.flatMap((x) => x.sig) };
 }

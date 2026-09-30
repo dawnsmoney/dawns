@@ -9,6 +9,7 @@ import { sharePoints, liquidPoints } from "@/lib/vaults/share-history";
 import { getNav, navFigures, navVault, readNavLive, termView, SOMPI, FIRST_PRICE, type NavSlug, type NavMandateDoc } from "@/lib/vaults/nav";
 import { VaultProof } from "@/components/vault-proof";
 import { OwnVaultsNote } from "@/components/own-vaults";
+import { listCredit } from "@/lib/vaults/credit";
 
 
 const COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500"];
@@ -87,7 +88,7 @@ function Term({ m, daa, createdAt }: { m: NavMandateDoc; daa: number | null; cre
 }
 
 /** The strategy the keeper runs: each destination's weight now against its target and the mandate's cap. */
-function Strategy({ slug, m, f }: { slug: NavSlug; m: NavMandateDoc; f: ReturnType<typeof navFigures> }) {
+function Strategy({ slug, m, f, creditHref }: { slug: NavSlug; m: NavMandateDoc; f: ReturnType<typeof navFigures>; creditHref: string }) {
   const st = navVault(slug).strategy;
   if (!st) return null;
   const nav = f.nav || 1;
@@ -101,7 +102,7 @@ function Strategy({ slug, m, f }: { slug: NavSlug; m: NavMandateDoc; f: ReturnTy
           const now = (f.marks[i] ?? 0) / nav, target = (st.targetsBps[i] ?? 0) / 1e4, cap = d.capBps / 1e4;
           return (
             <div key={d.address} className="strat-row">
-              <b>{d.label.replace(" (test wallet)", "")}{st.credit?.slot === i && <Link href="/vaults/credit-tn10" className="strat-via">lends via the credit vault →</Link>}</b>
+              <b>{d.label.replace(" (test wallet)", "")}{st.credit?.slot === i && <Link href={creditHref} className="strat-via">lends via the credit vault →</Link>}</b>
               <div className="strat-bar"><i style={{ width: `${Math.min(100, now * 100)}%`, background: COLORS[i] }} /><span className="strat-t" style={{ left: `${Math.min(100, target * 100)}%` }} title="target" /><span className="strat-c" style={{ left: `${Math.min(100, cap * 100)}%` }} title="cap" /></div>
               <small>{pct(now, 1)} now · target {pct(target)} · cap {pct(cap)}</small>
             </div>
@@ -119,10 +120,12 @@ function Strategy({ slug, m, f }: { slug: NavSlug; m: NavMandateDoc; f: ReturnTy
 }
 
 export async function NavVaultView({ slug }: { slug: NavSlug }) {
-  const fixed = slug === "fixed-tn10";
-  const crumb = fixed ? "Fixed term · testnet-10" : "NAV · testnet-10";
-  const title = fixed ? "Fixed-term vault" : "NAV vault";
+  const fixed = slug === "fixed-tn10", demo = slug === "demo-tn10";
+  const crumb = fixed ? "Fixed term · testnet-10" : demo ? "Demo · testnet-10" : "NAV · testnet-10";
+  const title = fixed ? "Fixed-term vault" : demo ? "Demo vault" : "NAV vault";
   const { l, m } = await getNav(slug);
+  // where the lending destination's wallet deposits: the demo credit vault for the demo, the reference one otherwise
+  const creditHref = demo ? (await listCredit().catch(() => [])).find((x) => !x.reference && /demo/i.test(x.m.name))?.href ?? "/vaults" : "/vaults/credit-tn10";
   if (!l || !m) {
     return (
       <>
@@ -180,7 +183,7 @@ export async function NavVaultView({ slug }: { slug: NavSlug }) {
   return (
     <>
       <Banner short crumb={[{ href: "/vaults", label: "Vaults" }, { label: crumb }]} title={title}
-        lede={fixed ? "Fixed term on testnet-10: deposit while the window is open, get shares at NAV, redeem at NAV from maturity. The Kaspa network enforces both dates." : "Open to anyone on testnet-10: send KAS from your wallet, get shares at NAV, redeem at NAV. The Kaspa network enforces the rules."} />
+        lede={fixed ? "Fixed term on testnet-10: deposit while the window is open, get shares at NAV, redeem at NAV from maturity. The Kaspa network enforces both dates." : demo ? "A demo on an accelerated clock, where an hour stands in for a month: 60% of the vault lends through the demo credit vault to test borrowers who repay on schedule. Deposit test KAS, watch the share price climb, redeem at NAV." : "Open to anyone on testnet-10: send KAS from your wallet, get shares at NAV, redeem at NAV. The Kaspa network enforces the rules."} />
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
         <div className="card vault-hero">
           <div className="vault-top">
@@ -203,7 +206,7 @@ export async function NavVaultView({ slug }: { slug: NavSlug }) {
 
         <OwnVaultsNote id={slug} />
         <Term m={m} daa={daa} createdAt={l.createdAt} />
-        <Strategy slug={slug} m={m} f={f} />
+        <Strategy slug={slug} m={m} f={f} creditHref={creditHref} />
 
         <div className="card">
           <div className="c-head"><h3>Share price since launch</h3><span className="tag">after every move · KAS</span></div>

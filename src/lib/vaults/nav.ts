@@ -5,6 +5,9 @@ import fixedDoc from "../../../vault/deploy/fixed/nav.json";
 import fixedMandateDoc from "../../../vault/deploy/fixed/nav-mandate.json";
 import navStrategyDoc from "../../../vault/deploy/strategy.json";
 import fixedStrategyDoc from "../../../vault/deploy/fixed/strategy.json";
+import demoDoc from "../../../vault/deploy/demo/nav.json";
+import demoMandateDoc from "../../../vault/deploy/demo/nav-mandate.json";
+import demoStrategyDoc from "../../../vault/deploy/demo/strategy.json";
 import { accountAddress, ownerOf, fromHex, toHex, type AccountTemplate } from "./account";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 
@@ -45,13 +48,15 @@ const mandateOf = (d: unknown) => ((d as { standard?: string }).standard ? d : n
  * a maturity and a deposit window in its mandate; each lives in its own directory of
  * vault/deploy (one vault per directory), its ledger and mandate committed there.
  */
-export type NavSlug = "nav-tn10" | "fixed-tn10";
+export type NavSlug = "nav-tn10" | "fixed-tn10" | "demo-tn10";
 /** The strategy the keeper runs inside the mandate (vault/deploy/…/strategy.json). */
 export interface NavStrategy { targetsBps: number[]; liquidBps: number; minMoveKas: string; credit?: { slot: number } }
 export interface NavVaultDef { slug: NavSlug; kind: "nav" | "fixed"; ledger: NavLedger | null; mandate: NavMandateDoc | null; strategy: NavStrategy | null }
 export const NAV_VAULTS: NavVaultDef[] = [
   { slug: "nav-tn10", kind: "nav", ledger: ledgerOf(navDoc), mandate: mandateOf(navMandateDoc), strategy: navStrategyDoc as NavStrategy },
   { slug: "fixed-tn10", kind: "fixed", ledger: ledgerOf(fixedDoc), mandate: mandateOf(fixedMandateDoc), strategy: fixedStrategyDoc as NavStrategy },
+  // the demo pair's NAV vault: an accelerated clock, 60% lending through the demo credit vault
+  { slug: "demo-tn10", kind: "nav", ledger: ledgerOf(demoDoc), mandate: mandateOf(demoMandateDoc), strategy: demoStrategyDoc as NavStrategy },
 ];
 export const navVault = (slug: NavSlug) => NAV_VAULTS.find((v) => v.slug === slug)!;
 export const navByCovenant = (id: string | null | undefined) => (id ? NAV_VAULTS.find((v) => v.ledger?.covenantId === id) ?? null : null);
