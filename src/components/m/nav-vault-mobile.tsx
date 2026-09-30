@@ -1,4 +1,4 @@
-import { getNav, navFigures, readNavLive, termView, SOMPI, FIRST_PRICE, type NavSlug } from "@/lib/vaults/nav";
+import { getNav, navFigures, navVault, readNavLive, termView, SOMPI, FIRST_PRICE, type NavSlug } from "@/lib/vaults/nav";
 import { VaultProof } from "@/components/vault-proof";
 import { MCard, MFlags, MHead, MHero, MKv, MList, MNote, MRow, MStats } from "@/components/m/kit";
 import { MMore, MTabs } from "@/components/m/tabs";
@@ -54,6 +54,12 @@ export async function MNavVault({ slug }: { slug: NavSlug }) {
         {(m.maturityDaa > 0 || m.depositUntilDaa > 0) && (
           <MCard title="The term" tag="enforced by the network">
             <MKv rows={[["Deposits", depositOpen ? `open until ${day(term.winEnd)}${term.leftWin}` : `closed ${day(term.winEnd)}`], ["Withdrawals", maturityOpen ? "open" : `from ${day(term.mat)}${term.leftMat}`]]} />
+          </MCard>
+        )}
+        {navVault(slug).strategy && (
+          <MCard title="The strategy, run automatically" tag="inside the mandate">
+            <MKv rows={[...m.destinations.map((d, i) => [d.label.replace(" (test wallet)", ""), `${pct((f.marks[i] ?? 0) / (f.nav || 1), 1)} · target ${pct((navVault(slug).strategy!.targetsBps[i] ?? 0) / 1e4)}`] as [string, string]),
+              ["Kept liquid", `${pct(Math.max(0, f.liquid) / (f.nav || 1), 1)} · target ${pct(Math.max(navVault(slug).strategy!.liquidBps, m.reserveFloorBps) / 1e4)}`]]} />
           </MCard>
         )}
         <MCard title="Share price since launch"><SharePriceChart points={history} launch={FIRST_PRICE / SOMPI} label="Share price since launch" /></MCard>

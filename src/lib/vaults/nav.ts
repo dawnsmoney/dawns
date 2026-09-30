@@ -3,6 +3,8 @@ import navDoc from "../../../vault/deploy/nav.json";
 import navMandateDoc from "../../../vault/deploy/nav-mandate.json";
 import fixedDoc from "../../../vault/deploy/fixed/nav.json";
 import fixedMandateDoc from "../../../vault/deploy/fixed/nav-mandate.json";
+import navStrategyDoc from "../../../vault/deploy/strategy.json";
+import fixedStrategyDoc from "../../../vault/deploy/fixed/strategy.json";
 import { accountAddress, ownerOf, fromHex, toHex, type AccountTemplate } from "./account";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 
@@ -44,10 +46,12 @@ const mandateOf = (d: unknown) => ((d as { standard?: string }).standard ? d : n
  * vault/deploy (one vault per directory), its ledger and mandate committed there.
  */
 export type NavSlug = "nav-tn10" | "fixed-tn10";
-export interface NavVaultDef { slug: NavSlug; kind: "nav" | "fixed"; ledger: NavLedger | null; mandate: NavMandateDoc | null }
+/** The strategy the keeper runs inside the mandate (vault/deploy/…/strategy.json). */
+export interface NavStrategy { targetsBps: number[]; liquidBps: number; minMoveKas: string }
+export interface NavVaultDef { slug: NavSlug; kind: "nav" | "fixed"; ledger: NavLedger | null; mandate: NavMandateDoc | null; strategy: NavStrategy | null }
 export const NAV_VAULTS: NavVaultDef[] = [
-  { slug: "nav-tn10", kind: "nav", ledger: ledgerOf(navDoc), mandate: mandateOf(navMandateDoc) },
-  { slug: "fixed-tn10", kind: "fixed", ledger: ledgerOf(fixedDoc), mandate: mandateOf(fixedMandateDoc) },
+  { slug: "nav-tn10", kind: "nav", ledger: ledgerOf(navDoc), mandate: mandateOf(navMandateDoc), strategy: navStrategyDoc as NavStrategy },
+  { slug: "fixed-tn10", kind: "fixed", ledger: ledgerOf(fixedDoc), mandate: mandateOf(fixedMandateDoc), strategy: fixedStrategyDoc as NavStrategy },
 ];
 export const navVault = (slug: NavSlug) => NAV_VAULTS.find((v) => v.slug === slug)!;
 export const navByCovenant = (id: string | null | undefined) => (id ? NAV_VAULTS.find((v) => v.ledger?.covenantId === id) ?? null : null);

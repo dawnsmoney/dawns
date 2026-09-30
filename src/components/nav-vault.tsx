@@ -6,7 +6,7 @@ import { NavPanel } from "@/components/nav-panel";
 import { Basis, TokenFamily, type Stamp } from "@/components/research";
 import { SharePriceChart, HoldingGrid, LiquidityChart } from "@/components/share-chart";
 import { sharePoints, liquidPoints } from "@/lib/vaults/share-history";
-import { getNav, navFigures, readNavLive, termView, SOMPI, FIRST_PRICE, type NavSlug, type NavMandateDoc } from "@/lib/vaults/nav";
+import { getNav, navFigures, navVault, readNavLive, termView, SOMPI, FIRST_PRICE, type NavSlug, type NavMandateDoc } from "@/lib/vaults/nav";
 import { VaultProof } from "@/components/vault-proof";
 
 
@@ -81,6 +81,38 @@ function Term({ m, daa, createdAt }: { m: NavMandateDoc; daa: number | null; cre
         <div><span className="eyebrow muted">What the network does</span><b style={{ fontSize: 15 }}>Refuses early exits</b><small>a deposit after the window and a withdrawal before maturity are invalid transactions: no one, the manager included, can make them happen</small></div>
       </div>
       <p className="foot" style={{ marginBottom: 0 }}>Times are estimated from DAA score at 10 blocks a second; the covenant checks the DAA score itself ({m.depositUntilDaa ? `window ends at ${m.depositUntilDaa.toLocaleString("en-US")}` : "no window"}{m.maturityDaa ? `, maturity at ${m.maturityDaa.toLocaleString("en-US")}` : ""}).</p>
+    </div>
+  );
+}
+
+/** The strategy the keeper runs: each destination's weight now against its target and the mandate's cap. */
+function Strategy({ slug, m, f }: { slug: NavSlug; m: NavMandateDoc; f: ReturnType<typeof navFigures> }) {
+  const st = navVault(slug).strategy;
+  if (!st) return null;
+  const nav = f.nav || 1;
+  const keep = Math.max(st.liquidBps, m.reserveFloorBps) / 1e4;
+  return (
+    <div className="card">
+      <div className="c-head"><h3>The strategy, run automatically</h3><span className="tag">inside the mandate</span></div>
+      <p className="muted" style={{ margin: "0 0 16px", fontSize: 14.5 }}>The keeper runs it after every deposit and withdrawal: it sends idle cash toward each destination&apos;s target, brings cash back when withdrawals wait, and marks each destination to what its wallet actually holds. The network still enforces the caps, the {pct(m.reserveFloorBps / 1e4)} reserve and the limits per move: the strategy can only ask for moves the mandate allows.</p>
+      <div className="strat-rows">
+        {m.destinations.map((d, i) => {
+          const now = (f.marks[i] ?? 0) / nav, target = (st.targetsBps[i] ?? 0) / 1e4, cap = d.capBps / 1e4;
+          return (
+            <div key={d.address} className="strat-row">
+              <b>{d.label.replace(" (test wallet)", "")}</b>
+              <div className="strat-bar"><i style={{ width: `${Math.min(100, now * 100)}%`, background: COLORS[i] }} /><span className="strat-t" style={{ left: `${Math.min(100, target * 100)}%` }} title="target" /><span className="strat-c" style={{ left: `${Math.min(100, cap * 100)}%` }} title="cap" /></div>
+              <small>{pct(now, 1)} now · target {pct(target)} · cap {pct(cap)}</small>
+            </div>
+          );
+        })}
+        <div className="strat-row">
+          <b>Kept liquid</b>
+          <div className="strat-bar"><i style={{ width: `${Math.min(100, (Math.max(0, f.liquid) / nav) * 100)}%`, background: LIQUID }} /><span className="strat-t" style={{ left: `${keep * 100}%` }} title="target" /></div>
+          <small>{pct(Math.max(0, f.liquid) / nav, 1)} now · target {pct(keep)} · for withdrawals</small>
+        </div>
+      </div>
+      <p className="foot" style={{ marginBottom: 0 }}>On testnet the destinations are Dawns-held wallets that earn nothing, so marks never go above cost. On mainnet a destination is a strategy wallet that bridges to Igra or Kasplex and deploys there; dawns marks it from the positions it reads.</p>
     </div>
   );
 }
@@ -169,6 +201,7 @@ export async function NavVaultView({ slug }: { slug: NavSlug }) {
         </div>
 
         <Term m={m} daa={daa} createdAt={l.createdAt} />
+        <Strategy slug={slug} m={m} f={f} />
 
         <div className="card">
           <div className="c-head"><h3>Share price since launch</h3><span className="tag">after every move · KAS</span></div>

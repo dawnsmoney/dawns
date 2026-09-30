@@ -11,7 +11,10 @@
 //!   nav accounts <address>    a user's deposit and redeem addresses
 //!   nav pay <role> <kas> [redeem]
 //!                             test helper: a role key pays its own deposit (or redeem) account
-//!   nav keeper [once]         sweep deposits and redemptions of every registered account
+//!   nav keeper [once]         sweep deposits and redemptions of every registered account; with a
+//!                             strategy.json next to nav.json it also runs the strategy: recalls cash
+//!                             for waiting withdrawals, marks each destination to what its wallet
+//!                             holds, and allocates idle cash toward the target weights
 //!   nav publish               send nav.json to the site now (signed by the allocator key)
 //!   nav allocate <slot> <kas> allocator sends capital to an approved destination
 //!   nav recall <slot> <kas>   a strategy wallet returns capital
@@ -493,6 +496,190 @@ fn print_nav(c: &NCtx) {
     println!("notes live     : {live}");
 }
 
+
+// ---------------------------------------------------------------------------
+// allocator, strategy wallet and valuer moves (by hand, or by the manager)
+// ---------------------------------------------------------------------------
+async fn do_allocate(c: &mut NCtx, slot: usize, amount: i64) -> Res<String> {
+    let d = c.m.dests.get(slot).ok_or("no such destination")?;
+    let to = pay_to_address_script(&d.address);
+    let held = c.coin.entry.amount as i64;
+    let daa = claimed_nav(c)?;
+    let epoch = (daa - c.m.not_before) / c.m.epoch_length;
+    let spent = if epoch == c.state.epoch_index { c.state.epoch_spent } else { 0 };
+    let mut n = c.state;
+    n.deployed[slot] += amount;
+    n.marks[slot] += amount;
+    n.epoch_index = epoch;
+    n.epoch_spent = spent + amount;
+    let succ = compile_nav(&c.m, &n)?;
+    let keep = held - amount - c.m.max_fee;
+    let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET)], vec![cont(&succ, keep, c.cov), out(amount, to)], daa as u64);
+    let entries = vec![c.coin.entry.clone()];
+    let sig = sighash_sig(&tx, &entries, 0, &load_key("allocator")?)?;
+    tx.inputs[0].signature_script = decl_sigscript(&c.cur, "allocate", vec![nav_state(&n), Expr::int(slot as i64), Expr::int(amount), Expr::int(daa), Expr::bytes(sig)])?;
+    tx.finalize();
+    println!("allocate       : {} to [{slot}] {}", kas(amount), c.m.dests[slot].label);
+    commit(c, "allocate", tx, entries, n, keep, json!({ "slot": slot, "amount": amount })).await
+}
+
+async fn do_recall(c: &mut NCtx, slot: usize, amount: i64) -> Res<String> {
+    let k = load_key(&format!("strategy-{slot}"))?;
+    let from = address_of(&k);
+    let coin = largest(&c.client, &from, amount as u64).await?;
+    let change = coin.entry.amount as i64 - amount;
+    change_ok(change)?;
+    let held = c.coin.entry.amount as i64;
+    let mut n = c.state;
+    n.deployed[slot] = (n.deployed[slot] - amount).max(0);
+    n.marks[slot] = (n.marks[slot] - amount).max(0);
+    let succ = compile_nav(&c.m, &n)?;
+    let landed = held + amount - c.m.max_fee;
+    let mut outs = vec![cont(&succ, landed, c.cov)];
+    if change > 0 { outs.push(out(change, pay_to_address_script(&from))); }
+    let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET), input(&coin, P2PK_BUDGET)], outs, 0);
+    let entries = vec![c.coin.entry.clone(), coin.entry.clone()];
+    let s0 = sighash_sig(&tx, &entries, 0, &load_key("allocator")?)?;
+    let s1 = sighash_sig(&tx, &entries, 1, &k)?;
+    tx.inputs[0].signature_script = decl_sigscript(&c.cur, "recall", vec![nav_state(&n), Expr::int(slot as i64), Expr::int(amount), Expr::bytes(s0)])?;
+    tx.inputs[1].signature_script = p2pk_sigscript(&s1)?;
+    tx.finalize();
+    println!("recall         : {} from strategy-{slot}", kas(amount));
+    commit(c, "recall", tx, entries, n, landed, json!({ "slot": slot, "amount": amount })).await
+}
+
+async fn do_mark(c: &mut NCtx, marks: [i64; 4]) -> Res<String> {
+    let mut n = c.state;
+    n.marks = marks;
+    let daa = claimed_nav(c)?;
+    n.mark_epoch = (daa - c.m.not_before) / c.m.epoch_length;
+    let succ = compile_nav(&c.m, &n)?;
+    let held = c.coin.entry.amount as i64;
+    let keep = held - c.m.max_fee;
+    let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET)], vec![cont(&succ, keep, c.cov)], daa as u64);
+    let entries = vec![c.coin.entry.clone()];
+    let sig = sighash_sig(&tx, &entries, 0, &load_key("valuer")?)?;
+    tx.inputs[0].signature_script = decl_sigscript(&c.cur, "mark", vec![nav_state(&n), Expr::int(daa), Expr::bytes(sig)])?;
+    tx.finalize();
+    println!("mark           : {:?}", n.marks.iter().map(|x| kas(*x)).collect::<Vec<_>>());
+    commit(c, "mark", tx, entries, n, keep, json!({ "marks": n.marks })).await
+}
+
+// ---------------------------------------------------------------------------
+// the manager: runs the vault's strategy (strategy.json) inside the mandate
+// ---------------------------------------------------------------------------
+/// strategy.json, next to nav.json: target weights per destination (bps of NAV) and
+/// the share of NAV to keep liquid for withdrawals. The covenant still enforces the
+/// mandate's caps, reserve floor and limits; these targets sit inside them.
+struct Strategy { targets: Vec<i64>, liquid_bps: i64, min_move: i64 }
+fn read_strategy() -> Res<Option<Strategy>> {
+    let Ok(raw) = std::fs::read_to_string("strategy.json") else { return Ok(None) };
+    let v: Value = serde_json::from_str(&raw)?;
+    let targets: Vec<i64> = v["targetsBps"].as_array().ok_or("strategy.json: targetsBps")?.iter().map(|x| x.as_i64().unwrap_or(0)).collect();
+    Ok(Some(Strategy { targets, liquid_bps: v["liquidBps"].as_i64().unwrap_or(1000), min_move: parse_kas(v["minMoveKas"].as_str().unwrap_or("1"))? }))
+}
+
+/// What waiting withdrawals will pay, at today's price: each account with a coin at
+/// its redeem address, for its oldest live note.
+async fn pending_redeems(c: &NCtx) -> Res<i64> {
+    if c.state.shares == 0 { return Ok(0); }
+    // a fixed-term vault pays nothing before maturity: requests wait, cash is not needed yet
+    if c.m.maturity > 0 && c.daa - DAA_BACKOFF < c.m.maturity { return Ok(0); }
+    let price = c.state.nav(c.coin.entry.amount as i64, &c.m) / c.state.shares;
+    let notes = c.led.v["notes"].as_array().cloned().unwrap_or_default();
+    let mut due = 0;
+    for a in registered(&c.cov) {
+        let Ok(owner) = owner_of(&a) else { continue };
+        let (_, red_addr, _, _) = accounts_of(owner, &c.cov)?;
+        if !coins(&c.client, &red_addr).await?.iter().any(|x| x.entry.covenant_id.is_none()) { continue; }
+        if let Some(n) = notes.iter().find(|n| n["owner"].as_str() == Some(a.as_str()) && n["redeemed"].is_null()) { due += n["shares"].as_i64().unwrap_or(0) * price; }
+    }
+    Ok(due)
+}
+
+/// One step of the strategy, at most one transaction: bring cash back for withdrawals
+/// that wait, then mark each destination to what its wallet actually holds, then put
+/// idle cash to work toward the target weights. Returns what it did.
+async fn manage_pass(c: &mut NCtx, st: &Strategy) -> Res<Option<String>> {
+    if c.state.halted { return Ok(None); }
+    let slots = c.m.dests.len();
+    let held = c.coin.entry.amount as i64;
+    let nav = c.state.nav(held, &c.m);
+    let liquid = held - c.m.min_keep;
+    let due = pending_redeems(c).await?;
+    // never aim below the mandate's reserve floor: the covenant would refuse the allocation anyway
+    let keep_bps = st.liquid_bps.max(c.m.reserve_floor_bps);
+    let want_liquid = keep_bps * nav / 10_000 + due;
+
+    // 1. cash for withdrawals that wait, or cash fallen well below the target (half of
+    //    it: marks move NAV a little, and the manager should not trade back and forth)
+    let low = if due > 0 { liquid < want_liquid } else { liquid < want_liquid / 2 };
+    if low {
+        let short = want_liquid - liquid;
+        let mut order: Vec<usize> = (0..slots).filter(|&i| c.state.deployed[i] > 0).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(c.state.deployed[i]));
+        for i in order {
+            let wallet = address_of(&load_key(&format!("strategy-{i}"))?);
+            let mut cs = coins(&c.client, &wallet).await?;
+            cs.retain(|x| x.entry.covenant_id.is_none());
+            let Some(top) = cs.iter().map(|x| x.entry.amount as i64).max() else { continue };
+            let mut amount = short.max(st.min_move).min(top).min(c.state.deployed[i].max(st.min_move));
+            if top - amount > 0 && top - amount < KAS { amount = top; }
+            if amount < st.min_move.min(top) { continue; }
+            do_recall(c, i, amount).await?;
+            return Ok(Some(format!("recalled {} from [{i}] for withdrawals and the liquid target", kas(amount))));
+        }
+    }
+
+    // 2. marks: each destination at what its wallet holds, never above cost on testnet
+    //    (the wallets earn nothing yet), moved at most the mandate's step per period
+    let daa = claimed_nav(c)?;
+    let epoch = (daa - c.m.not_before) / c.m.epoch_length;
+    if epoch > c.state.mark_epoch {
+        let v12 = !matches!(NAV_VERSION.get().map(String::as_str), Some("dawns-nav/1") | Some("dawns-nav/1.1"));
+        let mut marks = c.state.marks;
+        let mut moved = false;
+        for i in 0..slots {
+            let wallet = &c.m.dests[i].address;
+            let held_w: i64 = coins(&c.client, wallet).await?.iter().filter(|x| x.entry.covenant_id.is_none()).map(|x| x.entry.amount as i64).sum();
+            let target = held_w.min(c.state.deployed[i]);
+            let cur = c.state.marks[i];
+            if (target - cur).abs() < KAS / 100 { continue; }
+            let base = cur.max(c.state.deployed[i]);
+            let step = c.m.max_mark_step_bps * base / 10_000;
+            let next = if v12 && c.state.deployed[i] == 0 && target < cur { target } else if target > cur { cur + (target - cur).min(step) } else { cur - (cur - target).min(step) };
+            if next != cur { marks[i] = next; moved = true; }
+        }
+        if moved {
+            do_mark(c, marks).await?;
+            return Ok(Some(format!("marked to the wallets' holdings: {:?}", marks[..slots].iter().map(|x| kas(*x)).collect::<Vec<_>>())));
+        }
+    }
+
+    // 3. idle cash above the liquid target and the reserve floor: allocate to the slot
+    //    furthest below its target weight, within its cap and this period's limit
+    let spare = liquid - want_liquid;
+    if spare >= st.min_move {
+        let spent = if epoch == c.state.epoch_index { c.state.epoch_spent } else { 0 };
+        let mut best: Option<(usize, i64)> = None;
+        for i in 0..slots.min(st.targets.len()) {
+            let target = st.targets[i].min(c.m.dests[i].cap_bps) * nav / 10_000;
+            let gap = target - c.state.deployed[i];
+            if gap >= st.min_move && best.map_or(true, |(_, g)| gap > g) { best = Some((i, gap)); }
+        }
+        if let Some((i, gap)) = best {
+            let cap_room = c.m.dests[i].cap_bps * nav / 10_000 - c.state.deployed[i];
+            let floor_room = held - c.m.reserve_floor_bps * nav / 10_000 - c.m.max_fee;
+            let amount = gap.min(spare).min(c.m.max_per_move).min(c.m.epoch_limit - spent).min(cap_room).min(floor_room) / KAS * KAS;
+            if amount >= st.min_move {
+                do_allocate(c, i, amount).await?;
+                return Ok(Some(format!("allocated {} to [{i}] toward its {}% target", kas(amount), st.targets[i] as f64 / 100.0)));
+            }
+        }
+    }
+    Ok(None)
+}
+
 // ---------------------------------------------------------------------------
 pub async fn run_nav(args: &[String]) -> Res<()> {
     let sub = args.get(2).map(String::as_str).unwrap_or("show");
@@ -669,10 +856,26 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
             loop {
                 // a failed pass (node hiccup, a move still confirming) must not stop the keeper
                 match open_nav().await {
-                    Ok(mut c) => match keeper_pass(&mut c).await {
-                        Ok(n) => println!("keeper         : {n} done · {}", now()),
-                        Err(e) => println!("keeper pass    : {e} — retrying"),
-                    },
+                    Ok(mut c) => {
+                        match keeper_pass(&mut c).await {
+                            Ok(n) => println!("keeper         : {n} done · {}", now()),
+                            Err(e) => println!("keeper pass    : {e} — retrying"),
+                        }
+                        // the strategy, when this vault has one: one move per pass, after
+                        // deposits and withdrawals, on a fresh read of the vault
+                        match read_strategy() {
+                            Ok(Some(st)) => match open_nav().await {
+                                Ok(mut c) => match manage_pass(&mut c, &st).await {
+                                    Ok(Some(what)) => { println!("manager        : {what}"); let _ = await_vault(&mut c).await; }
+                                    Ok(None) => {}
+                                    Err(e) => println!("manager        : {e} — retrying"),
+                                },
+                                Err(e) => println!("manager open   : {e} — retrying"),
+                            },
+                            Ok(None) => {}
+                            Err(e) => println!("strategy.json  : {e}"),
+                        }
+                    }
                     Err(e) => println!("keeper open    : {e} — retrying"),
                 }
                 if once { break; }
@@ -684,72 +887,21 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
             let mut c = open_nav().await?;
             let slot: usize = arg(3)?.parse()?;
             let amount = parse_kas(arg(4)?)?;
-            let d = c.m.dests.get(slot).ok_or("no such destination")?;
-            let to = pay_to_address_script(&d.address);
-            let held = c.coin.entry.amount as i64;
-            let daa = claimed_nav(&c)?;
-            let epoch = (daa - c.m.not_before) / c.m.epoch_length;
-            let spent = if epoch == c.state.epoch_index { c.state.epoch_spent } else { 0 };
-            let mut n = c.state;
-            n.deployed[slot] += amount;
-            n.marks[slot] += amount;
-            n.epoch_index = epoch;
-            n.epoch_spent = spent + amount;
-            let succ = compile_nav(&c.m, &n)?;
-            let keep = held - amount - c.m.max_fee;
-            let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET)], vec![cont(&succ, keep, c.cov), out(amount, to)], daa as u64);
-            let entries = vec![c.coin.entry.clone()];
-            let sig = sighash_sig(&tx, &entries, 0, &load_key("allocator")?)?;
-            tx.inputs[0].signature_script = decl_sigscript(&c.cur, "allocate", vec![nav_state(&n), Expr::int(slot as i64), Expr::int(amount), Expr::int(daa), Expr::bytes(sig)])?;
-            tx.finalize();
-            println!("allocate       : {} to [{slot}] {}", kas(amount), c.m.dests[slot].label);
-            commit(&mut c, "allocate", tx, entries, n, keep, json!({ "slot": slot, "amount": amount })).await?;
+            do_allocate(&mut c, slot, amount).await?;
         }
 
         "recall" => {
             let mut c = open_nav().await?;
             let slot: usize = arg(3)?.parse()?;
             let amount = parse_kas(arg(4)?)?;
-            let k = load_key(&format!("strategy-{slot}"))?;
-            let from = address_of(&k);
-            let coin = largest(&c.client, &from, amount as u64).await?;
-            let change = coin.entry.amount as i64 - amount;
-            change_ok(change)?;
-            let held = c.coin.entry.amount as i64;
-            let mut n = c.state;
-            n.deployed[slot] = (n.deployed[slot] - amount).max(0);
-            n.marks[slot] = (n.marks[slot] - amount).max(0);
-            let succ = compile_nav(&c.m, &n)?;
-            let landed = held + amount - c.m.max_fee;
-            let mut outs = vec![cont(&succ, landed, c.cov)];
-            if change > 0 { outs.push(out(change, pay_to_address_script(&from))); }
-            let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET), input(&coin, P2PK_BUDGET)], outs, 0);
-            let entries = vec![c.coin.entry.clone(), coin.entry.clone()];
-            let s0 = sighash_sig(&tx, &entries, 0, &load_key("allocator")?)?;
-            let s1 = sighash_sig(&tx, &entries, 1, &k)?;
-            tx.inputs[0].signature_script = decl_sigscript(&c.cur, "recall", vec![nav_state(&n), Expr::int(slot as i64), Expr::int(amount), Expr::bytes(s0)])?;
-            tx.inputs[1].signature_script = p2pk_sigscript(&s1)?;
-            tx.finalize();
-            println!("recall         : {} from strategy-{slot}", kas(amount));
-            commit(&mut c, "recall", tx, entries, n, landed, json!({ "slot": slot, "amount": amount })).await?;
+            do_recall(&mut c, slot, amount).await?;
         }
 
         "mark" => {
             let mut c = open_nav().await?;
-            let mut n = c.state;
-            for i in 0..c.m.dests.len() { if let Some(v) = args.get(3 + i) { n.marks[i] = (v.parse::<f64>()? * KAS as f64).round() as i64; } }
-            let daa = claimed_nav(&c)?;
-            n.mark_epoch = (daa - c.m.not_before) / c.m.epoch_length;
-            let succ = compile_nav(&c.m, &n)?;
-            let held = c.coin.entry.amount as i64;
-            let keep = held - c.m.max_fee;
-            let mut tx = tx_of(vec![input(&c.coin, NAV_BUDGET)], vec![cont(&succ, keep, c.cov)], daa as u64);
-            let entries = vec![c.coin.entry.clone()];
-            let sig = sighash_sig(&tx, &entries, 0, &load_key("valuer")?)?;
-            tx.inputs[0].signature_script = decl_sigscript(&c.cur, "mark", vec![nav_state(&n), Expr::int(daa), Expr::bytes(sig)])?;
-            tx.finalize();
-            println!("mark           : {:?}", n.marks.iter().map(|x| kas(*x)).collect::<Vec<_>>());
-            commit(&mut c, "mark", tx, entries, n, keep, json!({ "marks": n.marks })).await?;
+            let mut marks = c.state.marks;
+            for i in 0..c.m.dests.len() { if let Some(v) = args.get(3 + i) { marks[i] = (v.parse::<f64>()? * KAS as f64).round() as i64; } }
+            do_mark(&mut c, marks).await?;
         }
 
         "halt" => {

@@ -1926,3 +1926,14 @@ html{touch-action:manipulation}
 .term-facts b{font:600 22px var(--display)}
 .term-facts small{color:var(--ink-3);font-size:13.5px}
 @media (max-width:760px){.term-facts{grid-template-columns:1fr}}
+
+/* NAV vault: the strategy run by the keeper */
+.strat-rows{display:grid;gap:14px}
+.strat-row{display:grid;grid-template-columns:170px 1fr 250px;gap:14px;align-items:center}
+.strat-row b{font:600 14.5px var(--display)}
+.strat-row small{color:var(--ink-3);font-size:13px}
+.strat-bar{position:relative;height:12px;border-radius:999px;background:rgba(255,255,255,.07)}
+.strat-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:999px}
+.strat-t{position:absolute;top:-4px;width:2px;height:20px;background:#FFD36A}
+.strat-c{position:absolute;top:-4px;width:2px;height:20px;background:var(--crit);opacity:.7}
+@media (max-width:760px){.strat-row{grid-template-columns:1fr}}
