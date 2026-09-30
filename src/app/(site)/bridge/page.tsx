@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { Banner } from "@/components/Banner";
 import { Pill, SERIES } from "@/components/bits";
@@ -65,6 +66,7 @@ export default async function BridgePage() {
         lede={<>Every iKAS on Igra should have one KAS locked on Kaspa L1. dawns reads both sides live. <span style={{ whiteSpace: "nowrap" }}>Igra #{b.block.toLocaleString("en-US")} · <Fresh since={b.timestamp * 1000} /></span></>}>
         <div className="tags" style={{ marginTop: 18 }}>
           <Pill t={t}>{ok ? "Fully backed" : "Under-backed"}</Pill>
+          <Link className="btn glass sm" href="/proof/igra-bridge">Proof of reserves</Link>
           {tg && <a className="btn sun sm" href={tg} target="_blank" rel="noopener noreferrer"><Bell />Alert me on Telegram</a>}
         </div>
       </Banner>

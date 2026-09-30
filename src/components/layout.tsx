@@ -24,6 +24,7 @@ const EXPLORE: { href: string; label: string; badge?: string; primary?: boolean 
   { href: "/protocols", label: "Protocols" },
   { href: "/strategies", label: "Strategies", badge: "Beta" },
   { href: "/bridge", label: "Igra bridge" },
+  { href: "/proof", label: "Proof of reserves", badge: "New" },
   { href: "/allocate", label: "Allocate" },
   { href: "/watchlist", label: "Watchlist", primary: true },
   { href: "/signal", label: "The Signal", badge: "Weekly" },

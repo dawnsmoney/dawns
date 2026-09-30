@@ -469,6 +469,7 @@ export default async function ProtocolPage({ params }: PageProps<"/protocols/[id
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               {!p.floor && <WatchButton id={p.id} variant="sun" />}
+              {p.source === "onchain" && (p.lending || p.dex) && <Link className="btn glass" href={`/proof/${p.id}`}>Proof of reserves</Link>}
               {p.site && <a className="btn glass" href={`https://${p.site}`} target="_blank" rel="noopener noreferrer"><External />{p.site}</a>}
             </div>
           </div>

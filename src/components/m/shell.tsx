@@ -22,6 +22,7 @@ const MORE = [
   { href: "/assets", label: "Assets", sub: "Every Kaspa token, who holds it, how deep it trades" },
   { href: "/protocols", label: "Protocols", sub: "Health of every Kaspa DeFi protocol" },
   { href: "/bridge", label: "Igra bridge", sub: "KAS locked vs iKAS, exits and payouts" },
+  { href: "/proof", label: "Proof of reserves", sub: "Is the money there? Read on-chain" },
   { href: "/allocate", label: "Allocate", sub: "A split for your risk and exit window" },
   { href: "/managers", label: "Managers", sub: "Who runs the vaults, and their record" },
   { href: "/watchlist", label: "Watchlist", sub: "Protocols you get alerts for" },
