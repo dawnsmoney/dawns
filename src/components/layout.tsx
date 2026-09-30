@@ -9,8 +9,9 @@ import { Arrow, Chevron } from "./icons";
 import { useWatchMap } from "./providers";
 import { AccountButton } from "./connect";
 
-/** The four places capital decisions happen, always in view; everything to read lives under More. */
+/** The places capital decisions happen, always in view; everything to read lives under More. */
 const PRIMARY = [
+  { href: "/earn", label: "Earn" },
   { href: "/opportunities", label: "Opportunities" },
   { href: "/vaults", label: "Vaults" },
   { href: "/intelligence", label: "Intelligence" },

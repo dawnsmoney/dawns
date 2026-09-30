@@ -10,13 +10,14 @@ import { AccountButton } from "../connect";
 /* The phone app's frame: a slim top bar and a tab bar at the thumb. */
 
 const TABS = [
-  { href: "/opportunities", label: "Yield", icon: "yield" },
+  { href: "/earn", label: "Earn", icon: "yield" },
   { href: "/vaults", label: "Vaults", icon: "vault" },
   { href: "/intelligence", label: "Intel", icon: "intel" },
   { href: "/portfolio", label: "Portfolio", icon: "wallet" },
 ] as const;
 const MORE = [
   { href: "/", label: "Kaspa DeFi", sub: "The ecosystem today: value, liquidity, signals" },
+  { href: "/opportunities", label: "Opportunities", sub: "Every yield, next to what it costs to get out" },
   { href: "/strategies", label: "Strategies", sub: "Written, versioned, evaluated daily" },
   { href: "/assets", label: "Assets", sub: "Every Kaspa token, who holds it, how deep it trades" },
   { href: "/protocols", label: "Protocols", sub: "Health of every Kaspa DeFi protocol" },

@@ -22,7 +22,7 @@ export function proxy(req: NextRequest) {
 const MOBILE = [
   /^\/$/, /^\/protocols(\/[^/]+)?$/, /^\/bridge$/, /^\/opportunities(\/[^/]+)?$/, /^\/intelligence$/, /^\/portfolio$/, /^\/allocate$/,
   /^\/strategies(\/[^/]+)?$/, /^\/strategists\/[^/]+$/,
-  /^\/vaults(\/[^/]+)?$/, /^\/vaults\/credit\/[^/]+$/, /^\/managers(\/[^/]+)?$/, /^\/pioneer$/, /^\/test$/, /^\/signal(\/[^/]+)?$/,
+  /^\/vaults(\/[^/]+)?$/, /^\/vaults\/credit\/[^/]+$/, /^\/managers(\/[^/]+)?$/, /^\/pioneer$/, /^\/test$/, /^\/earn(\/[^/]+)?$/, /^\/signal(\/[^/]+)?$/,
   /^\/assets$/, /^\/assets\/compare$/, /^\/assets\/[^/]+\/[^/]+\/[^/]+$/, /^\/watchlist$/,
 ];
 
