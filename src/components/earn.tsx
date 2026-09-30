@@ -72,11 +72,15 @@ export function EarnBody({ have, win, options, excluded, vaults, stamp }: { have
               <div>{v.href ? <Link href={v.href} className="earn-name">{v.name}</Link> : <span className="earn-name">{v.name}</span>}<small>{v.manager} · Kaspa L1 covenant</small></div>
               <div className="earn-tags"><span className="earn-tag vault">Testnet only</span><span className="earn-tag warn">Not audited</span></div>
             </div>
-            <div className="earn-fact"><span>Native yield</span><b className="earn-apy muted">Measuring</b><small>dawns shows a rate after 30 days of share prices</small></div>
+            <div className="earn-fact"><span>Native yield, share price</span>{v.yield ? <b className={`earn-apy${v.yield.change < 0 ? " down" : ""}`}>{v.yield.change >= 0 ? "+" : ""}{(v.yield.change * 100).toFixed(Math.abs(v.yield.change) < 0.01 ? 3 : 2)}%</b> : <b className="earn-apy muted">Measuring</b>}<small>{v.yield ? `over ${v.yield.hours < 48 ? `${Math.round(v.yield.hours)} hours` : `${Math.round(v.yield.hours / 24)} days`}${v.yield.hours >= 167 ? "" : " (since the first deposit)"}. Testnet loans run in hours, so this is not annualized` : "shown once the vault has a deposit and an hour of prices"}</small></div>
             {v.kind === "fixed"
               ? <div className="earn-fact"><span>How you leave</span><b>At NAV, from maturity</b><small>Before maturity the network refuses a withdrawal; from then on, one transaction, paid or refused. The vault page shows both dates.</small></div>
-              : <div className="earn-fact"><span>How you leave</span><b>At NAV, in one transaction</b><small>Paid or refused by the network: no queue. The vault page shows what is payable now.</small></div>}
-            <div className="earn-fact"><span>What you trust</span><b>The manager&apos;s picks</b><small>The network enforces the caps and limits; where the manager allocates inside them is trust.</small></div>
+              : v.kind === "credit"
+                ? <div className="earn-fact"><span>How you leave</span><b>{v.liquidShare != null ? `${Math.round(v.liquidShare * 100)}% could leave now` : "As cash allows"}</b><small>One transaction, paid from cash in the vault; what is lent out comes back as borrowers repay, and waiting withdrawals are paid first.</small></div>
+                : <div className="earn-fact"><span>How you leave</span><b>At NAV, in one transaction</b><small>Paid or refused by the network: no queue.{v.liquidShare != null ? ` ${Math.round(v.liquidShare * 100)}% of NAV is payable now.` : ""}</small></div>}
+            {v.kind === "credit"
+              ? <div className="earn-fact"><span>What you trust</span><b>That borrowers repay</b><small>The network enforces who can borrow, how much and the markdown when a loan runs late; repayment is the one thing it cannot enforce. Testnet borrowers are Dawns-held keys.</small></div>
+              : <div className="earn-fact"><span>What you trust</span><b>The manager&apos;s picks</b><small>The network enforces the caps and limits; where the manager allocates inside them, and what the strategy wallets do, is trust.</small></div>}
             <div className="earn-go">
               {v.href && <Link href={v.href} className="btn ghost sm">Open the vault</Link>}
               <Link href="/test" className="btn ghost sm">Try it with test KAS</Link>

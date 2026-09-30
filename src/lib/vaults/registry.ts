@@ -15,6 +15,30 @@ export interface VaultCard {
   id: string; kind: VaultKind; name: string; href: string | null; manager: string; network: string; status: VaultStatus;
   pitch: string; figures: { label: string; value: string }[];
   guarantees: string[];
+  /** native yield from the share price, as Earn measures every option: the last 7 days, or since the first deposit */
+  yield?: VaultYield | null;
+  /** share of NAV payable now, from cash in the vault coin */
+  liquidShare?: number | null;
+}
+export interface VaultYield { change: number; hours: number }
+
+/**
+ * A vault's native yield is what its share price did: the last 7 days, or since the
+ * first deposit when younger (a launch seed goes to the first holders and is not
+ * yield). Deposits and withdrawals happen at NAV and leave the price where it is.
+ */
+export function shareYield(moves: { at: number; navAfter: number; sharesAfter: number; kind: string }[], price: number, nowSec: number): VaultYield | null {
+  const first = moves.findIndex((x) => x.kind === "deposit" && x.sharesAfter > 0);
+  if (first < 0 || price <= 0) return null;
+  const since = nowSec - 7 * 86_400;
+  let i = first;
+  for (let j = first; j < moves.length; j++) if (moves[j].at <= since && moves[j].sharesAfter > 0) i = j;
+  const m = moves[i];
+  const start = m.navAfter / m.sharesAfter;
+  const from = Math.max(m.at, i === first ? m.at : since);
+  const hours = (nowSec - from) / 3600;
+  if (hours < 1 || start <= 0) return null;
+  return { change: price / (start / 1e8) - 1, hours };
 }
 
 const kas = (x: number, d = 0) => `${x.toLocaleString("en-US", { maximumFractionDigits: d })} KAS`;
@@ -39,6 +63,7 @@ export async function vaults(): Promise<VaultCard[]> {
     const f = navFigures(navLedger, navMandate);
     out.push({
       id: "nav-tn10", kind: "nav", name: navMandate.name, href: "/vaults/nav-tn10", manager: navMandate.manager ?? "dawns", network: "testnet-10", status: "live",
+      yield: shareYield(navLedger.moves, f.price, Date.now() / 1000), liquidShare: f.nav > 0 ? Math.max(0, f.liquid) / f.nav : null,
       pitch: "Open to anyone on testnet-10: send KAS from your wallet, get shares at NAV, redeem at NAV.",
       figures: [{ label: "NAV", value: kas(f.nav) }, { label: "Per share", value: f.price.toFixed(4) }, { label: "Holders", value: String(f.holders) }],
       guarantees: ["Shares minted only against KAS received", "Payout only to the owner's address", `${navMandate.exitFeeBps / 100}% exit fee stays with holders`],
@@ -56,7 +81,7 @@ export async function vaults(): Promise<VaultCard[]> {
     const base = { id: "fixed-tn10", kind: "fixed" as const, href: "/vaults/fixed-tn10", manager: fm?.manager ?? "dawns", network: "testnet-10", guarantees: ["No redemption before maturity", "Deposits only in the window", "Everything else as NAV"] };
     if (fl && fm) {
       const f = navFigures(fl, fm);
-      out.push({ ...base, name: fm.name, status: "live", pitch: "Deposit while the window is open; redeem at NAV from maturity. The network refuses anything else.",
+      out.push({ ...base, name: fm.name, status: "live", yield: shareYield(fl.moves, f.price, Date.now() / 1000), liquidShare: f.nav > 0 ? Math.max(0, f.liquid) / f.nav : null, pitch: "Deposit while the window is open; redeem at NAV from maturity. The network refuses anything else.",
         figures: [{ label: "NAV", value: kas(f.nav) }, { label: "Per share", value: f.price.toFixed(4) }, { label: "Holders", value: String(f.holders) }] });
     } else {
       out.push({ ...base, name: "Fixed-term vault", status: fm ? "ready" : "designed", href: fm ? base.href : null,
@@ -69,6 +94,7 @@ export async function vaults(): Promise<VaultCard[]> {
     const f = creditFigures(cl, cm, null);
     out.push({
       id: "credit-tn10", kind: "credit", name: cm.name, href: "/vaults/credit-tn10", manager: cm.manager ?? "dawns", network: "testnet-10", status: "live",
+      yield: shareYield(cl.moves, f.price, Date.now() / 1000), liquidShare: f.nav > 0 ? Math.max(0, f.liquid) / f.nav : null,
       pitch: "Loans to named borrowers. Repayments can only come back into the vault; a late loan loses value on a schedule nobody can stop.",
       figures: [{ label: "NAV", value: kas(f.nav) }, { label: "Loans", value: `${f.loans.filter((x) => x.status !== "free").length} of ${f.loans.length}` }, { label: "Holders", value: String(f.holders) }],
       guarantees: ["Only registered borrowers", "Repayments only into the vault", `Late loans −${cm.markdownStepBps / 100}% per period`],
