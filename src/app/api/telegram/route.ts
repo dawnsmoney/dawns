@@ -180,6 +180,11 @@ export async function POST(req: Request) {
     else if (u.callback_query) await handleCallback(u.callback_query);
     else if (u.my_chat_member && ["kicked", "left"].includes(u.my_chat_member.new_chat_member.status))
       await sql().query("delete from telegram_chats where chat_id = $1", [u.my_chat_member.chat.id]);
+    else if (u.my_chat_member && u.my_chat_member.chat.type === "channel" && process.env.TELEGRAM_ADMIN_CHAT_ID) {
+      // made admin of a channel: tell the operator the id to put in TELEGRAM_CHANNEL_ID (channels can't run /id)
+      const ch = u.my_chat_member.chat;
+      await send(process.env.TELEGRAM_ADMIN_CHAT_ID, `dawns bot is now <b>${esc(u.my_chat_member.new_chat_member.status)}</b> in the channel <b>${esc(ch.title ?? "")}</b>${ch.username ? ` (@${esc(ch.username)})` : ""}.\n\nIts id: <code>${ch.id}</code>\nPut this in TELEGRAM_CHANNEL_ID on Vercel and redeploy.`);
+    }
   } catch (e) {
     console.error("telegram webhook", e);
   }
