@@ -54,7 +54,7 @@ Deposit, redeem, repay and markdown need no key.
 
 ## Tests
 
-`vault/harness/tests/credit.rs` has 13 tests: every path, the flipped conditions on each, exact successor state, the lending limits, output shapes, slots that do not exist, and one mark per epoch. Run them with `cargo test --offline --release --test credit`.
+`vault/harness/tests/credit.rs` has 19 tests: every path, the flipped conditions on each, exact successor state, the lending limits, output shapes, slots that do not exist, one mark per epoch, deposit and redeem guards with the vault input run alone, and the seed and fee edges. Run them with `cargo test --offline --release --test credit`.
 
 `DAWNS_UNITS=1` prints script units per input. The results:
 
@@ -72,17 +72,25 @@ The deploy tool uses budget 28.
 
 The mutation test replaces one `require` at a time with `require(1 == 1)` and runs the suite against the mutated covenant (`DAWNS_CREDIT_SIL` points the harness at it). A mutant the suite still passes is a condition no test depends on.
 
-The first full run (v0.1, 200 conditions) caught 133. The 67 survivors split into two kinds.
+**v0.2, 264 conditions: 197 caught, 67 survive.** Run on 30 September 2026 against the 19 tests. The first pass ran the tests for the mutated function; every survivor was then run against the whole suite.
 
-**Real gaps, now tested and caught:** the per-move limit, the per-epoch limit, the loan paid to the borrower being exactly the amount booked, the vault keeping all but the fee on a loan, one mark per epoch, and slot numbers outside 0 to 2 in `lend`, `markdown` and `writeOff`. A slot outside 0 to 2 would otherwise have fallen through to slot 0's destination while booking nothing.
+Written against this run and now caught:
 
-**Redundant, kept as belt and braces:**
+- **The seed (v0.1's change) and the fee.** No test proved that a loan, a markdown, a mark, a write-off or a halt refuses to take the vault below its seed, nor that a signed move keeps everything but the fee. `the_seed_stays_and_only_the_fee_leaves` runs each path at the edge: exactly the seed plus a fee is accepted, one sompi less is refused, and an output one sompi below `inValue − maxFee` is refused.
+- **Deposit and redeem.** The credit suite only ran them as whole transactions, where the share token and the accounts refuse first. `deposit_flips`, `deposit_vault_guards_alone`, `redeem_flips` and `redeem_vault_guards_alone` port the NAV vault's flips and run the vault input alone. The code is the NAV vault's, but it is copied, so this suite must hold it too.
+- **Halt.** `halt_guards`: shape, signer, a halt that doesn't halt, a halt that changes the share count.
+- **A mark on slot 1** above its step and its contract (only slot 0's had a test).
 
-- `OpAuthOutputIdx(...) == 0` on every path: `#[covenant.singleton]` already binds the continuation output.
-- Input and output counts on paths whose accounts pin the same shape (`dawns_account.sil`, `dawns_repay.sil` check them too).
-- Slot bounds in `repay`: an account for a slot outside 0 to 2 is refused by the other repay checks before the bound matters.
-- `MAX_VALUE` caps, `cap > 0` and `cap <= BPS`, `term > 0`, the reserve-floor range, `epochLength > 0`, `markdownPeriod > 0`: constructor constants the deploy tool validates, or conditions implied by others (`amount * BPS <= cap * nav` already refuses a zero cap).
-- The `bounded()` range checks: every path computes the successor exactly from the previous state, so none can go out of range; only a malformed genesis could, and `out_of_range_state_is_refused` covers that.
+The 67 survivors, and why each is safe to keep untested:
+
+- **`OpAuthOutputIdx(...)` on every path, input and output counts on every path** (20): `#[covenant.singleton]` binds the continuation, and the accounts, the repayment account and the share token pin the same shape. Kept as belt and braces.
+- **Constructor constants** (14): `cap > 0`, `cap <= BPS`, `term > 0`, `term <= MAX_DAA`, the reserve-floor range, `epochLength > 0`, `markdownPeriod > 0` (four places), `maxMarkStepBps` range, `exitFeeBps <= BPS`. The deploy tool validates them, and a bad value is refused by the arithmetic that uses it.
+- **Bounds implied by other checks** (15): `amount > 0`, `amount <= inValue`, `MAX_VALUE` caps, `spent >= 0`, `claimedDaa <= MAX_DAA`, `nav > 0`, `nav >= 0`, `burned > 0`, `paid − noteValue − maxFee > 0` (the minimum deposit implies it), and the seed check, which `navAt` and `redeem` each make, so each guards the other (deposit's own copy is caught).
+- **Accounts and the share token, checked twice** (15): the account's vault and kind in `repay` and `redeem`, the slot range in `repay` (an account for a slot outside 0 to 2 fails its other checks first), and the `OpCov…` counts and positions of the share token on deposit and redeem, which the minter branch checks already fix.
+- **`p > 0`, `due > 0` in `writeOff`** (2): writing off an empty slot changes nothing but spends a fee the valuer signs for.
+- **`mandateHash == mandateHash` in `halt`** (1): true by design. It exists so the compiler keeps the mandate hash in the address (see Versions).
+
+History: the first full run (v0.1, 200 conditions) caught 133. Its real gaps, the per-move and per-epoch limits, the exact loan to the borrower, the vault keeping all but the fee on a loan, one mark per epoch and slot numbers outside 0 to 2 in `lend`, `markdown` and `writeOff`, each have a test since.
 
 ## Deploy
 

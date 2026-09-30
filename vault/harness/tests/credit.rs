@@ -335,54 +335,100 @@ fn marks_follow_the_contract() {
 // deposit and redeem, priced with late loans capped
 // ---------------------------------------------------------------------------
 #[derive(Clone)]
-struct Dep { m: CreditMandate, prev: Credit, held: i64, paid: i64, claimed: i64, minted: Option<i64>, next: Option<Credit> }
+struct Dep {
+    m: CreditMandate, prev: Credit, held: i64, paid: i64, claimed: i64, minted: Option<i64>, next: Option<Credit>,
+    lock: Option<u64>, owner: [u8; 32], acct_kind: i64, acct_vault: Hash,
+    note_owner: Option<[u8; 32]>, note_type: u8, note_minter: bool, minter_out_amount: i64,
+    vault_out: Option<i64>, note_out_value: Option<i64>,
+    layout: u8, // 0 normal; 1 a second account rides along; 2 an extra output to a stranger; 3 continuation at index 1
+    vault_only: bool, // run the vault input alone: its own checks must refuse
+    minter_owner: Option<[u8; 32]>, minter_in_amount: i64, minter_in_type: u8, minter_in_is_minter: bool, minter_out_value: Option<i64>, token_cov: Option<Hash>,
+}
 impl Dep {
-    fn valid(prev: Credit, held: i64, claimed: i64) -> Self { Dep { m: CreditMandate::default(), prev, held, paid: 100 * KAS, claimed, minted: None, next: None } }
+    fn valid(prev: Credit, held: i64, claimed: i64) -> Self {
+        Dep { m: CreditMandate::default(), prev, held, paid: 100 * KAS, claimed, minted: None, next: None,
+            lock: None, owner: xonly(&user()), acct_kind: 0, acct_vault: VCOV, note_owner: None, note_type: ID_SCRIPT_HASH, note_minter: false, minter_out_amount: 0,
+            vault_out: None, note_out_value: None, layout: 0, vault_only: false,
+            minter_owner: None, minter_in_amount: 0, minter_in_type: ID_COVENANT, minter_in_is_minter: true, minter_out_value: None, token_cov: None }
+    }
     fn correct_minted(&self) -> i64 { (self.paid - self.m.base.note_value - self.m.base.max_fee) / price_up(self.m.nav(&self.prev, self.held, self.claimed), self.prev.shares) }
     fn correct_next(&self) -> Credit { Credit { shares: self.prev.shares + self.correct_minted(), ..self.prev } }
     fn run(&self) -> R {
         let cur = compile_credit(&self.m, &self.prev);
         let next = self.next.unwrap_or_else(|| self.correct_next());
         let succ = compile_credit(&self.m, &next);
-        let owner = xonly(&user());
-        let acct = compile_account(owner, VCOV, 0);
-        let minter = compile_kcc(&VCOV.as_bytes(), ID_COVENANT, 0, true);
+        let acct = compile_account(self.owner, self.acct_vault, self.acct_kind);
+        let minter = compile_kcc(&self.minter_owner.unwrap_or(VCOV.as_bytes()), self.minter_in_type, self.minter_in_amount, self.minter_in_is_minter);
+        let minter_out = compile_kcc(&VCOV.as_bytes(), ID_COVENANT, self.minter_out_amount, true);
+        let tcov = self.token_cov.unwrap_or(SCOV);
         let minted = self.minted.unwrap_or_else(|| self.correct_minted());
-        let note_owner = redeem_hash(owner, VCOV);
-        let note = compile_kcc(&note_owner, ID_SCRIPT_HASH, minted, false);
-        let entries = vec![cov_utxo(&cur, self.held as u64, VCOV), plain_utxo(self.paid as u64, p2sh(&acct)), cov_utxo(&minter, MINTER_DUST as u64, SCOV)];
-        let inputs = vec![tx_input(0, decl_sigscript(&cur, "deposit", vec![credit_state(&next), Expr::int(self.claimed)])),
+        let note_owner = self.note_owner.unwrap_or_else(|| redeem_hash(self.owner, VCOV));
+        let note = compile_kcc(&note_owner, self.note_type, minted, self.note_minter);
+        let mut entries = vec![cov_utxo(&cur, self.held as u64, VCOV), plain_utxo(self.paid as u64, p2sh(&acct)), cov_utxo(&minter, MINTER_DUST as u64, tcov)];
+        let mut inputs = vec![tx_input(0, decl_sigscript(&cur, "deposit", vec![credit_state(&next), Expr::int(self.claimed)])),
             tx_input(1, entry_sigscript(&acct, "enter", vec![])),
-            tx_input(2, leader_sigscript(&minter, "transfer", vec![kcc_states(vec![(VCOV.as_bytes().to_vec(), ID_COVENANT, 0, true), (note_owner.to_vec(), ID_SCRIPT_HASH, minted, false)]), sigs(vec![]), Expr::dynamic_bytes(vec![0])]))];
-        let outputs = vec![cov_out(&succ, (self.held + self.paid - self.m.base.note_value - FEE) as u64, 0, VCOV), cov_out(&minter, MINTER_DUST as u64, 2, SCOV), cov_out(&note, self.m.base.note_value as u64, 2, SCOV)];
-        run_all(&new_tx(inputs, outputs, self.claimed as u64), &entries)
+            tx_input(2, leader_sigscript(&minter, "transfer", vec![kcc_states(vec![(VCOV.as_bytes().to_vec(), ID_COVENANT, self.minter_out_amount, true), (note_owner.to_vec(), self.note_type, minted, self.note_minter)]), sigs(vec![]), Expr::dynamic_bytes(vec![0])]))];
+        let vault_out = self.vault_out.unwrap_or(self.held + self.paid - self.m.base.note_value - FEE);
+        let mut outputs = vec![cov_out(&succ, vault_out.max(0) as u64, 0, VCOV), cov_out(&minter_out, self.minter_out_value.unwrap_or(MINTER_DUST) as u64, 2, tcov),
+            cov_out(&note, self.note_out_value.unwrap_or(self.m.base.note_value) as u64, 2, tcov)];
+        if self.layout == 3 { outputs.swap(0, 1); }
+        if self.layout == 1 {
+            let other = compile_account(xonly(&user2()), VCOV, 0);
+            entries.push(plain_utxo((50 * KAS) as u64, p2sh(&other)));
+            inputs.push(tx_input(3, entry_sigscript(&other, "enter", vec![])));
+        }
+        if self.layout == 2 { outputs.push(out_to(KAS as u64, p2pk_spk(xonly(&stranger())))); }
+        let tx = new_tx(inputs, outputs, self.lock.unwrap_or(self.claimed as u64));
+        if self.vault_only { execute(&tx, entries, 0).map_err(|e| (0, e)) } else { run_all(&tx, &entries) }
     }
 }
 
 #[derive(Clone)]
-struct Red { m: CreditMandate, prev: Credit, held: i64, shares: i64, claimed: i64, payout: Option<i64>, next: Option<Credit> }
+struct Red {
+    m: CreditMandate, prev: Credit, held: i64, shares: i64, claimed: i64, payout: Option<i64>, next: Option<Credit>,
+    lock: Option<u64>, note_owner_key: [u8; 32], acct_owner: [u8; 32], acct_kind: i64, acct_value: i64, pay_to: Option<[u8; 32]>, vault_out: Option<i64>,
+    note_minter: bool,
+    layout: u8, // 0 normal; 1 note re-created to a stranger instead of burned; 2 extra output; 3 extra input; 4 continuation at index 1
+    vault_only: bool, note_type: u8, note_owner_hash: Option<[u8; 32]>,
+    minter_owner: Option<[u8; 32]>, minter_in_amount: i64, minter_in_is_minter: bool, minter_in_type: u8, minter_out_value: Option<i64>,
+    owner_extra: i64, token_cov: Option<Hash>, note_cov: Option<Hash>,
+}
 impl Red {
-    fn valid(prev: Credit, held: i64, shares: i64, claimed: i64) -> Self { Red { m: CreditMandate::default(), prev, held, shares, claimed, payout: None, next: None } }
+    fn valid(prev: Credit, held: i64, shares: i64, claimed: i64) -> Self {
+        Red { m: CreditMandate::default(), prev, held, shares, claimed, payout: None, next: None,
+            lock: None, note_owner_key: xonly(&user()), acct_owner: xonly(&user()), acct_kind: 1, acct_value: KAS, pay_to: None, vault_out: None,
+            note_minter: false, layout: 0, vault_only: false, note_type: ID_SCRIPT_HASH, note_owner_hash: None,
+            minter_owner: None, minter_in_amount: 0, minter_in_is_minter: true, minter_in_type: ID_COVENANT, minter_out_value: None, owner_extra: 0, token_cov: None, note_cov: None }
+    }
     fn correct_payout(&self) -> i64 { let g = self.shares * price_down(self.m.nav(&self.prev, self.held, self.claimed), self.prev.shares); g - g * self.m.base.exit_fee_bps / 10_000 }
     fn correct_next(&self) -> Credit { Credit { shares: self.prev.shares - self.shares, ..self.prev } }
     fn run(&self) -> R {
         let cur = compile_credit(&self.m, &self.prev);
         let next = self.next.unwrap_or_else(|| self.correct_next());
         let succ = compile_credit(&self.m, &next);
-        let owner = xonly(&user());
-        let acct = compile_account(owner, VCOV, 1);
-        let minter = compile_kcc(&VCOV.as_bytes(), ID_COVENANT, 0, true);
-        let note = compile_kcc(&redeem_hash(owner, VCOV), ID_SCRIPT_HASH, self.shares, false);
+        let acct = compile_account(self.acct_owner, VCOV, self.acct_kind);
+        let minter = compile_kcc(&self.minter_owner.unwrap_or(VCOV.as_bytes()), self.minter_in_type, self.minter_in_amount, self.minter_in_is_minter);
+        let minter_out = compile_kcc(&VCOV.as_bytes(), ID_COVENANT, 0, true);
+        let note = compile_kcc(&self.note_owner_hash.unwrap_or_else(|| redeem_hash(self.note_owner_key, VCOV)), self.note_type, self.shares, self.note_minter);
         let payout = self.payout.unwrap_or_else(|| self.correct_payout());
         let nv = self.m.base.note_value;
-        let entries = vec![cov_utxo(&cur, self.held as u64, VCOV), plain_utxo(KAS as u64, p2sh(&acct)), cov_utxo(&minter, MINTER_DUST as u64, SCOV), cov_utxo(&note, nv as u64, SCOV)];
-        let inputs = vec![tx_input(0, decl_sigscript(&cur, "redeem", vec![credit_state(&next), Expr::int(self.claimed)])),
+        let tcov = self.token_cov.unwrap_or(SCOV);
+        let mut entries = vec![cov_utxo(&cur, self.held as u64, VCOV), plain_utxo(self.acct_value as u64, p2sh(&acct)), cov_utxo(&minter, MINTER_DUST as u64, tcov), cov_utxo(&note, nv as u64, self.note_cov.unwrap_or(tcov))];
+        let mut new_kcc = vec![(VCOV.as_bytes().to_vec(), ID_COVENANT, 0, true)];
+        if self.layout == 1 { new_kcc.push((redeem_hash(xonly(&stranger()), VCOV).to_vec(), ID_SCRIPT_HASH, self.shares, false)); }
+        let mut inputs = vec![tx_input(0, decl_sigscript(&cur, "redeem", vec![credit_state(&next), Expr::int(self.claimed)])),
             tx_input(1, entry_sigscript(&acct, "enter", vec![])),
-            tx_input(2, leader_sigscript(&minter, "transfer", vec![kcc_states(vec![(VCOV.as_bytes().to_vec(), ID_COVENANT, 0, true)]), sigs(vec![]), Expr::dynamic_bytes(vec![0, 1])])),
+            tx_input(2, leader_sigscript(&minter, "transfer", vec![kcc_states(new_kcc), sigs(vec![]), Expr::dynamic_bytes(vec![0, 1])])),
             tx_input(3, decl_sigscript(&note, "transfer", vec![]))];
-        let outputs = vec![cov_out(&succ, (self.held - payout) as u64, 0, VCOV), cov_out(&minter, MINTER_DUST as u64, 2, SCOV),
-            out_to((payout + KAS + nv - self.m.base.max_fee) as u64, p2pk_spk(owner))];
-        run_all(&new_tx(inputs, outputs, self.claimed as u64), &entries)
+        let vault_out = self.vault_out.unwrap_or(self.held - payout);
+        let mut outputs = vec![cov_out(&succ, vault_out.max(0) as u64, 0, VCOV), cov_out(&minter_out, self.minter_out_value.unwrap_or(MINTER_DUST) as u64, 2, tcov),
+            out_to((payout + self.acct_value + nv - self.m.base.max_fee + self.owner_extra).max(0) as u64, p2pk_spk(self.pay_to.unwrap_or(self.acct_owner)))];
+        if self.layout == 3 { entries.push(plain_utxo(KAS as u64, p2pk_spk(xonly(&stranger())))); inputs.push(tx_input(4, vec![])); }
+        if self.layout == 4 { outputs.swap(0, 1); }
+        if self.layout == 1 { let kept = compile_kcc(&redeem_hash(xonly(&stranger()), VCOV), ID_SCRIPT_HASH, self.shares, false); outputs.insert(2, cov_out(&kept, nv as u64, 2, SCOV)); }
+        if self.layout == 2 { outputs.push(out_to(KAS as u64, p2pk_spk(xonly(&stranger())))); }
+        let tx = new_tx(inputs, outputs, self.lock.unwrap_or(self.claimed as u64));
+        if self.vault_only { execute(&tx, entries, 0).map_err(|e| (0, e)) } else { run_all(&tx, &entries) }
     }
 }
 
@@ -588,4 +634,213 @@ fn claimed_time_only_moves_forward() {
     let h = Credit { halted: true, ..l };
     let (cur, succ) = (compile_credit(&m, &l), compile_credit(&m, &h));
     no(signed(&cur, "halt", |s| vec![credit_state(&h), Expr::bytes(s)], vec![], edge - 1, vec![cov_out(&succ, (edge - 1 - FEE) as u64, 0, VCOV)], 0, &guardian()), "halt paid out of the seed");
+}
+
+// ---------------------------------------------------------------------------
+// deposit and redeem, one flip per guard. The full transaction first; then the
+// VAULT INPUT ALONE, so a refusal is the vault's own and not the token's or the
+// account's. Written against the v0.2 mutation run's survivors (the deposit and
+// redeem code is the NAV vault's, but copied, so the credit suite must hold it).
+// ---------------------------------------------------------------------------
+fn vo(mut d: Dep) -> Dep { d.vault_only = true; d }
+fn vr(mut r: Red) -> Red { r.vault_only = true; r }
+
+#[test]
+fn deposit_flips() {
+    let (prev, held) = funded();
+    let base = Dep::valid(prev, held, 2_000);
+    ok(base.run(), "baseline");
+    let f = |g: &dyn Fn(&mut Dep), what: &str| { let mut d = base.clone(); g(&mut d); no(d.run(), what); };
+    f(&|d| d.minted = Some(d.correct_minted() + 1), "mints one share too many");
+    f(&|d| { d.minted = Some(d.correct_minted() + 1); d.next = Some(Credit { shares: d.prev.shares + d.correct_minted() + 1, ..d.prev }); }, "mints too many and books them");
+    f(&|d| d.note_owner = Some(redeem_hash(xonly(&stranger()), VCOV)), "shares to someone else");
+    f(&|d| d.note_owner = Some(b2b(b"anything")), "shares to an arbitrary script");
+    f(&|d| d.note_type = ID_COVENANT, "note owned by a covenant id");
+    f(&|d| d.note_minter = true, "note made a minter");
+    f(&|d| d.minter_out_amount = 5, "minter branch keeps a balance");
+    f(&|d| d.acct_kind = 1, "a redeem account used as a deposit");
+    f(&|d| d.acct_vault = Hash::from_bytes([9; 32]), "an account for another vault");
+    f(&|d| d.vault_out = Some(d.held + d.paid - d.m.base.note_value - FEE - 10 * KAS), "vault keeps less than it received");
+    f(&|d| d.note_out_value = Some(d.m.base.note_value + KAS), "note takes more KAS");
+    f(&|d| d.paid = KAS, "below the minimum deposit");
+    f(&|d| d.prev.halted = true, "deposit into a halted vault");
+    f(&|d| d.m.base.deposit_until = 1_900, "deposit after the window closed");
+    f(&|d| d.lock = Some(1_000), "claims a DAA the chain has not reached");
+    f(&|d| d.next = Some(Credit { marks: [5, 0, 0], ..d.correct_next() }), "moves a mark");
+    f(&|d| d.layout = 1, "a second account rides along");
+    f(&|d| d.layout = 2, "an extra output pays a stranger");
+}
+
+#[test]
+fn deposit_vault_guards_alone() {
+    let (prev, held) = funded();
+    let base = vo(Dep::valid(prev, held, 2_000));
+    ok(base.run(), "vault alone accepts the baseline");
+    let f = |g: &dyn Fn(&mut Dep), what: &str| { let mut d = base.clone(); g(&mut d); no(d.run(), what); };
+    f(&|d| d.layout = 1, "an extra input");
+    f(&|d| d.layout = 2, "an extra output");
+    f(&|d| d.layout = 3, "continuation not at output 0");
+    f(&|d| d.acct_vault = Hash::from_bytes([9; 32]), "an account for another vault");
+    f(&|d| d.acct_kind = 1, "a redeem account");
+    f(&|d| d.minter_owner = Some(xonly(&stranger())), "a minter branch owned by someone else");
+    f(&|d| d.minter_in_type = ID_SCRIPT_HASH, "a minter branch owned by script");
+    f(&|d| d.minter_in_is_minter = false, "a branch that is not the minter");
+    f(&|d| d.minter_in_amount = 5, "a minter branch with a balance");
+    f(&|d| d.minter_out_value = Some(MINTER_DUST - KAS / 10), "the minter branch's KAS skimmed");
+    f(&|d| d.note_out_value = Some(d.m.base.note_value + KAS), "the note takes more KAS");
+    f(&|d| d.token_cov = Some(Hash::from_bytes([8; 32])), "another token's branch");
+    f(&|d| d.vault_out = Some(d.held + d.paid - d.m.base.note_value - d.m.base.max_fee - 1), "the vault keeps less than the deposit less the fee cap");
+    f(&|d| d.paid = 100_000_000_000_000 + 1, "an account coin above the 1M KAS bound");
+    f(&|d| d.held = 100_000_000_000_000 + 1, "a vault above the 1M KAS bound");
+    f(&|d| d.paid = KAS, "below the minimum deposit");
+    f(&|d| d.m.base.deposit_until = 1_900, "after the deposit window");
+    f(&|d| d.lock = Some(1_000), "claims a DAA the chain has not reached");
+    // a deposit worth less than one share at a high price
+    f(&|d| { d.prev = Credit { principal: [500_000 * KAS, 0, 0], marks: [500_000 * KAS, 0, 0], due: [11_500, 0, 0], shares: 10, ..d.prev }; d.paid = 6 * KAS; d.m.base.min_deposit = KAS; }, "mints zero shares");
+    // held below the seed while loans keep NAV positive
+    f(&|d| { d.held = KAS / 10; d.prev = Credit { principal: [200 * KAS, 0, 0], marks: [200 * KAS, 0, 0], due: [11_500, 0, 0], ..d.prev }; }, "vault below its own seed");
+    f(&|d| d.m.period = 0, "a zero markdown period (bad parameter)");
+}
+
+#[test]
+fn redeem_flips() {
+    let (prev, held) = funded();
+    let base = Red::valid(prev, held, prev.shares / 2, 2_000);
+    ok(base.run(), "baseline");
+    let f = |g: &dyn Fn(&mut Red), what: &str| { let mut r = base.clone(); g(&mut r); no(r.run(), what); };
+    f(&|r| r.payout = Some(r.correct_payout() + 1), "pays one sompi too much");
+    f(&|r| { r.payout = Some(r.correct_payout() + KAS); r.vault_out = Some(r.held - r.correct_payout() - KAS); }, "pays more and books it");
+    f(&|r| r.pay_to = Some(xonly(&stranger())), "pays a stranger");
+    f(&|r| r.acct_owner = xonly(&stranger()), "a stranger's account redeems my note");
+    f(&|r| r.acct_kind = 0, "a deposit account used to redeem");
+    f(&|r| r.next = Some(Credit { shares: r.prev.shares, ..r.prev }), "burns nothing on the books");
+    f(&|r| r.next = Some(Credit { shares: r.prev.shares - r.shares + 1, ..r.prev }), "books one share fewer burned");
+    f(&|r| r.layout = 1, "the note is re-created instead of burned");
+    f(&|r| r.layout = 2, "an extra output");
+    f(&|r| r.m.base.maturity = 3_000, "before maturity (fixed term)");
+    f(&|r| r.vault_out = Some(r.held - r.correct_payout() - KAS), "vault gives up more than the payout");
+    f(&|r| r.note_minter = true, "burns a minter branch as a note");
+    f(&|r| { r.prev = Credit { principal: [150 * KAS, 0, 0], marks: [150 * KAS, 0, 0], due: [11_500, 0, 0], ..r.prev }; r.held = 30 * KAS; r.shares = r.prev.shares; }, "pays out KAS the vault does not hold");
+}
+
+#[test]
+fn redeem_vault_guards_alone() {
+    let (prev, held) = funded();
+    let base = vr(Red::valid(prev, held, prev.shares / 4, 2_000));
+    ok(base.run(), "vault alone accepts the baseline");
+    let f = |g: &dyn Fn(&mut Red), what: &str| { let mut r = base.clone(); g(&mut r); no(r.run(), what); };
+    f(&|r| r.layout = 3, "an extra input");
+    f(&|r| r.layout = 2, "an extra output");
+    f(&|r| r.layout = 4, "continuation not at output 0");
+    f(&|r| r.lock = Some(1_000), "claims a DAA the chain has not reached");
+    f(&|r| r.m.base.maturity = 3_000, "before maturity");
+    f(&|r| r.acct_owner = xonly(&stranger()), "another owner's account");
+    f(&|r| r.acct_kind = 0, "a deposit account");
+    f(&|r| r.minter_owner = Some(xonly(&stranger())), "a minter branch owned by someone else");
+    f(&|r| r.minter_in_type = ID_SCRIPT_HASH, "a minter branch owned by script");
+    f(&|r| r.minter_in_is_minter = false, "a branch that is not the minter");
+    f(&|r| r.minter_in_amount = 5, "a minter branch with a balance");
+    f(&|r| r.minter_out_value = Some(MINTER_DUST - KAS / 10), "the minter branch's KAS skimmed");
+    f(&|r| r.token_cov = Some(Hash::from_bytes([8; 32])), "another token");
+    f(&|r| r.note_cov = Some(Hash::from_bytes([8; 32])), "a note of another token");
+    f(&|r| r.note_type = ID_COVENANT, "a note owned by a covenant id");
+    f(&|r| r.note_owner_hash = Some(b2b(b"not the account")), "a note owned by another script");
+    f(&|r| r.shares = r.prev.shares + 1, "burns more than the supply");
+    f(&|r| r.owner_extra = 1, "pays the owner one sompi more");
+    f(&|r| r.acct_value = 100_000_000_000_000 + 1, "an account coin above the bound");
+    f(&|r| r.held = 100_000_000_000_000 + 1, "a vault above the bound");
+    f(&|r| { r.prev = Credit { principal: [150 * KAS, 0, 0], marks: [150 * KAS, 0, 0], due: [11_500, 0, 0], ..r.prev }; r.held = 30 * KAS; r.shares = r.prev.shares; r.vault_out = Some(0); }, "pays out KAS the vault does not hold");
+    f(&|r| r.m.base.exit_fee_bps = 20_000, "an exit fee over 100% (bad parameter)");
+    f(&|r| r.m.base.exit_fee_bps = -100, "a negative exit fee (bad parameter)");
+}
+
+#[test]
+fn halt_guards() {
+    let m = CreditMandate::default();
+    let (prev, held) = lent();
+    let n = Credit { halted: true, ..prev };
+    let (cur, succ) = (compile_credit(&m, &prev), compile_credit(&m, &n));
+    let run = |next: Credit, extra_in: bool, extra_out: bool, swap: bool, k: &secp256k1::Keypair| -> R {
+        let s2 = compile_credit(&m, &next);
+        let mut entries = vec![cov_utxo(&cur, held as u64, VCOV)];
+        let mut inputs = vec![tx_input(0, vec![])];
+        if extra_in { entries.push(plain_utxo(KAS as u64, p2pk_spk(xonly(&stranger())))); inputs.push(tx_input(1, vec![])); }
+        let mut outs = vec![cov_out(&s2, (held - FEE) as u64, 0, VCOV)];
+        if extra_out || swap { outs.push(out_to(1, p2pk_spk(xonly(&stranger())))); }
+        if swap { outs.swap(0, 1); }
+        let mut tx = new_tx(inputs, outs, 0);
+        tx.inputs[0].signature_script = decl_sigscript(&cur, "halt", vec![credit_state(&next), Expr::bytes(vec![0u8; 65])]);
+        let s0 = sign(&tx, entries.clone(), 0, k);
+        tx.inputs[0].signature_script = decl_sigscript(&cur, "halt", vec![credit_state(&next), Expr::bytes(s0)]);
+        execute(&tx, entries, 0).map_err(|e| (0, e))
+    };
+    let _ = succ;
+    ok(run(n, false, false, false, &guardian()), "baseline");
+    no(run(n, true, false, false, &guardian()), "an extra input");
+    no(run(n, false, true, false, &guardian()), "an extra output");
+    no(run(n, false, false, true, &guardian()), "continuation not at output 0");
+    no(run(n, false, false, false, &valuer()), "the valuer halts");
+    no(run(prev, false, false, false, &guardian()), "a halt that doesn't halt");
+    no(run(Credit { shares: n.shares + 1, ..n }, false, false, false, &guardian()), "a halt that mints a share on the books");
+}
+
+// ---------------------------------------------------------------------------
+// v0.1: no loan and no fee takes the vault below its seed, and a signed move
+// keeps everything but the fee. Each path alone, at the edge: exactly enough
+// is accepted, one sompi less is refused.
+// ---------------------------------------------------------------------------
+#[test]
+fn the_seed_stays_and_only_the_fee_leaves() {
+    let m = CreditMandate::default();
+    let (keep, fee) = (m.base.min_keep, m.base.max_fee);
+    let (prev, _) = lent();
+    let edge = keep + fee;
+    let vault_alone = |f: &str, args: &dyn Fn(Vec<u8>) -> Vec<Expr<'static>>, next: &Credit, held: i64, out_v: i64, k: &secp256k1::Keypair, lock: u64| -> R {
+        let (cur, succ) = (compile_credit(&m, &prev), compile_credit(&m, next));
+        let mut tx = new_tx(vec![tx_input(0, vec![])], vec![cov_out(&succ, out_v.max(0) as u64, 0, VCOV)], lock);
+        let entries = vec![cov_utxo(&cur, held as u64, VCOV)];
+        tx.inputs[0].signature_script = decl_sigscript(&cur, f, args(vec![0u8; 65]));
+        let sg = sign(&tx, entries.clone(), 0, k);
+        tx.inputs[0].signature_script = decl_sigscript(&cur, f, args(sg));
+        execute(&tx, entries, 0).map_err(|e| (0, e))
+    };
+    // mark
+    let up = Credit { marks: [41 * KAS, 20 * KAS, 0], mark_epoch: 1, ..prev };
+    let mk = |s: Vec<u8>| vec![credit_state(&up), Expr::int(2_500), Expr::bytes(s)];
+    ok(vault_alone("mark", &mk, &up, edge, edge - FEE, &valuer(), 2_500), "mark with the seed and a fee in the vault");
+    no(vault_alone("mark", &mk, &up, edge - 1, edge - 1 - FEE, &valuer(), 2_500), "mark whose fee would come out of the seed");
+    no(vault_alone("mark", &mk, &up, 50 * KAS, 50 * KAS - fee - 1, &valuer(), 2_500), "mark that takes more than the fee");
+    no(mark_run(&m, prev, Credit { marks: [40 * KAS, 30 * KAS, 0], mark_epoch: 1, ..prev }, 2_500, 2_500, 50 * KAS, &valuer()), "mark slot 1 up past its step and its contract");
+    // halt
+    let h = Credit { halted: true, ..prev };
+    let hk = |s: Vec<u8>| vec![credit_state(&h), Expr::bytes(s)];
+    ok(vault_alone("halt", &hk, &h, edge, edge - FEE, &guardian(), 0), "halt with the seed and a fee in the vault");
+    no(vault_alone("halt", &hk, &h, edge - 1, edge - 1 - FEE, &guardian(), 0), "halt whose fee would come out of the seed");
+    no(vault_alone("halt", &hk, &h, 50 * KAS, 50 * KAS - fee - 1, &guardian(), 0), "halt that takes more than the fee");
+    // write-off: slot 0 late and marked to zero
+    let zero = Credit { marks: [0, 20 * KAS, 0], ..prev };
+    let off = Credit { principal: [0, 20 * KAS, 0], due: [0, 11_500, 0], ..zero };
+    let wo_alone = |held: i64, out_v: i64| -> R {
+        let (cur, succ) = (compile_credit(&m, &zero), compile_credit(&m, &off));
+        let mut tx = new_tx(vec![tx_input(0, vec![])], vec![cov_out(&succ, out_v.max(0) as u64, 0, VCOV)], 20_000);
+        let entries = vec![cov_utxo(&cur, held as u64, VCOV)];
+        let args = |s: Vec<u8>| vec![credit_state(&off), Expr::int(0), Expr::int(20_000), Expr::bytes(s)];
+        tx.inputs[0].signature_script = decl_sigscript(&cur, "writeOff", args(vec![0u8; 65]));
+        let sg = sign(&tx, entries.clone(), 0, &valuer());
+        tx.inputs[0].signature_script = decl_sigscript(&cur, "writeOff", args(sg));
+        execute(&tx, entries, 0).map_err(|e| (0, e))
+    };
+    ok(wo_alone(edge, edge - FEE), "write off with the seed and a fee in the vault");
+    no(wo_alone(edge - 1, edge - 1 - FEE), "write off whose fee would come out of the seed");
+    no(wo_alone(50 * KAS, 50 * KAS - fee - 1), "write off that takes more than the fee");
+    // markdown: anyone may write it in, so only the seed guards the fee
+    let md_next = Credit { marks: [20 * KAS, 20 * KAS, 0], ..prev };
+    ok(md_run(&m, prev, md_next, 0, 13_700, 13_700, edge, edge - FEE), "markdown with the seed and a fee in the vault");
+    no(md_run(&m, prev, md_next, 0, 13_700, 13_700, edge - 1, edge - 1 - FEE), "markdown whose fee would come out of the seed");
+    // lend with no reserve floor and full caps: the seed is the only floor left
+    let mut open = m.clone(); open.base.reserve_floor_bps = 0; open.base.caps = [10_000; 4];
+    let (fp, fheld) = funded();
+    let most = fheld - keep - fee;
+    ok(lend_run(&open, fp, lend_next(&open, fp, 0, most, 1_500), 0, most, 1_500, 1_500, fheld, to_borrower(0), &allocator()), "lend all but the seed and a fee");
+    no(lend_run(&open, fp, lend_next(&open, fp, 0, most + 1, 1_500), 0, most + 1, 1_500, 1_500, fheld, to_borrower(0), &allocator()), "lend one sompi into the seed");
 }
