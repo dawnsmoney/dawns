@@ -6,6 +6,8 @@ import { readWalletCached, readL1Cached, myWallet, vaultPositions } from "@/lib/
 import { getAssets } from "@/lib/assets";
 import { valueCredible } from "@/lib/assets/types";
 import { buildPortfolio, parseAddresses, POS_COLOR, POS_LABEL } from "@/lib/portfolio";
+import { currentUser } from "@/lib/auth/session";
+import { EarnPositions } from "@/components/earn-positions";
 import { MCard, MHead, MNote, MStats } from "@/components/m/kit";
 import { MTabs } from "@/components/m/tabs";
 import { PosActions, exposureParts, kindParts } from "@/components/portfolio";
@@ -46,6 +48,7 @@ export default async function MPortfolio({ searchParams }: P) {
   const pf = buildPortfolio(s, evmReads, l1Reads, (id) => px.get(id) ?? null, vault);
   const intel = buildIntel(raw, s).byOpp;
   const top = pf.exposure[0];
+  const me = !a || a === mine ? (await currentUser().catch(() => null))?.id ?? null : null;
   return (
     <>
       {head}
@@ -59,6 +62,7 @@ export default async function MPortfolio({ searchParams }: P) {
               { label: "Could leave today", value: usd(pf.exitNow), sub: pf.exitShare != null ? `${pct(pf.exitShare, 0)} of holdings` : undefined },
               { label: "Health factor", value: pf.hf != null ? pf.hf.toFixed(2) : pf.debt ? "—" : "No loans", tone: pf.hf != null && pf.hf < 1.2 ? "crit" : undefined },
             ]} />
+            {me && <EarnPositions userId={me} s={s} pf={pf} compact />}
             <MTabs tabs={[{ key: "p", label: "Positions", badge: pf.positions.length }, { key: "u", label: "Underneath" }]}>
               <div className="m-panel">
                 {pf.positions.map((x) => (

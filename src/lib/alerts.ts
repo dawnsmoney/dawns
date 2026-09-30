@@ -5,6 +5,7 @@ import { dawnReport } from "./report";
 import type { Signal, Snapshot, Status } from "./types";
 import { parsePolicy, type FollowedPlan } from "./allocator";
 import { planChecks, watchChecks, type WatchEntryLite } from "./plan-alerts";
+import { earnChecks, type EarnWatch } from "./earn-watch";
 
 /* ---------- 1. history ---------- */
 export async function recordSnapshot(s: Snapshot) {
@@ -151,15 +152,18 @@ export async function planAlerts(s: Snapshot) {
   const q = sql();
   // every linked chat whose user follows a plan or keeps Watch rules
   const rows = (await q.query(`select c.chat_id, c.user_id, p.plan, p.policy from telegram_chats c left join profiles p on p.user_id = c.user_id
-    where c.user_id is not null and (p.plan is not null or exists (select 1 from watch_rules w where w.user_id = c.user_id))`)) as { chat_id: string; user_id: string; plan: FollowedPlan | null; policy: unknown }[];
-  const byUser = new Map<string, { plan: FollowedPlan | null; policy: unknown; chats: string[]; watch: Record<string, WatchEntryLite> }>();
+    where c.user_id is not null and (p.plan is not null or exists (select 1 from watch_rules w where w.user_id = c.user_id)
+      or exists (select 1 from earn_watch e where e.user_id = c.user_id))`)) as { chat_id: string; user_id: string; plan: FollowedPlan | null; policy: unknown }[];
+  const byUser = new Map<string, { plan: FollowedPlan | null; policy: unknown; chats: string[]; watch: Record<string, WatchEntryLite>; earn: EarnWatch[] }>();
   for (const r of rows) {
-    const u = byUser.get(r.user_id) ?? { plan: r.plan, policy: r.policy, chats: [], watch: {} };
+    const u = byUser.get(r.user_id) ?? { plan: r.plan, policy: r.policy, chats: [], watch: {}, earn: [] };
     u.chats.push(r.chat_id); byUser.set(r.user_id, u);
   }
   if (byUser.size) {
     const w = (await q.query("select user_id, protocol, entry from watch_rules where user_id = any($1)", [[...byUser.keys()]])) as { user_id: string; protocol: string; entry: WatchEntryLite }[];
     for (const r of w) byUser.get(r.user_id)!.watch[r.protocol] = r.entry;
+    const ew = (await q.query("select user_id, opp, started_at, apy0, size0, kas0, under0, usd0 from earn_watch where user_id = any($1)", [[...byUser.keys()]])) as (EarnWatch & { user_id: string })[];
+    for (const r of ew) byUser.get(r.user_id)!.earn.push(r);
   }
   const poolThen = new Map(((await q.query(`select distinct on (pair) lower(pair) as pair, usd from pool_metrics
     where taken_at between now() - interval '25 hours' and now() - interval '23 hours'
@@ -167,7 +171,7 @@ export async function planAlerts(s: Snapshot) {
   const now = new Date(s.asOf);
   let sent = 0;
   for (const [userId, u] of byUser) {
-    const checks = [...(u.plan ? planChecks(s, u.plan, parsePolicy(u.policy)) : []), ...watchChecks(s, u.watch, poolThen)];
+    const checks = [...(u.plan ? planChecks(s, u.plan, parsePolicy(u.policy)) : []), ...watchChecks(s, u.watch, poolThen), ...earnChecks(s, u.earn)];
     const prev = (await q.query("select key, severity, strong, last_seen, resolved_at from user_signals where user_id = $1", [userId])) as { key: string; severity: Status; strong: string; last_seen: string; resolved_at: string | null }[];
     const byKey = new Map(prev.map((r) => [r.key, r]));
     const events: AlertEvent[] = [];
@@ -191,11 +195,12 @@ export async function planAlerts(s: Snapshot) {
     for (const e of events) for (const chat of u.chats) {
       const dup = (await q.query("select 1 from alerts_sent where chat_id = $1 and signal_key = $2 and kind = $3 and sent_at > now() - interval '6 hours' limit 1", [chat, e.key, e.kind])) as unknown[];
       if (dup.length) continue;
-      const isWatch = e.key.includes(":w:");
-      const head = e.kind === "resolved" ? `🟢 <b>Cleared</b> · ${isWatch ? "your rule" : "your plan"}` : `${ICON[e.t]} <b>${e.kind === "worse" ? "Escalated" : isWatch ? "Your rule" : "Your plan"}</b>`;
+      const isWatch = e.key.includes(":w:"), isEarn = e.key.includes(":e:");
+      const what = isEarn ? "Earn" : isWatch ? "your rule" : "your plan";
+      const head = e.kind === "resolved" ? `🟢 <b>Cleared</b> · ${what}` : `${ICON[e.t]} <b>${e.kind === "worse" ? "Escalated" : isEarn ? "Earn · watched for you" : isWatch ? "Your rule" : "Your plan"}</b>`;
       const body = e.kind === "resolved" ? `No longer true: ${esc(e.strong)}.` : `<b>${esc(e.strong)}</b>${esc(e.rest)}`;
       try {
-        await send(chat, `${head}\n${body}\n<a href="${SITE}${isWatch ? "/watchlist" : "/allocate"}">${isWatch ? "Your watchlist" : "Review your plan"}</a>`);
+        await send(chat, `${head}\n${body}\n<a href="${SITE}${isEarn ? "/portfolio#earn" : isWatch ? "/watchlist" : "/allocate"}">${isEarn ? "Your Earn positions" : isWatch ? "Your watchlist" : "Review your plan"}</a>`);
         await q.query("insert into alerts_sent (chat_id, signal_key, kind) values ($1, $2, $3)", [chat, e.key, e.kind]);
         sent++;
       } catch { /* chat gone; the protocol alert path cleans it up */ }

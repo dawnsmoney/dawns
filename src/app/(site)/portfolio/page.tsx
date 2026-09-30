@@ -8,6 +8,8 @@ import { getSnapshot } from "@/lib/snapshot";
 import { getIntelRaw } from "@/lib/intel-db";
 import { buildIntel } from "@/lib/intel";
 import { readWalletCached, readL1Cached, myWallet, vaultPositions } from "@/lib/portfolio-read";
+import { currentUser } from "@/lib/auth/session";
+import { EarnPositions } from "@/components/earn-positions";
 import { Suspense } from "react";
 import { getAssets } from "@/lib/assets";
 import { valueCredible } from "@/lib/assets/types";
@@ -53,7 +55,7 @@ export default async function PortfolioPage({ searchParams }: P) {
       <div className="wrap" style={{ paddingTop: 40, display: "grid", gap: 28 }}>
         <div className="card"><PortfolioConnect value={a} mine={mine} viewing={[...q.evm, ...q.l1]} />{bad && <p style={{ color: "var(--warn)", margin: "12px 0 0" }}>Skipped: {q.bad.join(", ")}</p>}</div>
         <Suspense key={[...q.evm, ...q.l1].join(",")} fallback={<PfSkeleton n={n} />}>
-          <PfBody evm={q.evm} l1={q.l1} />
+          <PfBody evm={q.evm} l1={q.l1} userId={!a || a === mine ? (await currentUser().catch(() => null))?.id ?? null : null} />
         </Suspense>
       </div>
     </>
@@ -71,7 +73,7 @@ function PfSkeleton({ n }: { n: number }) {
   );
 }
 
-async function PfBody({ evm, l1 }: { evm: string[]; l1: string[] }) {
+async function PfBody({ evm, l1, userId }: { evm: string[]; l1: string[]; userId: string | null }) {
   const q = { evm, l1 };
   const n = evm.length + l1.length;
   const [s, assets] = await Promise.all([getSnapshot(), getAssets()]);
@@ -97,6 +99,7 @@ async function PfBody({ evm, l1 }: { evm: string[]; l1: string[] }) {
               <div className="card"><div className="c-head"><h3>What you hold underneath</h3><span className="tag">look-through</span></div><SplitBar label="Exposure by underlying asset" parts={exposureParts(pf)} /></div>
               <div className="card"><div className="c-head"><h3>Where it sits</h3><span className="tag">by position type</span></div><SplitBar label="Value by position type" parts={kindParts(pf)} /></div>
             </div>}
+            {userId && <EarnPositions userId={userId} s={s} pf={pf} />}
             <PositionTable rows={pf.positions} tags={tags} />
             <p className="muted" style={{ fontSize: 13, margin: 0 }}>
               Read {new Date(pf.at).toISOString().slice(11, 16)} UTC from public RPCs, at the prices in dawns&apos; latest snapshot.{pf.unpriced ? ` ${pf.unpriced} positions have no reliable price and are not in the totals.` : ""}{pf.dust ? ` ${pf.dust} balances under $0.50 are hidden.` : ""}{pf.failed ? ` ${pf.failed} reads did not answer.` : ""} Kaspa L1: KAS from the Kaspa REST API, KRC-20 from the Kasplex indexer; a KRC-20 counts at a price only if it traded this week. Not included: V3 positions (NFTs), covenant tokens (KCC-20), and tokens outside the pools and markets dawns reads. <Link href="/opportunities">Compare with every opportunity</Link>.

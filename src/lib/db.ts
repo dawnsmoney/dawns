@@ -153,6 +153,11 @@ const SCHEMA = [
   `create table if not exists signal_issues (
     id text primary key, data jsonb not null, status text not null default 'draft',
     created_at timestamptz not null default now(), updated_at timestamptz not null default now(), published_at timestamptz, telegram_at timestamptz)`,
+  // Earn: options a user asked dawns to watch, with what they held and the market's numbers when they started
+  `create table if not exists earn_watch (
+    user_id text not null references users(id) on delete cascade, opp text not null, started_at timestamptz not null default now(),
+    apy0 double precision, size0 double precision, kas0 double precision, under0 jsonb, usd0 double precision,
+    primary key (user_id, opp))`,
   // testers' reports ("Report a problem") and the end-of-test survey; vid is the day-salted visitor hash, for limits only
   `create table if not exists feedback (
     id text primary key, user_id text references users(id) on delete set null, kind text not null, path text, text text, answers jsonb,

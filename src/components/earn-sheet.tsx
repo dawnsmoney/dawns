@@ -3,6 +3,7 @@ import { AreaChart } from "./charts";
 import { AssetCoin } from "./bits";
 import { WatchButton } from "./actions";
 import { UseOpportunity } from "./use-opportunity";
+import { EarnWatchToggle } from "./earn-watch";
 import { EarnTags } from "./earn";
 import { HAVES, earnName, lines, type Have } from "@/lib/earn";
 import type { OppIntel } from "@/lib/intel";
@@ -105,6 +106,7 @@ export function EarnSheet({ o, p, it, plan, asOf, stamp }: { o: Opportunity; p: 
         </div>
         {have === "kas" && <p className="esheet-note">This runs on {o.chain === "igra" ? "Igra" : "Kasplex"}, where KAS is {o.chain === "igra" ? "iKAS" : "bridged KAS"}. Holding KAS on Kaspa itself? Bridge it first; <Link href="/bridge">the bridge page</Link> shows how exits are being paid.</p>}
         <UseOpportunity o={o} plan={plan} />
+        <EarnWatchToggle opp={o.id} kind={o.kind} />
         <p className="muted" style={{ fontSize: 13, margin: "12px 0 0" }}>dawns builds and checks each transaction; your wallet signs it. dawns never holds your funds. Research, not advice.</p>
       </div>
     </div>
