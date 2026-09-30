@@ -408,7 +408,7 @@ async fn sweep_repayment(c: &mut CCtx, slot: usize, acct: &CompiledContract<'sta
     n.marks[slot] = (n.marks[slot] - amount).max(0);
     if n.principal[slot] <= 0 { n.principal[slot] = 0; n.due[slot] = 0; n.marks[slot] = 0; }
     let held = c.coin.entry.amount as i64;
-    let landed = held + amount - c.m.max_fee;
+    let landed = held + amount - move_fee(c.m.max_fee);
     let succ = compile_credit(&c.m, &n)?;
     let mut tx = tx_of(vec![input(&c.coin, CREDIT_BUDGET), input(&coin, REP_BUDGET)], vec![cont(&succ, landed, c.cov)], 0);
     let entries = vec![c.coin.entry.clone(), coin.entry.clone()];
@@ -428,7 +428,7 @@ async fn write_markdown(c: &mut CCtx, slot: usize) -> Res<bool> {
     let mut n = c.state;
     n.marks[slot] = cap;
     let held = c.coin.entry.amount as i64;
-    let keep = held - c.m.max_fee;
+    let keep = held - move_fee(c.m.max_fee);
     let succ = compile_credit(&c.m, &n)?;
     let mut tx = tx_of(vec![input(&c.coin, CREDIT_BUDGET)], vec![cont(&succ, keep, c.cov)], at as u64);
     let entries = vec![c.coin.entry.clone()];
@@ -645,7 +645,7 @@ async fn do_lend(c: &mut CCtx, slot: usize, amount: i64) -> Res<String> {
     n.epoch_index = epoch;
     n.epoch_spent = spent + amount;
     let succ = compile_credit(&c.m, &n)?;
-    let keep = held - amount - c.m.max_fee;
+    let keep = held - amount - move_fee(c.m.max_fee);
     let mut tx = tx_of(vec![input(&c.coin, CREDIT_BUDGET)], vec![cont(&succ, keep, c.cov), out(amount, to)], at as u64);
     let entries = vec![c.coin.entry.clone()];
     let sig = sighash_sig(&tx, &entries, 0, &load_key("allocator")?)?;
@@ -663,7 +663,7 @@ async fn do_cmark(c: &mut CCtx, marks: [i64; SLOTS]) -> Res<String> {
     if n.mark_epoch <= c.state.mark_epoch { return Err(format!("one mark per epoch: the next opens at DAA {}", c.m.not_before + (c.state.mark_epoch + 1) * c.m.epoch_length).into()); }
     let succ = compile_credit(&c.m, &n)?;
     let held = c.coin.entry.amount as i64;
-    let keep = held - c.m.max_fee;
+    let keep = held - move_fee(c.m.max_fee);
     let mut tx = tx_of(vec![input(&c.coin, CREDIT_BUDGET)], vec![cont(&succ, keep, c.cov)], at as u64);
     let entries = vec![c.coin.entry.clone()];
     let sig = sighash_sig(&tx, &entries, 0, &load_key("valuer")?)?;
@@ -1062,7 +1062,7 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
             n.due[slot] = 0;
             let succ = compile_credit(&c.m, &n)?;
             let held = c.coin.entry.amount as i64;
-            let keep = held - c.m.max_fee;
+            let keep = held - move_fee(c.m.max_fee);
             let mut tx = tx_of(vec![input(&c.coin, CREDIT_BUDGET)], vec![cont(&succ, keep, c.cov)], at as u64);
             let entries = vec![c.coin.entry.clone()];
             let sig = sighash_sig(&tx, &entries, 0, &load_key("valuer")?)?;
@@ -1077,7 +1077,7 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
             let n = Credit { halted: true, ..c.state };
             let succ = compile_credit(&c.m, &n)?;
             let held = c.coin.entry.amount as i64;
-            let keep = held - c.m.max_fee;
+            let keep = held - move_fee(c.m.max_fee);
             let mut tx = tx_of(vec![input(&c.coin, CREDIT_BUDGET)], vec![cont(&succ, keep, c.cov)], 0);
             let entries = vec![c.coin.entry.clone()];
             let sig = sighash_sig(&tx, &entries, 0, &load_key("guardian")?)?;

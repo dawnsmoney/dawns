@@ -69,6 +69,11 @@ const NETWORK: &str = "testnet-10";
 /// covenant input carries; 0.01 KAS clears it with room. The mandate's
 /// maxFeeSompi must exceed this or the covenant refuses our own moves.
 const FEE: u64 = 1_000_000;
+/// The fee a vault pays for a move by one of its roles (allocate, recall, mark, lend,
+/// repayment, markdown, halt). The covenant allows up to the mandate's maxFee; paying
+/// all of it on every move would drain holders (0.1 KAS a move on a 100 KAS vault is
+/// 0.1% each time), so the vault pays what a transaction needs, never more than maxFee.
+fn move_fee(max_fee: i64) -> i64 { max_fee.min(FEE as i64) }
 
 /// Compute budget per input, in units of 10,000 script units. One signature
 /// check costs 100,000 on its own. Measured by the harness (tests/budget.rs)
