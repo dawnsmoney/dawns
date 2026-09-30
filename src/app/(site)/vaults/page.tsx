@@ -15,14 +15,17 @@ const STATUS = { live: { t: "good" as const, w: "Live" }, ready: { t: "info" as 
 
 export default async function VaultsHub() {
   const [vs, fams, snap] = await Promise.all([vaults(), listFamilies(), getSnapshot()]);
-  const proposed = fams.map((f) => ({ st: f.current, ev: evaluate(f.current.doc, snap.opportunities, snap.kasUsd) }));
+  const all = fams.map((f) => ({ st: f.current, ev: evaluate(f.current.doc, snap.opportunities, snap.kasUsd) }));
+  // a strategy is shown as a vault only when it can launch as one: its markets are L1 loans a credit vault can hold
+  const proposed = all.filter(({ st, ev }) => launchPath(st.doc, ev).note.startsWith("ready"));
+  const waiting = all.length - proposed.length;
   const man = (id: string) => MANAGERS.find((m) => m.id === id);
   const EXIT: Record<string, string> = { mandate: "The owner withdraws; no outside shares", nav: "Redeem at NAV any time, from liquid KAS", fixed: "Redeem at NAV after maturity", credit: "As borrowers repay" };
   const rows = [
     ...vs.filter((v) => v.status !== "designed").map((v) => ({ key: v.id, href: v.href, name: v.name, color: KIND[v.kind].color, kind: KIND[v.kind].label, network: v.network,
       deposits: v.figures[0]?.value ?? "—", depositsSub: v.figures[0]?.label && v.figures[0].label !== "Value" && v.figures[0].label !== "NAV" ? v.figures[0].label : null,
       net: <span className="muted">test KAS</span>, exit: EXIT[v.kind], curator: man(v.manager)?.name ?? v.manager, state: STATUS[v.status] })),
-    ...proposed.map(({ st, ev }) => { const lp = launchPath(st.doc, ev); const k = lp.kind; return { key: st.id, href: `/strategies/${st.id}`, name: st.doc.name, color: KIND[k].color, kind: `${KIND[k].label} · proposed`, network: lp.note,
+    ...proposed.map(({ st, ev }) => { const lp = launchPath(st.doc, ev); const k = lp.kind; return { key: st.id, href: `/strategies/${st.id}`, name: st.doc.name, color: KIND[k].color, kind: `${KIND[k].label} · proposed`, network: "ready to launch",
       deposits: `0 / ${st.doc.vault.capacityKas.toLocaleString("en-US")} KAS`, depositsSub: "capacity",
       net: <b>{ev.net != null ? pct(ev.net, 1) : "—"}</b>, exit: `${pct(ev.exitNow, 0)} out now${st.doc.vault.type === "fixed" ? ` · ${st.doc.vault.termDays}-day term` : ""}`,
       curator: st.by === "dawns" ? "Dawns" : `${st.strategist.slice(0, 8)}…${st.strategist.slice(-4)}`, state: { t: "info" as const, w: "Proposed" } }; }),
@@ -50,7 +53,7 @@ export default async function VaultsHub() {
             ))}
           </tbody>
         </table></div></div>
-        <p className="muted" style={{ fontSize: 13, margin: "-14px 0 0" }}>Expected net is native yield after fees, from the strategy&apos;s live evaluation; token incentives are never added. Testnet vaults hold test KAS and earn nothing.</p>
+        <p className="muted" style={{ fontSize: 13, margin: "-14px 0 0" }}>Expected net is native yield after fees, from the strategy&apos;s live evaluation; token incentives are never added. Testnet vaults hold test KAS and earn nothing.{waiting > 0 && <> {waiting} more strateg{waiting === 1 ? "y is" : "ies are"} proposed but cannot run as a vault yet: their markets are on Igra and Kasplex, and dawns vaults run on Kaspa L1. <Link href="/strategies">Browse strategies →</Link></>}</p>
 
         <div className="card">
           <div className="c-head"><h3>What stops a manager</h3><Link href="/strategies" className="tag">A vault runs a strategy: browse strategies →</Link></div>
