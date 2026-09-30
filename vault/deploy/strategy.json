@@ -1,6 +1,17 @@
 {
-  "note": "Run by the keeper (nav keeper) inside the mandate: target weights per destination as bps of NAV, the share of NAV kept liquid for withdrawals, and the smallest move worth a transaction.",
-  "targetsBps": [3500, 2500, 1500],
+  "note": "Run by the keeper (nav keeper) inside the mandate: target weights per destination as bps of NAV, the share of NAV kept liquid for withdrawals, and the smallest move worth a transaction. Destination 2's wallet lends what it receives through the Dawns credit vault (ledger in dir), keeping apart what the vaults in shared sent it.",
+  "targetsBps": [
+    3500,
+    2500,
+    1500
+  ],
   "liquidBps": 2500,
-  "minMoveKas": "1"
+  "minMoveKas": "1",
+  "credit": {
+    "slot": 2,
+    "dir": ".",
+    "shared": [
+      "fixed/nav.json"
+    ]
+  }
 }

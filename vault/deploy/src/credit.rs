@@ -12,7 +12,9 @@
 //!   credit pay <role> <kas> [redeem]
 //!                                test helper: a role key pays its own deposit (or redeem) account
 //!   credit repay <slot> <kas>    test helper: borrower-<slot> pays its repayment address
-//!   credit keeper [once]         sweep repayments, write overdue markdowns, sweep deposits and redemptions
+//!   credit keeper [once]         sweep repayments, write overdue markdowns, sweep deposits and redemptions;
+//!                                with a credit-strategy.json it also lends idle cash to empty slots,
+//!                                accrues interest in the marks and (testnet) has the test borrowers repay
 //!   credit lend <slot> <kas>     allocator lends to the slot's borrower
 //!   credit mark <k0> <k1> <k2>   valuer marks the loans (KAS; "-" keeps a mark)
 //!   credit writeoff <slot>       valuer closes a late loan already marked to zero
@@ -574,7 +576,40 @@ fn print_credit(c: &CCtx) {
 }
 
 /// A plain payment from a role key (test helper).
-async fn pay_from(role: &str, to: &Address, amount: i64) -> Res<(Address, String)> {
+
+// ---------------------------------------------------------------------------
+// a key's holding in the credit vault, for a NAV vault's strategy wallet
+// ---------------------------------------------------------------------------
+/// What one key holds in the credit vault whose ledger and mandate sit in `dir`: its
+/// live notes at the vault's price now (as a redemption would pay them, before the
+/// exit fee) plus the KAS each note carries, and its two account addresses.
+#[allow(dead_code)]
+pub(crate) struct CreditHolding { pub value: i64, pub shares: i64, pub notes: usize, pub dep: Address, pub red: Address, pub price: i64, pub min_in: i64 }
+pub(crate) fn credit_holding(dir: &std::path::Path, owner_addr: &str, daa: i64) -> Res<CreditHolding> {
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(LEDGER)).map_err(|_| format!("no {} in {}", LEDGER, dir.display()))?)?;
+    let m = parse_credit_mandate(serde_json::from_str(&std::fs::read_to_string(dir.join(MANDATE))?)?)?;
+    let s = Credit::from_json(&v["state"])?;
+    let held = v["value"].as_i64().ok_or("credit.json: value")?;
+    let cov: Hash = v["covenantId"].as_str().ok_or("credit.json: covenantId")?.parse()?;
+    let at = daa - DAA_BACKOFF;
+    let price = if s.shares > 0 { m.nav(&s, held, at) / s.shares } else { 0 };
+    let mut shares = 0; let mut notes = 0; let mut carried = 0;
+    for n in v["notes"].as_array().cloned().unwrap_or_default() {
+        if n["owner"].as_str() != Some(owner_addr) || !n["redeemed"].is_null() { continue; }
+        shares += n["shares"].as_i64().unwrap_or(0); notes += 1; carried += n["value"].as_i64().unwrap_or(0);
+    }
+    let (dep, red, _, _) = accounts_of(owner_of(owner_addr)?, &cov)?;
+    Ok(CreditHolding { value: shares * price + carried, shares, notes, dep, red, price, min_in: m.min_deposit + m.note_value + m.max_fee })
+}
+/// Put a key's address on the credit keeper's list (the keeper in `dir` sweeps its accounts).
+pub(crate) fn register_credit_account(dir: &std::path::Path, addr: &str) -> Res<()> {
+    let p = dir.join(ACCOUNTS);
+    let mut list = std::fs::read_to_string(&p).unwrap_or_default();
+    if !list.lines().any(|l| l.trim() == addr) { list.push_str(&format!("{addr}\n")); std::fs::write(p, list)?; }
+    Ok(())
+}
+
+pub(crate) async fn pay_from(role: &str, to: &Address, amount: i64) -> Res<(Address, String)> {
     let k = load_key(role)?;
     let from = address_of(&k);
     let client = connect().await?;
@@ -590,6 +625,166 @@ async fn pay_from(role: &str, to: &Address, amount: i64) -> Res<(Address, String
     tx.finalize();
     let id = client.submit_transaction((&tx).into(), false).await?;
     Ok((from, id.to_string()))
+}
+
+// ---------------------------------------------------------------------------
+// allocator and valuer moves (by hand, or by the manager)
+// ---------------------------------------------------------------------------
+async fn do_lend(c: &mut CCtx, slot: usize, amount: i64) -> Res<String> {
+    let b = c.m.borrowers.get(slot).ok_or("no borrower in that slot")?;
+    if c.state.principal[slot] + c.state.marks[slot] != 0 { return Err(format!("slot {slot} has an open loan: one loan per slot at a time").into()); }
+    let (to, label, term) = (pay_to_address_script(&b.address), b.label.clone(), b.term);
+    let held = c.coin.entry.amount as i64;
+    let at = claimed(c)?;
+    let epoch = (at - c.m.not_before) / c.m.epoch_length;
+    let spent = if epoch == c.state.epoch_index { c.state.epoch_spent } else { 0 };
+    let mut n = c.state;
+    n.principal[slot] = amount;
+    n.due[slot] = at + term;
+    n.marks[slot] = amount;
+    n.epoch_index = epoch;
+    n.epoch_spent = spent + amount;
+    let succ = compile_credit(&c.m, &n)?;
+    let keep = held - amount - c.m.max_fee;
+    let mut tx = tx_of(vec![input(&c.coin, CREDIT_BUDGET)], vec![cont(&succ, keep, c.cov), out(amount, to)], at as u64);
+    let entries = vec![c.coin.entry.clone()];
+    let sig = sighash_sig(&tx, &entries, 0, &load_key("allocator")?)?;
+    tx.inputs[0].signature_script = decl_sigscript(&c.cur, "lend", vec![credit_state(&n), Expr::int(slot as i64), Expr::int(amount), Expr::int(at), Expr::bytes(sig)])?;
+    tx.finalize();
+    println!("lend           : {} to [{slot}] {label}, due at DAA {}", kas(amount), at + term);
+    commit(c, "lend", tx, entries, n, keep, json!({ "slot": slot, "amount": amount, "due": at + term })).await
+}
+
+async fn do_cmark(c: &mut CCtx, marks: [i64; SLOTS]) -> Res<String> {
+    let mut n = c.state;
+    n.marks = marks;
+    let at = claimed(c)?;
+    n.mark_epoch = (at - c.m.not_before) / c.m.epoch_length;
+    if n.mark_epoch <= c.state.mark_epoch { return Err(format!("one mark per epoch: the next opens at DAA {}", c.m.not_before + (c.state.mark_epoch + 1) * c.m.epoch_length).into()); }
+    let succ = compile_credit(&c.m, &n)?;
+    let held = c.coin.entry.amount as i64;
+    let keep = held - c.m.max_fee;
+    let mut tx = tx_of(vec![input(&c.coin, CREDIT_BUDGET)], vec![cont(&succ, keep, c.cov)], at as u64);
+    let entries = vec![c.coin.entry.clone()];
+    let sig = sighash_sig(&tx, &entries, 0, &load_key("valuer")?)?;
+    tx.inputs[0].signature_script = decl_sigscript(&c.cur, "mark", vec![credit_state(&n), Expr::int(at), Expr::bytes(sig)])?;
+    tx.finalize();
+    println!("mark           : {:?}", n.marks.iter().map(|x| kas(*x)).collect::<Vec<_>>());
+    commit(c, "mark", tx, entries, n, keep, json!({ "marks": n.marks })).await
+}
+
+// ---------------------------------------------------------------------------
+// the manager: lends idle cash to the borrowers, accrues interest in the marks, and
+// (testnet only) has the test borrowers repay on schedule (credit-strategy.json)
+// ---------------------------------------------------------------------------
+/// credit-strategy.json: the share of NAV kept liquid for redemptions, the smallest
+/// loan, and whether the test borrower keys repay their loans on schedule. On testnet
+/// the borrowers are Dawns-held keys: the repayments are scripted, the interest comes
+/// out of test KAS, and everything that follows (NAV, share price) is the covenant's.
+struct CStrategy { liquid_bps: i64, min_loan: i64, test_borrowers_repay: bool }
+fn read_cstrategy() -> Res<Option<CStrategy>> {
+    let Ok(raw) = std::fs::read_to_string("credit-strategy.json") else { return Ok(None) };
+    let v: Value = serde_json::from_str(&raw)?;
+    Ok(Some(CStrategy { liquid_bps: v["liquidBps"].as_i64().unwrap_or(2500), min_loan: parse_kas(v["minLoanKas"].as_str().unwrap_or("5"))?, test_borrowers_repay: v["testBorrowersRepay"].as_bool().unwrap_or(false) }))
+}
+
+/// The open loan in a slot: what was lent, what it owes in all, what came back since.
+fn loan_of(c: &CCtx, slot: usize) -> Option<(i64, i64, i64)> {
+    if c.state.principal[slot] == 0 { return None; }
+    let moves = c.led.v["moves"].as_array().cloned().unwrap_or_default();
+    let last = moves.iter().rposition(|x| x["kind"] == "lend" && x["slot"].as_u64() == Some(slot as u64))?;
+    let lent = moves[last]["amount"].as_i64()?;
+    let back: i64 = moves[last + 1..].iter().filter(|x| x["kind"] == "repay" && x["slot"].as_u64() == Some(slot as u64)).filter_map(|x| x["amount"].as_i64()).sum();
+    Some((lent, lent * (10_000 + c.m.interest(slot)) / 10_000, back))
+}
+
+/// Pay from a key with a coin that leaves no change or at least 1 KAS of it.
+async fn pay_exact(client: &KaspaRpcClient, role: &str, to: &Address, want: i64) -> Res<Option<(i64, String)>> {
+    let k = load_key(role)?;
+    let from = address_of(&k);
+    let mut cs = coins(client, &from).await?;
+    cs.retain(|x| x.entry.covenant_id.is_none());
+    cs.sort_by_key(|x| std::cmp::Reverse(x.entry.amount));
+    let fee = FEE as i64;
+    let pick = cs.iter().find(|x| { let v = x.entry.amount as i64; v - want - fee == 0 || v - want - fee >= KAS })
+        .map(|x| (x, want))
+        .or_else(|| cs.first().map(|x| (x, (x.entry.amount as i64 - fee - KAS).min(want))));
+    let Some((coin, amount)) = pick else { return Ok(None) };
+    if amount <= 0 { return Ok(None); }
+    let change = coin.entry.amount as i64 - amount - fee;
+    let mut outs = vec![out(amount, pay_to_address_script(to))];
+    if change > 0 { outs.push(out(change, pay_to_address_script(&from))); }
+    let mut tx = tx_of(vec![input(coin, P2PK_BUDGET)], outs, 0);
+    let entries = vec![coin.entry.clone()];
+    tx.inputs[0].signature_script = p2pk_sigscript(&sighash_sig(&tx, &entries, 0, &k)?)?;
+    tx.finalize();
+    let id = client.submit_transaction((&tx).into(), false).await?;
+    Ok(Some((amount, id.to_string())))
+}
+
+async fn credit_manage_pass(c: &mut CCtx, st: &CStrategy) -> Res<Option<String>> {
+    if c.state.halted { return Ok(None); }
+    let at = claimed(c)?;
+    let slots = c.m.borrowers.len();
+
+    // 1. test borrowers repay what they owe once the loan is due (testnet only)
+    if st.test_borrowers_repay {
+        for i in 0..slots {
+            let Some((_, owed, back)) = loan_of(c, i) else { continue };
+            if at < c.state.due[i] { continue; }
+            let (addr, _) = repay_account(&c.m, &c.cov, i)?;
+            // wait while an earlier payment is still in the repayment account
+            if coins(&c.client, &addr).await?.iter().any(|x| x.entry.covenant_id.is_none()) { continue; }
+            let left = owed - back;
+            if left <= 0 { continue; }
+            if let Some((paid, id)) = pay_exact(&c.client, &format!("borrower-{i}"), &addr, left).await? {
+                return Ok(Some(format!("test borrower [{i}] repaid {} of {} owed ({id}); the keeper sweeps it in", kas(paid), kas(left))));
+            }
+        }
+    }
+
+    // 2. interest accrues in the marks: each open loan at principal plus the share of
+    //    its interest the term has run, within the mandate's step per period
+    let epoch = (at - c.m.not_before) / c.m.epoch_length;
+    if epoch > c.state.mark_epoch {
+        let mut marks = c.state.marks;
+        let mut moved = false;
+        for i in 0..slots {
+            let Some((lent, owed, back)) = loan_of(c, i) else { continue };
+            let term = c.m.borrowers[i].term.max(1);
+            let run = (at - (c.state.due[i] - term)).clamp(0, term);
+            let accrued = lent + (owed - lent) * run / term;
+            let target = (accrued - back).min(c.m.limit(i, &c.state, at)).max(0);
+            let cur = c.state.marks[i];
+            if (target - cur).abs() < KAS / 1000 { continue; }
+            let base = cur.max(c.state.principal[i]);
+            let step = c.m.max_mark_step_bps * base / 10_000;
+            marks[i] = if target > cur { cur + (target - cur).min(step) } else { cur - (cur - target).min(step) };
+            moved = moved || marks[i] != cur;
+        }
+        if moved {
+            do_cmark(c, marks).await?;
+            return Ok(Some(format!("interest accrued in the marks: {:?}", marks[..slots].iter().map(|x| kas(*x)).collect::<Vec<_>>())));
+        }
+    }
+
+    // 3. idle cash above the liquid target: lend to an empty slot, within its cap,
+    //    the reserve floor, the per-move and per-period limits and any maturity
+    let held = c.coin.entry.amount as i64;
+    let nav = c.m.nav(&c.state, held, at);
+    let keep = st.liquid_bps.max(c.m.reserve_floor_bps) * nav / 10_000;
+    let spare = held - c.m.min_keep - c.m.max_fee - keep;
+    let spent = if epoch == c.state.epoch_index { c.state.epoch_spent } else { 0 };
+    for i in 0..slots {
+        if c.state.principal[i] + c.state.marks[i] != 0 { continue; }
+        let (label, term, cap_bps, rate) = { let b = &c.m.borrowers[i]; (b.label.clone(), b.term, b.cap_bps, b.interest_bps) };
+        if c.m.maturity > 0 && at + term > c.m.maturity { continue; }
+        let amount = spare.min(cap_bps * nav / 10_000).min(c.m.max_per_move).min(c.m.epoch_limit - spent) / KAS * KAS;
+        if amount < st.min_loan { continue; }
+        do_lend(c, i, amount).await?;
+        return Ok(Some(format!("lent {} to [{i}] {label} for {term} DAA at {}%", kas(amount), rate as f64 / 100.0)));
+    }
+    Ok(None)
 }
 
 // ---------------------------------------------------------------------------
@@ -781,10 +976,25 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
             let once = args.get(3).map(String::as_str) == Some("once");
             loop {
                 match open_credit().await {
-                    Ok(mut c) => match keeper_pass(&mut c).await {
-                        Ok(n) => println!("keeper         : {n} done · {}", now()),
-                        Err(e) => println!("keeper pass    : {e} — retrying"),
-                    },
+                    Ok(mut c) => {
+                        match keeper_pass(&mut c).await {
+                            Ok(n) => println!("keeper         : {n} done · {}", now()),
+                            Err(e) => println!("keeper pass    : {e} — retrying"),
+                        }
+                        // the lending strategy, when this vault has one: one move per pass
+                        match read_cstrategy() {
+                            Ok(Some(st)) => match open_credit().await {
+                                Ok(mut c) => match credit_manage_pass(&mut c, &st).await {
+                                    Ok(Some(what)) => { println!("manager        : {what}"); let _ = await_vault(&mut c).await; }
+                                    Ok(None) => {}
+                                    Err(e) => println!("manager        : {e} — retrying"),
+                                },
+                                Err(e) => println!("manager open   : {e} — retrying"),
+                            },
+                            Ok(None) => {}
+                            Err(e) => println!("credit-strategy.json: {e}"),
+                        }
+                    }
                     Err(e) => println!("keeper open    : {e} — retrying"),
                 }
                 if once { break; }
@@ -796,49 +1006,16 @@ pub async fn run_credit(args: &[String]) -> Res<()> {
             let mut c = open_credit().await?;
             let slot: usize = arg(3)?.parse()?;
             let amount = parse_kas(arg(4)?)?;
-            let b = c.m.borrowers.get(slot).ok_or("no borrower in that slot")?;
-            if c.state.principal[slot] + c.state.marks[slot] != 0 { return Err(format!("slot {slot} has an open loan: one loan per slot at a time").into()); }
-            let (to, label, term) = (pay_to_address_script(&b.address), b.label.clone(), b.term);
-            let held = c.coin.entry.amount as i64;
-            let at = claimed(&c)?;
-            let epoch = (at - c.m.not_before) / c.m.epoch_length;
-            let spent = if epoch == c.state.epoch_index { c.state.epoch_spent } else { 0 };
-            let mut n = c.state;
-            n.principal[slot] = amount;
-            n.due[slot] = at + term;
-            n.marks[slot] = amount;
-            n.epoch_index = epoch;
-            n.epoch_spent = spent + amount;
-            let succ = compile_credit(&c.m, &n)?;
-            let keep = held - amount - c.m.max_fee;
-            let mut tx = tx_of(vec![input(&c.coin, CREDIT_BUDGET)], vec![cont(&succ, keep, c.cov), out(amount, to)], at as u64);
-            let entries = vec![c.coin.entry.clone()];
-            let sig = sighash_sig(&tx, &entries, 0, &load_key("allocator")?)?;
-            tx.inputs[0].signature_script = decl_sigscript(&c.cur, "lend", vec![credit_state(&n), Expr::int(slot as i64), Expr::int(amount), Expr::int(at), Expr::bytes(sig)])?;
-            tx.finalize();
-            println!("lend           : {} to [{slot}] {label}, due at DAA {}", kas(amount), at + term);
-            commit(&mut c, "lend", tx, entries, n, keep, json!({ "slot": slot, "amount": amount, "due": at + term })).await?;
+            do_lend(&mut c, slot, amount).await?;
         }
 
         "mark" => {
             let mut c = open_credit().await?;
-            let mut n = c.state;
+            let mut marks = c.state.marks;
             for i in 0..c.m.borrowers.len() {
-                if let Some(v) = args.get(3 + i) { if v != "-" { n.marks[i] = (v.parse::<f64>()? * KAS as f64).round() as i64; } }
+                if let Some(v) = args.get(3 + i) { if v != "-" { marks[i] = (v.parse::<f64>()? * KAS as f64).round() as i64; } }
             }
-            let at = claimed(&c)?;
-            n.mark_epoch = (at - c.m.not_before) / c.m.epoch_length;
-            if n.mark_epoch <= c.state.mark_epoch { return Err(format!("one mark per epoch: the next opens at DAA {}", c.m.not_before + (c.state.mark_epoch + 1) * c.m.epoch_length).into()); }
-            let succ = compile_credit(&c.m, &n)?;
-            let held = c.coin.entry.amount as i64;
-            let keep = held - c.m.max_fee;
-            let mut tx = tx_of(vec![input(&c.coin, CREDIT_BUDGET)], vec![cont(&succ, keep, c.cov)], at as u64);
-            let entries = vec![c.coin.entry.clone()];
-            let sig = sighash_sig(&tx, &entries, 0, &load_key("valuer")?)?;
-            tx.inputs[0].signature_script = decl_sigscript(&c.cur, "mark", vec![credit_state(&n), Expr::int(at), Expr::bytes(sig)])?;
-            tx.finalize();
-            println!("mark           : {:?}", n.marks.iter().map(|x| kas(*x)).collect::<Vec<_>>());
-            commit(&mut c, "mark", tx, entries, n, keep, json!({ "marks": n.marks })).await?;
+            do_cmark(&mut c, marks).await?;
         }
 
         "writeoff" => {

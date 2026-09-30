@@ -100,7 +100,7 @@ function Strategy({ slug, m, f }: { slug: NavSlug; m: NavMandateDoc; f: ReturnTy
           const now = (f.marks[i] ?? 0) / nav, target = (st.targetsBps[i] ?? 0) / 1e4, cap = d.capBps / 1e4;
           return (
             <div key={d.address} className="strat-row">
-              <b>{d.label.replace(" (test wallet)", "")}</b>
+              <b>{d.label.replace(" (test wallet)", "")}{st.credit?.slot === i && <Link href="/vaults/credit-tn10" className="strat-via">lends via the credit vault →</Link>}</b>
               <div className="strat-bar"><i style={{ width: `${Math.min(100, now * 100)}%`, background: COLORS[i] }} /><span className="strat-t" style={{ left: `${Math.min(100, target * 100)}%` }} title="target" /><span className="strat-c" style={{ left: `${Math.min(100, cap * 100)}%` }} title="cap" /></div>
               <small>{pct(now, 1)} now · target {pct(target)} · cap {pct(cap)}</small>
             </div>
@@ -112,7 +112,7 @@ function Strategy({ slug, m, f }: { slug: NavSlug; m: NavMandateDoc; f: ReturnTy
           <small>{pct(Math.max(0, f.liquid) / nav, 1)} now · target {pct(keep)} · for withdrawals</small>
         </div>
       </div>
-      <p className="foot" style={{ marginBottom: 0 }}>On testnet the destinations are Dawns-held wallets that earn nothing, so marks never go above cost. On mainnet a destination is a strategy wallet that bridges to Igra or Kasplex and deploys there; dawns marks it from the positions it reads.</p>
+      <p className="foot" style={{ marginBottom: 0 }}>{st.credit != null ? <>{m.destinations[st.credit.slot]?.label.replace(" (test wallet)", "")} lends what it receives through the dawns credit vault and is marked at its credit shares × that vault&apos;s price: the interest borrowers pay shows up here. On testnet the borrowers are Dawns-held test keys that repay on schedule. </> : null}The other destinations hold idle KAS on testnet, so their marks never go above cost. On mainnet a destination is a strategy wallet that deploys on Igra or Kasplex; dawns marks it from the positions it reads.</p>
     </div>
   );
 }

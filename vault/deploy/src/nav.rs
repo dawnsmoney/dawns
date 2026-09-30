@@ -571,12 +571,49 @@ async fn do_mark(c: &mut NCtx, marks: [i64; 4]) -> Res<String> {
 /// strategy.json, next to nav.json: target weights per destination (bps of NAV) and
 /// the share of NAV to keep liquid for withdrawals. The covenant still enforces the
 /// mandate's caps, reserve floor and limits; these targets sit inside them.
-struct Strategy { targets: Vec<i64>, liquid_bps: i64, min_move: i64 }
+struct Strategy { targets: Vec<i64>, liquid_bps: i64, min_move: i64, credit: Option<CreditLeg> }
+/// A destination whose wallet lends through dawns' credit vault: it deposits what the
+/// vault sends it, and redeems when the vault needs cash back. `dir` holds the credit
+/// ledger and its keeper's account list; `shared` are other NAV ledgers that send to
+/// the same wallet, whose capital it keeps apart and never lends.
+struct CreditLeg { slot: usize, dir: std::path::PathBuf, shared: Vec<std::path::PathBuf> }
 fn read_strategy() -> Res<Option<Strategy>> {
     let Ok(raw) = std::fs::read_to_string("strategy.json") else { return Ok(None) };
     let v: Value = serde_json::from_str(&raw)?;
     let targets: Vec<i64> = v["targetsBps"].as_array().ok_or("strategy.json: targetsBps")?.iter().map(|x| x.as_i64().unwrap_or(0)).collect();
-    Ok(Some(Strategy { targets, liquid_bps: v["liquidBps"].as_i64().unwrap_or(1000), min_move: parse_kas(v["minMoveKas"].as_str().unwrap_or("1"))? }))
+    let credit = if v["credit"].is_object() {
+        Some(CreditLeg {
+            slot: v["credit"]["slot"].as_u64().ok_or("strategy.json: credit.slot")? as usize,
+            dir: std::path::PathBuf::from(v["credit"]["dir"].as_str().unwrap_or(".")),
+            shared: v["credit"]["shared"].as_array().cloned().unwrap_or_default().iter().filter_map(|x| x.as_str().map(std::path::PathBuf::from)).collect(),
+        })
+    } else { None };
+    Ok(Some(Strategy { targets, liquid_bps: v["liquidBps"].as_i64().unwrap_or(1000), min_move: parse_kas(v["minMoveKas"].as_str().unwrap_or("1"))?, credit }))
+}
+
+/// The credit wallet as this vault sees it: KAS on L1 it may use, and what its share is
+/// worth (L1 KAS, KAS waiting in its credit accounts, its credit notes), less what other
+/// vaults sent to the same wallet.
+struct CreditView { usable_l1: i64, largest: i64, value: i64, h: crate::credit::CreditHolding, pending_red: i64, role: String, addr: String }
+async fn credit_view(c: &NCtx, leg: &CreditLeg) -> Res<CreditView> {
+    let role = format!("strategy-{}", leg.slot);
+    let wallet = address_of(&load_key(&role)?);
+    if c.m.dests.get(leg.slot).map(|d| &d.address) != Some(&wallet) { return Err(format!("destination [{}] is not the {role} key's address", leg.slot).into()); }
+    let bal = |cs: Vec<Coin>| cs.iter().filter(|x| x.entry.covenant_id.is_none()).map(|x| x.entry.amount as i64).sum::<i64>();
+    let wcoins = coins(&c.client, &wallet).await?;
+    let largest = wcoins.iter().filter(|x| x.entry.covenant_id.is_none()).map(|x| x.entry.amount as i64).max().unwrap_or(0);
+    let l1 = bal(wcoins);
+    let mut reserved = 0;
+    for p in &leg.shared {
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(p).map_err(|_| format!("strategy.json: no {}", p.display()))?)?;
+        reserved += v["state"]["deployed"][leg.slot].as_i64().unwrap_or(0);
+    }
+    let addr = wallet.to_string();
+    let h = crate::credit::credit_holding(&leg.dir, &addr, c.daa)?;
+    let pending_dep = bal(coins(&c.client, &h.dep).await?);
+    let pending_red = bal(coins(&c.client, &h.red).await?);
+    let value = (l1 + pending_dep + pending_red + h.value - reserved).max(0);
+    Ok(CreditView { usable_l1: (l1 - reserved).max(0), largest, value, h, pending_red, role, addr })
 }
 
 /// What waiting withdrawals will pay, at today's price: each account with a coin at
@@ -622,7 +659,18 @@ async fn manage_pass(c: &mut NCtx, st: &Strategy) -> Res<Option<String>> {
             let wallet = address_of(&load_key(&format!("strategy-{i}"))?);
             let mut cs = coins(&c.client, &wallet).await?;
             cs.retain(|x| x.entry.covenant_id.is_none());
-            let Some(top) = cs.iter().map(|x| x.entry.amount as i64).max() else { continue };
+            let Some(mut top) = cs.iter().map(|x| x.entry.amount as i64).max() else { continue };
+            if let Some(leg) = st.credit.as_ref().filter(|l| l.slot == i) {
+                // lent through the credit vault: use only this vault's KAS on L1; if that is
+                // too little, ask the credit vault to redeem a note (once at a time)
+                let cv = credit_view(c, leg).await?;
+                top = top.min(cv.usable_l1);
+                if top < short.min(c.state.deployed[i]).max(st.min_move) && cv.pending_red == 0 && cv.h.notes > 0 {
+                    crate::credit::register_credit_account(&leg.dir, &cv.addr)?;
+                    let (_, id) = crate::credit::pay_from(&cv.role, &cv.h.red, KAS).await?;
+                    return Ok(Some(format!("asked the credit vault to redeem a note of [{i}] ({id}); the cash comes back to the wallet, then to the vault")));
+                }
+            }
             let mut amount = short.max(st.min_move).min(top).min(c.state.deployed[i].max(st.min_move));
             if top - amount > 0 && top - amount < KAS { amount = top; }
             if amount < st.min_move.min(top) { continue; }
@@ -642,7 +690,9 @@ async fn manage_pass(c: &mut NCtx, st: &Strategy) -> Res<Option<String>> {
         for i in 0..slots {
             let wallet = &c.m.dests[i].address;
             let held_w: i64 = coins(&c.client, wallet).await?.iter().filter(|x| x.entry.covenant_id.is_none()).map(|x| x.entry.amount as i64).sum();
-            let target = held_w.min(c.state.deployed[i]);
+            // a credit-lending wallet is worth its notes at the credit vault's price: real
+            // interest, so it may mark above cost; others hold idle KAS, never above cost
+            let target = match st.credit.as_ref().filter(|l| l.slot == i) { Some(leg) => credit_view(c, leg).await?.value, None => held_w.min(c.state.deployed[i]) };
             let cur = c.state.marks[i];
             if (target - cur).abs() < KAS / 100 { continue; }
             let base = cur.max(c.state.deployed[i]);
@@ -653,6 +703,35 @@ async fn manage_pass(c: &mut NCtx, st: &Strategy) -> Res<Option<String>> {
         if moved {
             do_mark(c, marks).await?;
             return Ok(Some(format!("marked to the wallets' holdings: {:?}", marks[..slots].iter().map(|x| kas(*x)).collect::<Vec<_>>())));
+        }
+    }
+
+    // 3a. a destination whose target is now zero: bring its capital home
+    if due == 0 {
+        for i in 0..slots {
+            if st.targets.get(i).copied().unwrap_or(0) > 0 || c.state.deployed[i] < st.min_move { continue; }
+            if st.credit.as_ref().is_some_and(|l| l.slot == i) { continue; }
+            let wallet = address_of(&load_key(&format!("strategy-{i}"))?);
+            let top = coins(&c.client, &wallet).await?.iter().filter(|x| x.entry.covenant_id.is_none()).map(|x| x.entry.amount as i64).max().unwrap_or(0);
+            let mut amount = c.state.deployed[i].min(top);
+            if top - amount > 0 && top - amount < KAS { amount = top; }
+            if amount < st.min_move { continue; }
+            do_recall(c, i, amount).await?;
+            return Ok(Some(format!("recalled {} from [{i}]: its target is now 0", kas(amount))));
+        }
+    }
+
+    // 3b. the credit wallet puts this vault's idle KAS to work in the credit vault
+    if let Some(leg) = st.credit.as_ref() {
+        if due == 0 {
+            let cv = credit_view(c, leg).await?;
+            // one coin per deposit, leaving whole-KAS change and 2 KAS for redemption requests
+            let amount = (cv.usable_l1 - 2 * KAS).min(cv.largest - FEE as i64 - KAS) / KAS * KAS;
+            if amount >= cv.h.min_in {
+                crate::credit::register_credit_account(&leg.dir, &cv.addr)?;
+                let (_, id) = crate::credit::pay_from(&cv.role, &cv.h.dep, amount).await?;
+                return Ok(Some(format!("[{}] lent {} through the credit vault ({id}); its keeper mints the shares", leg.slot, kas(amount))));
+            }
         }
     }
 

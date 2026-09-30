@@ -1,0 +1,6 @@
+{
+  "note": "Run by the keeper (credit keeper) inside the mandate: the share of NAV kept liquid for redemptions and the smallest loan. testBorrowersRepay: on testnet the borrowers are Dawns-held test keys, and the keeper has them repay principal plus interest when each loan falls due.",
+  "liquidBps": 3000,
+  "minLoanKas": "5",
+  "testBorrowersRepay": true
+}

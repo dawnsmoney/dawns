@@ -1,6 +1,10 @@
 {
-  "note": "Run by the keeper (nav keeper) inside the mandate: target weights per destination as bps of NAV, the share of NAV kept liquid for withdrawals, and the smallest move worth a transaction.",
-  "targetsBps": [3500, 2500, 1500],
+  "note": "Run by the keeper (nav keeper) inside the mandate. The fixed-term vault holds destinations A and B only; destination C's wallet lends through the credit vault for the NAV vault.",
+  "targetsBps": [
+    4000,
+    3000,
+    0
+  ],
   "liquidBps": 2500,
   "minMoveKas": "1"
 }

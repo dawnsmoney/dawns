@@ -1937,3 +1937,4 @@ html{touch-action:manipulation}
 .strat-t{position:absolute;top:-4px;width:2px;height:20px;background:#FFD36A}
 .strat-c{position:absolute;top:-4px;width:2px;height:20px;background:var(--crit);opacity:.7}
 @media (max-width:760px){.strat-row{grid-template-columns:1fr}}
+.strat-via{display:block;font:500 12px var(--display);color:#FFE1B8;text-decoration:none;margin-top:2px}

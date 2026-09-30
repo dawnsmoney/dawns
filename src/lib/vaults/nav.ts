@@ -47,7 +47,7 @@ const mandateOf = (d: unknown) => ((d as { standard?: string }).standard ? d : n
  */
 export type NavSlug = "nav-tn10" | "fixed-tn10";
 /** The strategy the keeper runs inside the mandate (vault/deploy/…/strategy.json). */
-export interface NavStrategy { targetsBps: number[]; liquidBps: number; minMoveKas: string }
+export interface NavStrategy { targetsBps: number[]; liquidBps: number; minMoveKas: string; credit?: { slot: number } }
 export interface NavVaultDef { slug: NavSlug; kind: "nav" | "fixed"; ledger: NavLedger | null; mandate: NavMandateDoc | null; strategy: NavStrategy | null }
 export const NAV_VAULTS: NavVaultDef[] = [
   { slug: "nav-tn10", kind: "nav", ledger: ledgerOf(navDoc), mandate: mandateOf(navMandateDoc), strategy: navStrategyDoc as NavStrategy },
