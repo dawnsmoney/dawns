@@ -1746,3 +1746,10 @@ a.tf-id:hover{color:var(--ink)}
 .adm-list{display:grid;gap:12px}
 .adm-item{display:grid;gap:6px;padding:14px;border-radius:14px;background:rgba(255,255,255,.03)}
 .adm-item p{margin:0}
+/* iOS zooms the page into any field under 16px when it's tapped, and the zoomed page then pans sideways: keep every field at 16px or more on touch screens. No double-tap zoom either; pinch zoom stays. */
+html{touch-action:manipulation}
+@media (pointer:coarse),(max-width:760px){
+  input:not([type=checkbox]):not([type=radio]),textarea,select,.m-search{font-size:16px !important}
+  /* the big amount fields stay big */
+  .inp input{font-size:22px !important}.navp-amt .search{font-size:20px !important}.navp-amt.big input{font-size:30px !important}.uo-amt input{font-size:18px !important}
+}
