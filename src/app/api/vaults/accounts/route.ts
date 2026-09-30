@@ -1,6 +1,6 @@
 import { sameOrigin } from "@/lib/auth/session";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
-import { navLedger } from "@/lib/vaults/nav";
+import { navByCovenant } from "@/lib/vaults/nav";
 import { creditLedger, getCreditById } from "@/lib/vaults/credit";
 import { ownerOf } from "@/lib/vaults/account";
 
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  * sweeps (NAV and credit vaults). Public on purpose (addresses are public; the accounts can only pay the
  * vault or their owner). GET ?vault=<covenant id>; POST { vault, address }.
  */
-const known = async (v: string | null) => !!v && (v === navLedger?.covenantId || v === creditLedger?.covenantId || (/^[0-9a-f]{64}$/.test(v) && !!(await getCreditById(v))));
+const known = async (v: string | null) => !!v && (!!navByCovenant(v) || v === creditLedger?.covenantId || (/^[0-9a-f]{64}$/.test(v) && !!(await getCreditById(v))));
 
 export async function GET(req: Request) {
   const vault = new URL(req.url).searchParams.get("vault");

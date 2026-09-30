@@ -1,6 +1,8 @@
 import "server-only";
 import navDoc from "../../../vault/deploy/nav.json";
 import navMandateDoc from "../../../vault/deploy/nav-mandate.json";
+import fixedDoc from "../../../vault/deploy/fixed/nav.json";
+import fixedMandateDoc from "../../../vault/deploy/fixed/nav-mandate.json";
 import { accountAddress, ownerOf, fromHex, toHex, type AccountTemplate } from "./account";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
 
@@ -33,10 +35,42 @@ export interface NavMandateDoc {
   maturityDaa: number; depositUntilDaa: number; minDepositSompi: number; maxMarkStepBps: number; noteValueSompi: number; minKeepSompi: number; exitFeeBps: number;
 }
 
-const raw = navDoc as unknown as Partial<NavLedger>;
-export const navLive = raw.status !== "planned" && !!raw.covenantId;
-export const navLedger = (navLive ? raw : null) as NavLedger | null;
-export const navMandate = ((navMandateDoc as unknown as { standard?: string }).standard ? navMandateDoc : null) as NavMandateDoc | null;
+const ledgerOf = (d: unknown) => { const r = d as Partial<NavLedger>; return (r.status !== "planned" && r.covenantId ? r : null) as NavLedger | null; };
+const mandateOf = (d: unknown) => ((d as { standard?: string }).standard ? d : null) as NavMandateDoc | null;
+
+/**
+ * Every vault that runs the NAV covenant. A fixed-term vault is the same covenant with
+ * a maturity and a deposit window in its mandate; each lives in its own directory of
+ * vault/deploy (one vault per directory), its ledger and mandate committed there.
+ */
+export type NavSlug = "nav-tn10" | "fixed-tn10";
+export interface NavVaultDef { slug: NavSlug; kind: "nav" | "fixed"; ledger: NavLedger | null; mandate: NavMandateDoc | null }
+export const NAV_VAULTS: NavVaultDef[] = [
+  { slug: "nav-tn10", kind: "nav", ledger: ledgerOf(navDoc), mandate: mandateOf(navMandateDoc) },
+  { slug: "fixed-tn10", kind: "fixed", ledger: ledgerOf(fixedDoc), mandate: mandateOf(fixedMandateDoc) },
+];
+export const navVault = (slug: NavSlug) => NAV_VAULTS.find((v) => v.slug === slug)!;
+export const navByCovenant = (id: string | null | undefined) => (id ? NAV_VAULTS.find((v) => v.ledger?.covenantId === id) ?? null : null);
+
+// the first NAV vault, as before
+export const navLive = !!NAV_VAULTS[0].ledger;
+export const navLedger = NAV_VAULTS[0].ledger;
+export const navMandate = NAV_VAULTS[0].mandate;
+
+/** TN10 runs at 10 blocks a second: DAA score to a time, from a current reading. */
+export const DAA_PER_SEC = 10;
+export const daaToTime = (target: number, daaNow: number, nowMs = Date.now()) => nowMs + ((target - daaNow) / DAA_PER_SEC) * 1000;
+
+/** A term's dates as times, where "now" falls on it (0–100), and how long until each. */
+export function termView(m: { maturityDaa: number; depositUntilDaa: number }, daa: number | null, createdAtSec: number) {
+  const now = Date.now();
+  const at = (x: number) => (x && daa != null ? daaToTime(x, daa, now) : null);
+  const winEnd = at(m.depositUntilDaa), mat = at(m.maturityDaa);
+  const start = createdAtSec * 1000, end = Math.max(mat ?? 0, winEnd ?? 0, start + 1);
+  const pos = (t: number | null) => (t == null ? 0 : Math.max(0, Math.min(100, ((t - start) / (end - start)) * 100)));
+  const left = (t: number | null) => { if (t == null) return ""; const h = (t - now) / 3600_000; return h <= 0 ? "" : h < 48 ? ` · in ${Math.max(1, Math.round(h))} h` : ` · in ${Math.round(h / 24)} days`; };
+  return { winEnd, mat, posWin: pos(winEnd), posMat: pos(mat), posNow: pos(now), leftWin: left(winEnd), leftMat: left(mat) };
+}
 
 /**
  * The newest ledger: the one in git, or a newer one the keeper published
@@ -44,16 +78,20 @@ export const navMandate = ((navMandateDoc as unknown as { standard?: string }).s
  * same mandate, never fewer moves. The chain check on the page still decides
  * whether it is current.
  */
-export async function getNav(): Promise<{ l: NavLedger | null; m: NavMandateDoc | null }> {
-  if (!navLedger || !navMandate || !hasDb()) return { l: navLedger, m: navMandate };
+export async function getNav(slug: NavSlug = "nav-tn10"): Promise<{ l: NavLedger | null; m: NavMandateDoc | null }> {
+  const { ledger, mandate } = navVault(slug);
+  if (!ledger || !mandate || !hasDb()) return { l: ledger, m: mandate };
   try {
     await ensureSchema();
-    const r = (await sql().query("select doc from vault_ledgers where vault = $1", [navLedger.covenantId])) as { doc: NavLedger }[];
+    const r = (await sql().query("select doc from vault_ledgers where vault = $1", [ledger.covenantId])) as { doc: NavLedger }[];
     const d = r[0]?.doc;
-    if (d && d.covenantId === navLedger.covenantId && d.mandateHash === navLedger.mandateHash && Array.isArray(d.moves) && d.moves.length >= navLedger.moves.length) return { l: d, m: navMandate };
+    if (d && d.covenantId === ledger.covenantId && d.mandateHash === ledger.mandateHash && Array.isArray(d.moves) && d.moves.length >= ledger.moves.length) return { l: d, m: mandate };
   } catch { /* fall back to git */ }
-  return { l: navLedger, m: navMandate };
+  return { l: ledger, m: mandate };
 }
+
+/** Every NAV-covenant vault with its newest ledger. */
+export const getNavAll = () => Promise.all(NAV_VAULTS.map(async (v) => ({ ...v, ...(await getNav(v.slug)) })));
 
 async function get<T>(path: string): Promise<T | null> {
   try {

@@ -22,7 +22,7 @@ interface Pos {
   address: string; deposit: string; redeem: string; pendingDeposit: number | null; pendingRedeem: number | null; shares: number; value: number;
   notes: { shares: number; at: number; txid: string; price: number; redeemed: { at: number; payout: number; txid: string } | null }[];
 }
-export interface NavPanelProps { vault: string; template: AccountTemplate; price: number; minDeposit: number; noteValue: number; maxFee: number; exitFeeBps: number; halted: boolean; maturityOpen: boolean }
+export interface NavPanelProps { vault: string; template: AccountTemplate; price: number; minDeposit: number; noteValue: number; maxFee: number; exitFeeBps: number; halted: boolean; maturityOpen: boolean; depositOpen?: boolean }
 
 const when = (sec: number) => `${new Date(sec * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 const kas = (x: number, d = 4) => `${x.toLocaleString("en-US", { maximumFractionDigits: d })} KAS`;
@@ -145,7 +145,7 @@ export function NavPanel(p: NavPanelProps) {
                 {dstep === 0 && !sent?.startsWith("Deposit") && <>
                   <div className="navp-amt big"><input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} aria-label="Amount in KAS" /><span>KAS</span></div>
                   <div className="navp-quick">{[10, 50, 100, 500].map((v) => <button key={v} type="button" className={Number(amount) === v ? "on" : ""} onClick={() => setAmount(String(v))}>{v}</button>)}</div>
-                  <button type="button" className="btn sun" disabled={p.halted || Number(amount) < min} onClick={() => { setErr(null); setDstep(1); }}>{p.halted ? "Deposits closed (halted)" : Number(amount) < min ? `At least ${kas(min, 2)}` : "Continue"}</button>
+                  <button type="button" className="btn sun" disabled={p.halted || p.depositOpen === false || Number(amount) < min} onClick={() => { setErr(null); setDstep(1); }}>{p.halted ? "Deposits closed (halted)" : p.depositOpen === false ? "Deposit window closed" : Number(amount) < min ? `At least ${kas(min, 2)}` : "Continue"}</button>
                 </>}
                 {dstep === 1 && !sent?.startsWith("Deposit") && <>
                   <dl className="navp-kv">

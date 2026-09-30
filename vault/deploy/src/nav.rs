@@ -1,9 +1,11 @@
 //! `nav …` — the NAV vault (vault/nav/dawns_nav.sil) on testnet-10.
 //!
 //!   nav init                  valuer key + draft nav-mandate.json
-//!   nav genesis [kas] [--donate]
+//!   nav genesis [kas] [--donate] [--window-days N] [--term-days N]
 //!                             seed the vault with exactly minKeep + token dust + one fee (NAV 0 until
-//!                             the first deposit); more only with --donate (it goes to the first holders)
+//!                             the first deposit); more only with --donate (it goes to the first holders).
+//!                             A fixed-term vault: run it in its own directory (vault/deploy/fixed) with
+//!                             --window-days and --term-days, counted from now
 //!   nav token                 guardian creates the share token (KCC-20) bound to the vault
 //!   nav show                  the vault, its NAV and share price, notes outstanding
 //!   nav accounts <address>    a user's deposit and redeem addresses
@@ -23,6 +25,9 @@
 //! plus any addresses listed one per line in nav-accounts.txt.
 
 use super::*;
+
+/// TN10 produces 10 blocks a second: DAA score per day.
+const DAA_PER_DAY: i64 = 864_000;
 
 /// The covenant a vault runs is part of its address, so each version stays
 /// available: v1 is what the first TN10 NAV vault runs; v1.1 lets a closed
@@ -528,6 +533,18 @@ pub async fn run_nav(args: &[String]) -> Res<()> {
             let daa = ready(&client).await?;
             let mut doc: Value = serde_json::from_str(&std::fs::read_to_string("nav-mandate.json")?)?;
             if doc["notBeforeDaa"].as_i64() == Some(0) { doc["notBeforeDaa"] = json!(daa - DAA_BACKOFF); std::fs::write("nav-mandate.json", serde_json::to_string_pretty(&doc)? + "\n")?; }
+            // fixed term: --window-days and --term-days set the deposit window and maturity
+            // from now, in DAA score (TN10: 10 a second), before the mandate is fixed
+            let days = |flag: &str| -> Res<Option<f64>> { match args.iter().position(|a| a == flag) { Some(i) => Ok(Some(args.get(i + 1).ok_or(format!("{flag} needs a number of days"))?.parse::<f64>().map_err(|_| format!("{flag} needs a number of days"))?)), None => Ok(None) } };
+            let (window, term) = (days("--window-days")?, days("--term-days")?);
+            if window.is_some() || term.is_some() {
+                if doc["maturityDaa"].as_i64().unwrap_or(0) != 0 || doc["depositUntilDaa"].as_i64().unwrap_or(0) != 0 { return Err("nav-mandate.json already has a maturity or deposit window: remove them or drop the flags".into()); }
+                if let (Some(w), Some(t)) = (window, term) { if w > t { return Err("the deposit window must close before maturity".into()); } }
+                if let Some(w) = window { doc["depositUntilDaa"] = json!(daa + (w * DAA_PER_DAY as f64) as i64); }
+                if let Some(t) = term { doc["maturityDaa"] = json!(daa + (t * DAA_PER_DAY as f64) as i64); }
+                std::fs::write("nav-mandate.json", serde_json::to_string_pretty(&doc)? + "\n")?;
+                println!("term           : deposits until DAA {}, redemptions from DAA {}", doc["depositUntilDaa"], doc["maturityDaa"]);
+            }
             let m = read_nav_mandate()?;
             // The seed is exactly what the vault must keep (minKeep), the share token's
             // minter dust and the token transaction's fee: after `token` the vault holds

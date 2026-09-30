@@ -35,10 +35,10 @@ function keysOf(addresses: string[]) {
 
 /** What the vault ledgers say each owner key did: deposited into NAV, withdrew from NAV, deposited into a credit vault. */
 export async function vaultActivity() {
-  const [nav, credit] = await Promise.all([getNav().catch(() => ({ l: null })), listCredit().catch(() => [])]);
+  const [nav, fixed, credit] = await Promise.all([getNav().catch(() => ({ l: null })), getNav("fixed-tn10").catch(() => ({ l: null })), listCredit().catch(() => [])]);
   const navIn = new Set<string>(), navOut = new Set<string>(), creditIn = new Set<string>();
   const key = (a: string) => { try { return ownerHex(a); } catch { return null; } };
-  for (const n of nav.l?.notes ?? []) { const k = key(n.owner); if (!k) continue; navIn.add(k); if (n.redeemed) navOut.add(k); }
+  for (const n of [...(nav.l?.notes ?? []), ...(fixed.l?.notes ?? [])]) { const k = key(n.owner); if (!k) continue; navIn.add(k); if (n.redeemed) navOut.add(k); }
   for (const c of credit) for (const n of c.l.notes) { const k = key(n.owner); if (k) creditIn.add(k); }
   return { navIn, navOut, creditIn };
 }

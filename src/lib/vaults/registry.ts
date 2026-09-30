@@ -51,11 +51,19 @@ export async function vaults(): Promise<VaultCard[]> {
       guarantees: ["Shares minted only against KAS received", "Payout only to the owner's address", "Exit fee stays with holders"],
     });
   }
-  out.push(
-    { id: "fixed-term", kind: "fixed", name: "Fixed-term vault", href: null, manager: "dawns", network: "testnet-10", status: "designed",
-      pitch: "The NAV covenant with a maturity date and a deposit window: the same code, two parameters.",
-      figures: [], guarantees: ["No redemption before maturity", "Deposits only in the window", "Everything else as NAV"] },
-  );
+  {
+    const { l: fl, m: fm } = await getNav("fixed-tn10");
+    const base = { id: "fixed-tn10", kind: "fixed" as const, href: "/vaults/fixed-tn10", manager: fm?.manager ?? "dawns", network: "testnet-10", guarantees: ["No redemption before maturity", "Deposits only in the window", "Everything else as NAV"] };
+    if (fl && fm) {
+      const f = navFigures(fl, fm);
+      out.push({ ...base, name: fm.name, status: "live", pitch: "Deposit while the window is open; redeem at NAV from maturity. The network refuses anything else.",
+        figures: [{ label: "NAV", value: kas(f.nav) }, { label: "Per share", value: f.price.toFixed(4) }, { label: "Holders", value: String(f.holders) }] });
+    } else {
+      out.push({ ...base, name: "Fixed-term vault", status: fm ? "ready" : "designed", href: fm ? base.href : null,
+        pitch: "The NAV covenant with a maturity date and a deposit window: the same code, two parameters. Engine-tested; launching on testnet-10.",
+        figures: [{ label: "Launch price", value: `${(FIRST_PRICE / SOMPI).toFixed(2)} KAS / share` }] });
+    }
+  }
   const { l: cl, m: cm } = await getCredit();
   if (cl && cm) {
     const f = creditFigures(cl, cm, null);

@@ -162,7 +162,10 @@ async function creditPosition(keys: Set<string | null>): Promise<Position[]> {
 }
 
 async function navPosition(keys: Set<string | null>): Promise<Position[]> {
-  const { l, m } = await getNav();
+  return (await Promise.all((["nav-tn10", "fixed-tn10"] as const).map(async (slug) => navPositionIn(keys, slug, await getNav(slug))))).flat();
+}
+
+async function navPositionIn(keys: Set<string | null>, slug: "nav-tn10" | "fixed-tn10", { l, m }: Awaited<ReturnType<typeof getNav>>): Promise<Position[]> {
   if (!l || !m) return [];
   const f = navFigures(l, m);
   const mine = l.notes.filter((n) => !n.redeemed && keys.has(keyOf(n.owner)));
@@ -173,10 +176,10 @@ async function navPosition(keys: Set<string | null>): Promise<Position[]> {
   const total = f.liquid + f.marks.reduce((a, x) => a + x, 0) || 1;
   const under = [{ sym: "KAS", amount: kas * (f.liquid / total), usd: null }, ...m.destinations.map((d, i) => ({ sym: d.label.replace(" (test wallet)", ""), amount: kas * ((f.marks[i] ?? 0) / total), usd: null }))].filter((u) => u.amount > 0);
   return [{
-    key: `vault:nav-tn10`, kind: "vault", name: `${m.name}`, sub: `${shares.toLocaleString("en-US")} shares in ${mine.length} note${mine.length > 1 ? "s" : ""} · testnet-10`, chain: "Kaspa TN10",
+    key: `vault:${slug}`, kind: "vault", name: `${m.name}`, sub: `${shares.toLocaleString("en-US")} shares in ${mine.length} note${mine.length > 1 ? "s" : ""} · testnet-10`, chain: "Kaspa TN10",
     usd: null, valueText: `${kas.toLocaleString("en-US", { maximumFractionDigits: 2 })} test KAS`, under,
-    exitNow: null, exitNote: `redeem at NAV (${f.price.toFixed(6)} KAS a share)${paid ? ` · paid ${paid.toLocaleString("en-US", { maximumFractionDigits: 2 })} KAS` : ""}`, href: "/vaults/nav-tn10",
-    actions: [{ label: "Deposit", href: "/vaults/nav-tn10?do=deposit#position" }, { label: "Withdraw", href: "/vaults/nav-tn10?do=withdraw#position" }],
+    exitNow: null, exitNote: `redeem at NAV (${f.price.toFixed(6)} KAS a share)${paid ? ` · paid ${paid.toLocaleString("en-US", { maximumFractionDigits: 2 })} KAS` : ""}`, href: `/vaults/${slug}`,
+    actions: [{ label: "Deposit", href: `/vaults/${slug}?do=deposit#position` }, { label: "Withdraw", href: `/vaults/${slug}?do=withdraw#position` }],
   }];
 }
 

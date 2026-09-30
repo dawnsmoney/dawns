@@ -72,7 +72,9 @@ export function EarnBody({ have, win, options, excluded, vaults, stamp }: { have
               <div className="earn-tags"><span className="earn-tag vault">Testnet only</span><span className="earn-tag warn">Not audited</span></div>
             </div>
             <div className="earn-fact"><span>Native yield</span><b className="earn-apy muted">Measuring</b><small>dawns shows a rate after 30 days of share prices</small></div>
-            <div className="earn-fact"><span>How you leave</span><b>At NAV, in one transaction</b><small>Paid or refused by the network: no queue. The vault page shows what is payable now.</small></div>
+            {v.kind === "fixed"
+              ? <div className="earn-fact"><span>How you leave</span><b>At NAV, from maturity</b><small>Before maturity the network refuses a withdrawal; from then on, one transaction, paid or refused. The vault page shows both dates.</small></div>
+              : <div className="earn-fact"><span>How you leave</span><b>At NAV, in one transaction</b><small>Paid or refused by the network: no queue. The vault page shows what is payable now.</small></div>}
             <div className="earn-fact"><span>What you trust</span><b>The manager&apos;s picks</b><small>The network enforces the caps and limits; where the manager allocates inside them is trust.</small></div>
             <div className="earn-go">
               {v.href && <Link href={v.href} className="btn ghost sm">Open the vault</Link>}

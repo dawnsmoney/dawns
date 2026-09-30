@@ -13,7 +13,7 @@ export async function earnPage(sp: { [k: string]: string | string[] | undefined 
   const intel = raw ? buildIntel(raw, s) : null;
   const { options, excluded } = earnFor(s, intel, have, win);
   // dawns' own vaults run on testnet: shown to KAS holders, clearly marked
-  const vaultCards = have === "kas" ? vs.filter((v) => v.status === "live" && (v.id === "nav-tn10" || v.id === "credit-tn10")) : [];
+  const vaultCards = have === "kas" ? vs.filter((v) => v.status === "live" && (v.id === "nav-tn10" || v.id === "credit-tn10" || (v.id === "fixed-tn10" && win === "lock"))) : [];
   const mins = Math.max(1, Math.round((Date.now() - s.asOf) / 60_000));
   const stamp = `read ${mins < 90 ? `${mins} min` : `${Math.round(mins / 60)} h`} ago${s.blocks.igra ? ` · Igra block ${s.blocks.igra.block.toLocaleString("en-US")}` : ""}`;
   return { have, win, options, excluded, vaults: vaultCards, stamp, s };

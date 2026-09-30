@@ -1,7 +1,7 @@
 import { schnorr } from "@noble/curves/secp256k1";
 import { blake2b } from "@noble/hashes/blake2b";
 import { sql, hasDb, ensureSchema } from "@/lib/db";
-import { navLedger, navMandate } from "@/lib/vaults/nav";
+import { NAV_VAULTS, navByCovenant } from "@/lib/vaults/nav";
 import { creditLedger, creditMandate, launchedOk, type CreditMandateDoc } from "@/lib/vaults/credit";
 import { codeCheck } from "@/lib/vaults/vault-verify";
 import { decodeKaspaAddress } from "@/lib/auth/kaspa";
@@ -31,9 +31,11 @@ export async function POST(req: Request) {
 
   let allocator: string | null = null, floor = 0, launched = false;
   if (!credit) {
-    if (!navLedger || !navMandate) return Response.json({ error: "No NAV vault" }, { status: 404 });
-    if (doc.covenantId !== navLedger.covenantId || doc.mandateHash !== navLedger.mandateHash) return Response.json({ error: "Another vault" }, { status: 400 });
-    allocator = navMandate.roles.allocator; floor = navLedger.moves.length;
+    // any vault running the NAV covenant (the NAV vault, the fixed-term vault)
+    if (!NAV_VAULTS.some((v) => v.ledger)) return Response.json({ error: "No NAV vault" }, { status: 404 });
+    const v = navByCovenant(doc.covenantId);
+    if (!v?.ledger || !v.mandate || doc.mandateHash !== v.ledger.mandateHash) return Response.json({ error: "Another vault" }, { status: 400 });
+    allocator = v.mandate.roles.allocator; floor = v.ledger.moves.length;
   } else if (creditLedger && doc.covenantId === creditLedger.covenantId) {
     if (!creditMandate || doc.mandateHash !== creditLedger.mandateHash) return Response.json({ error: "Another vault" }, { status: 400 });
     allocator = creditMandate.roles.allocator; floor = creditLedger.moves.length;
