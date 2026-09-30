@@ -1,0 +1,51 @@
+{
+  "borrowers": [
+    {
+      "address": "kaspatest:qz8qwusvhjw0emz7pq0zly2kpqwxulvkjztexf58s22j8rrg98av7n90rqtj0",
+      "capBps": 4000,
+      "interestBps": 100,
+      "label": "Borrower A (test key)",
+      "termDaa": 36000
+    },
+    {
+      "address": "kaspatest:qzwauazd3jgxzhchpav6ry8snd4k0f9zs8jm7jzxwk8ea072d69mu4a2tnwau",
+      "capBps": 3000,
+      "interestBps": 200,
+      "label": "Borrower B (test key)",
+      "termDaa": 72000
+    },
+    {
+      "address": "kaspatest:qq88cud3myuprznyd7qdurx2gsl0ca63sdpja33j3jn507jjar2x7x34vf05m",
+      "capBps": 2500,
+      "interestBps": 400,
+      "label": "Borrower C (test key)",
+      "termDaa": 144000
+    }
+  ],
+  "depositUntilDaa": 0,
+  "epochLengthDaa": 36000,
+  "epochLimitSompi": 200000000000,
+  "exitFeeBps": 25,
+  "graceDaa": 36000,
+  "manager": "dawns",
+  "markdownPeriodDaa": 36000,
+  "markdownStepBps": 2500,
+  "maturityDaa": 0,
+  "maxFeeSompi": 5000000,
+  "maxMarkStepBps": 1000,
+  "maxPerMoveSompi": 50000000000,
+  "minDepositSompi": 500000000,
+  "minKeepSompi": 100000000,
+  "name": "Dawns demo credit vault",
+  "network": "testnet-10",
+  "notBeforeDaa": 584511774,
+  "noteValueSompi": 100000000,
+  "objective": "Demo on an accelerated clock: an hour stands in for a month. Fixed-term loans to three named test borrowers (Dawns-held keys) for 1, 2 and 4 hours at 1%, 2% and 4%, roughly 12% a year at the month scale. The borrowers repay on schedule; everything else is the covenant's.",
+  "reserveFloorBps": 1000,
+  "roles": {
+    "allocator": "kaspatest:qpgcqgcv689g740pfeefrdmkedv63prz8gx7h850qfrcxk7hz0yzs6p7dn7jl",
+    "guardian": "kaspatest:qpeyuz7mycyy9qm56ywt0dq2xd62xrdpgwekwxhsreg4kqy5lqhu7uzd03h43",
+    "valuer": "kaspatest:qznf709wl26lwe0spy7javw0sxjpw3s6al769gwjwz6f6xpsgjruj98sy96mf"
+  },
+  "standard": "dawns-credit/0"
+}

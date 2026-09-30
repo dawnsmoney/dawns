@@ -1,0 +1,6 @@
+{
+  "note": "Demo: lends idle cash, accrues interest in the marks, test borrowers repay on schedule.",
+  "liquidBps": 1000,
+  "minLoanKas": "5",
+  "testBorrowersRepay": true
+}

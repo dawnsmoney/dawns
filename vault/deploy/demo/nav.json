@@ -1,4 +1,53 @@
 {
-  "status": "planned",
-  "name": "Dawns demo vault"
+  "accountTemplate": {
+    "prefix": "6b",
+    "suffix": "6c7604e33b26fa87637500cf52798769b9519c69b4539c6976009c63b3539c696776519c69b3549c69687575755167760435eecca687637553798201419d7553795379ac697575757551676a6868"
+  },
+  "address": "kaspatest:ppd0j7lmc24lrl9vm3vmz3xjle7r67n8ev2g07v4r2zxxu7ky5hljg6cj2l3z",
+  "covenant": "dawns-nav/1.2",
+  "covenantId": "ff2bfe8156536f8bf8862def81fc8c0efa87444f2b00395e3369a13f710f0483",
+  "createdAt": 1790782518,
+  "genesisTx": "25d33ddcc2f593f7612043800365b7831578ee638d62e43db13be325542f6ac8",
+  "manager": "dawns",
+  "mandateHash": "d7b7610a251a821bd82480e7a460fdf623af3862b87f17acc5b7c0a0e602e6fc",
+  "moves": [
+    {
+      "at": 1790782559,
+      "kind": "token",
+      "navAfter": 0,
+      "shareCovid": "cead409ad957bd052338192c17e2a9ec162b8ae0f39fc6933da520e1b273be92",
+      "sharesAfter": 0,
+      "txid": "a942ef00284f50975135f12470cb2f1093c53479f85303cd1192e820b42bd79c",
+      "valueAfter": 100000000
+    }
+  ],
+  "name": "Dawns demo vault",
+  "network": "testnet-10",
+  "notes": [],
+  "pending": null,
+  "seed": 205000000,
+  "shareCovid": "cead409ad957bd052338192c17e2a9ec162b8ae0f39fc6933da520e1b273be92",
+  "standard": "dawns-nav/1",
+  "state": {
+    "deployed": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "epochIndex": 0,
+    "epochSpent": 0,
+    "halted": false,
+    "markEpoch": -1,
+    "marks": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "shareCovid": "cead409ad957bd052338192c17e2a9ec162b8ae0f39fc6933da520e1b273be92",
+    "shares": 0
+  },
+  "tokenTx": "a942ef00284f50975135f12470cb2f1093c53479f85303cd1192e820b42bd79c",
+  "value": 100000000
 }

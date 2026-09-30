@@ -3,7 +3,7 @@
     "prefix": "6b",
     "suffix": "6c7604e33b26fa87637500cf52798769b9519c69b4539c6976009c63b3539c696776519c69b3549c69687575755167760435eecca687637553798201419d7553795379ac697575757551676a6868"
   },
-  "address": "kaspatest:pr3qwzehym8x6hvr50x2tp6hnvygx6efu25glj7t0nv8fgfdetpaxyzty2dhl",
+  "address": "kaspatest:prx3s9vexzwnd8gkc6ek2flgs440dvsnk9sr7jlq9v83te7jvz7wqkgzsldmu",
   "covenantId": "dc2c6e39f9a6027d38ceb9b694d197d42dd40ff2e83d44f7bf95fc21b2998e47",
   "createdAt": 1790604574,
   "genesisTx": "335f0638877d0c4d0432e57ee5c1fc332e1f3cdf8960cbc2a0a4b57e9578fe67",
@@ -124,6 +124,102 @@
       "slot": 0,
       "txid": "647dff65ceeaeb89ff01782f2551c1ba8224f7e50521c286394b1a9fe0260345",
       "valueAfter": 3174430604
+    },
+    {
+      "at": 1790667786,
+      "kind": "deposit",
+      "navAfter": 4019430604,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "paid": 1000000000,
+      "price": 1170638,
+      "shares": 764,
+      "sharesAfter": 3433,
+      "txid": "370cd239dd296015cd57936e9591384184785d5bda55e7837a53feed338efe87",
+      "valueAfter": 4069430604
+    },
+    {
+      "at": 1790682360,
+      "kind": "deposit",
+      "navAfter": 8914430604,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "paid": 5000000000,
+      "price": 1170822,
+      "shares": 4180,
+      "sharesAfter": 7613,
+      "txid": "b63c1ea045ec25dfea357ff2222e830e28712233a704d52cea71a119f7b16e91",
+      "valueAfter": 8964430604
+    },
+    {
+      "at": 1790773249,
+      "kind": "mark",
+      "marks": [
+        45000000,
+        0,
+        0,
+        0
+      ],
+      "navAfter": 8904430604,
+      "sharesAfter": 7613,
+      "txid": "7b410af61ddc2f4bed71efd367926006e3f4b33ff440a0025c9c5280b8058ef5",
+      "valueAfter": 8959430604
+    },
+    {
+      "amount": 3100000000,
+      "at": 1790773274,
+      "kind": "allocate",
+      "navAfter": 8899430604,
+      "sharesAfter": 7613,
+      "slot": 0,
+      "txid": "ac3efcd0cc335aa7855944f5f725ce7889e902068f828fb1a12eb444baa448a3",
+      "valueAfter": 5854430604
+    },
+    {
+      "amount": 2200000000,
+      "at": 1790773401,
+      "kind": "allocate",
+      "navAfter": 8894430604,
+      "sharesAfter": 7613,
+      "slot": 1,
+      "txid": "6fbcce663f2f834a87a3595c535d52090063d05ed48d5b48b41538e5e622ef1a",
+      "valueAfter": 3649430604
+    },
+    {
+      "amount": 1300000000,
+      "at": 1790773446,
+      "kind": "allocate",
+      "navAfter": 8889430604,
+      "sharesAfter": 7613,
+      "slot": 2,
+      "txid": "1a124fb149d900ee62c71e69a10fd847224a7c75e1c481b4bbcac34cafa21603",
+      "valueAfter": 2344430604
+    },
+    {
+      "at": 1790774273,
+      "kind": "mark",
+      "marks": [
+        3100000000,
+        2200000000,
+        1287780808,
+        0
+      ],
+      "navAfter": 8827211412,
+      "sharesAfter": 7613,
+      "txid": "ea31e4f062eaf14baaa9780dc1a742afc0a8479f01c5ab5fe0155268caeaa2f1",
+      "valueAfter": 2339430604
+    },
+    {
+      "at": 1790777909,
+      "kind": "mark",
+      "marks": [
+        3100000000,
+        2200000000,
+        1292531388,
+        0
+      ],
+      "navAfter": 8826961992,
+      "sharesAfter": 7613,
+      "txid": "0db3a7a4e94e76b786b29bac6262464257faeefbe9fa0e3bb52725c6c35a0ce2",
+      "valueAfter": 2334430604
     }
   ],
   "name": "Dawns TN10 NAV vault",
@@ -176,6 +272,24 @@
       "shares": 774,
       "txid": "40260049e6e6ebf67240a2ddd1d238028acad4639147af2d79c2f2c7bd0b7b21",
       "value": 100000000
+    },
+    {
+      "at": 1790667786,
+      "index": 2,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "price": 1170638,
+      "shares": 764,
+      "txid": "370cd239dd296015cd57936e9591384184785d5bda55e7837a53feed338efe87",
+      "value": 100000000
+    },
+    {
+      "at": 1790682361,
+      "index": 2,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "price": 1170822,
+      "shares": 4180,
+      "txid": "b63c1ea045ec25dfea357ff2222e830e28712233a704d52cea71a119f7b16e91",
+      "value": 100000000
     }
   ],
   "pending": null,
@@ -184,24 +298,24 @@
   "standard": "dawns-nav/1",
   "state": {
     "deployed": [
-      0,
-      0,
-      0,
+      3100000000,
+      2200000000,
+      1300000000,
       0
     ],
-    "epochIndex": 0,
-    "epochSpent": 500000000,
+    "epochIndex": 46,
+    "epochSpent": 6600000000,
     "halted": false,
-    "markEpoch": 0,
+    "markEpoch": 48,
     "marks": [
-      50000000,
-      0,
-      0,
+      3100000000,
+      2200000000,
+      1292531388,
       0
     ],
     "shareCovid": "8f94b0601421a75b83a252e372b6f54589cfdec727d3c4cf464715db89c2dd54",
-    "shares": 2669
+    "shares": 7613
   },
   "tokenTx": "8508b252ec5276734d28b9ad657b3a701535af26a6e87ef3ff24ffc48924a2be",
-  "value": 3174430604
+  "value": 2334430604
 }

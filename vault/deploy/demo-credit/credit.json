@@ -1,0 +1,117 @@
+{
+  "accountTemplate": {
+    "prefix": "6b",
+    "suffix": "6c7604e33b26fa87637500cf52798769b9519c69b4539c6976009c63b3539c696776519c69b3549c69687575755167760435eecca687637553798201419d7553795379ac697575757551676a6868"
+  },
+  "address": "kaspatest:prxvh7tqys4q4f6sgp6h69hmdmv9wxyt6x8uvnvgyupp4hjgsa5620zkq2qfx",
+  "covenant": "dawns-credit/0.2",
+  "covenantId": "7a03ef20147477c1d08a68776a07761bf428ce06d45ed8fb34bda5b8ead16999",
+  "createdAt": 1790782492,
+  "genesisTx": "cc40569a288e39666ca6e2fd87c727a772db6738a3f574ca577b62d410aeaa93",
+  "manager": "dawns",
+  "mandate": {
+    "borrowers": [
+      {
+        "address": "kaspatest:qz8qwusvhjw0emz7pq0zly2kpqwxulvkjztexf58s22j8rrg98av7n90rqtj0",
+        "capBps": 4000,
+        "interestBps": 100,
+        "label": "Borrower A (test key)",
+        "termDaa": 36000
+      },
+      {
+        "address": "kaspatest:qzwauazd3jgxzhchpav6ry8snd4k0f9zs8jm7jzxwk8ea072d69mu4a2tnwau",
+        "capBps": 3000,
+        "interestBps": 200,
+        "label": "Borrower B (test key)",
+        "termDaa": 72000
+      },
+      {
+        "address": "kaspatest:qq88cud3myuprznyd7qdurx2gsl0ca63sdpja33j3jn507jjar2x7x34vf05m",
+        "capBps": 2500,
+        "interestBps": 400,
+        "label": "Borrower C (test key)",
+        "termDaa": 144000
+      }
+    ],
+    "depositUntilDaa": 0,
+    "epochLengthDaa": 36000,
+    "epochLimitSompi": 200000000000,
+    "exitFeeBps": 25,
+    "graceDaa": 36000,
+    "manager": "dawns",
+    "markdownPeriodDaa": 36000,
+    "markdownStepBps": 2500,
+    "maturityDaa": 0,
+    "maxFeeSompi": 5000000,
+    "maxMarkStepBps": 1000,
+    "maxPerMoveSompi": 50000000000,
+    "minDepositSompi": 500000000,
+    "minKeepSompi": 100000000,
+    "name": "Dawns demo credit vault",
+    "network": "testnet-10",
+    "notBeforeDaa": 584511774,
+    "noteValueSompi": 100000000,
+    "objective": "Demo on an accelerated clock: an hour stands in for a month. Fixed-term loans to three named test borrowers (Dawns-held keys) for 1, 2 and 4 hours at 1%, 2% and 4%, roughly 12% a year at the month scale. The borrowers repay on schedule; everything else is the covenant's.",
+    "reserveFloorBps": 1000,
+    "roles": {
+      "allocator": "kaspatest:qpgcqgcv689g740pfeefrdmkedv63prz8gx7h850qfrcxk7hz0yzs6p7dn7jl",
+      "guardian": "kaspatest:qpeyuz7mycyy9qm56ywt0dq2xd62xrdpgwekwxhsreg4kqy5lqhu7uzd03h43",
+      "valuer": "kaspatest:qznf709wl26lwe0spy7javw0sxjpw3s6al769gwjwz6f6xpsgjruj98sy96mf"
+    },
+    "standard": "dawns-credit/0"
+  },
+  "mandateHash": "7b7647933464ea319b9bf335b1a0374d8a7fdf65154be36a8e518865772b4942",
+  "moves": [
+    {
+      "at": 1790782514,
+      "daa": 584512089,
+      "kind": "token",
+      "navAfter": 0,
+      "shareCovid": "fd2cc7ced032b291a4c6d067297c81768c021d7544706c97bb82cd402277c4b8",
+      "sharesAfter": 0,
+      "txid": "4b5bbefbd7af7940b834b6261a809a8d295d5e296bb05624dba061cd422d7cfd",
+      "valueAfter": 100000000
+    }
+  ],
+  "name": "Dawns demo credit vault",
+  "network": "testnet-10",
+  "notes": [],
+  "pending": null,
+  "repayAddresses": [
+    "kaspatest:prnfv0ugfu0q6s0pr3f82x47xckktqp40u4l0g9hpuhynuq7vc4e7c37h786s",
+    "kaspatest:pq942gjw2a6zmd0m90l72lyyru3zwk62vpdxs8fs65as8a6zcn525yhwxgs6a",
+    "kaspatest:pzrazaedyry09p7lr73wahxpufxzss8eykqqmx04rplstmz2gx6vyze6l86x3"
+  ],
+  "repayTemplate": {
+    "prefix": "6b",
+    "suffix": "6c7604e33b26fa87637500cf52798769b9519c69b3529c69b4519c697600a2697652a1697575755167760435eecca687637553798201419d7553795379ac697575757551676a6868"
+  },
+  "seed": 205000000,
+  "shareCovid": "fd2cc7ced032b291a4c6d067297c81768c021d7544706c97bb82cd402277c4b8",
+  "standard": "dawns-credit/0",
+  "state": {
+    "due": [
+      0,
+      0,
+      0
+    ],
+    "epochIndex": 0,
+    "epochSpent": 0,
+    "halted": false,
+    "markEpoch": -1,
+    "marks": [
+      0,
+      0,
+      0
+    ],
+    "principal": [
+      0,
+      0,
+      0
+    ],
+    "shareCovid": "fd2cc7ced032b291a4c6d067297c81768c021d7544706c97bb82cd402277c4b8",
+    "shares": 0
+  },
+  "tokenTx": "4b5bbefbd7af7940b834b6261a809a8d295d5e296bb05624dba061cd422d7cfd",
+  "value": 100000000
+}

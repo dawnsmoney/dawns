@@ -1,4 +1,42 @@
 {
-  "status": "planned",
-  "name": "Dawns demo vault"
+  "depositUntilDaa": 0,
+  "destinations": [
+    {
+      "address": "kaspatest:qzgd3qy9auxwepgkx80z2rrhv0lhp98kp0j96hyc90jucpwd8tdexfvhzl82z",
+      "capBps": 2000,
+      "label": "Strategy A (test wallet)"
+    },
+    {
+      "address": "kaspatest:qrf9m0se5smfpxu8hk82u9kue6mnk2k82nwklmrtens5gcrdgqehj4nn62eau",
+      "capBps": 2000,
+      "label": "Strategy B (test wallet)"
+    },
+    {
+      "address": "kaspatest:qryyft8y87p6xcarncnjulxs4ffa4p46w6prerwr8eu9q7a4n24wgrmvkhfmg",
+      "capBps": 6000,
+      "label": "Lending via the demo credit vault"
+    }
+  ],
+  "epochLengthDaa": 36000,
+  "epochLimitSompi": 200000000000,
+  "exitFeeBps": 25,
+  "manager": "dawns",
+  "maturityDaa": 0,
+  "maxFeeSompi": 5000000,
+  "maxMarkStepBps": 1000,
+  "maxPerMoveSompi": 50000000000,
+  "minDepositSompi": 500000000,
+  "minKeepSompi": 100000000,
+  "name": "Dawns demo vault",
+  "network": "testnet-10",
+  "notBeforeDaa": 584512028,
+  "noteValueSompi": 100000000,
+  "objective": "Demo on an accelerated clock: 60% of the vault lends through the Dawns demo credit vault, where an hour stands in for a month; 15% and 15% sit in two test wallets. Deposit test KAS, watch the share price climb as the loans repay, redeem at NAV.",
+  "reserveFloorBps": 1000,
+  "roles": {
+    "allocator": "kaspatest:qpgcqgcv689g740pfeefrdmkedv63prz8gx7h850qfrcxk7hz0yzs6p7dn7jl",
+    "guardian": "kaspatest:qpeyuz7mycyy9qm56ywt0dq2xd62xrdpgwekwxhsreg4kqy5lqhu7uzd03h43",
+    "valuer": "kaspatest:qznf709wl26lwe0spy7javw0sxjpw3s6al769gwjwz6f6xpsgjruj98sy96mf"
+  },
+  "standard": "dawns-nav/1"
 }

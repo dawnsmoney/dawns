@@ -3,7 +3,7 @@
     "prefix": "6b",
     "suffix": "6c7604e33b26fa87637500cf52798769b9519c69b4539c6976009c63b3539c696776519c69b3549c69687575755167760435eecca687637553798201419d7553795379ac697575757551676a6868"
   },
-  "address": "kaspatest:pqetvkvmn4sq6axj7z7y2llh0xrtpwx9j3325d0enl5pyx7308c7kcezk83ta",
+  "address": "kaspatest:prewpxqqyny0emlt4edzcd2gjjqrsvudrx234swhuhg8zh69sr73zec5d4vwz",
   "covenant": "dawns-credit/0",
   "covenantId": "baf9e099d5fed0b61613ca7fb1ced00cbf4811f5d71356d055752a47f1fbddd7",
   "createdAt": 1790672837,
@@ -68,6 +68,244 @@
       "slot": 2,
       "txid": "017decf91d1d96373a44fb75fbf61f1e0ec307268bf237550caff308b4a3f312",
       "valueAfter": 4250500000
+    },
+    {
+      "at": 1790674969,
+      "daa": 583440778,
+      "kind": "mark",
+      "marks": [
+        0,
+        0,
+        0
+      ],
+      "navAfter": 4140500000,
+      "sharesAfter": 2890,
+      "txid": "ce90710449ab62aafe163bd327c47755fa678db19c19cbd14fb54be938b10799",
+      "valueAfter": 4240500000
+    },
+    {
+      "at": 1790675631,
+      "daa": 583447373,
+      "kind": "deposit",
+      "navAfter": 5030500000,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "paid": 1000000000,
+      "price": 1432699,
+      "shares": 621,
+      "sharesAfter": 3511,
+      "txid": "d22327593278d68a8ef999c4c9e1c5ce166101865ed0860b26b97f1095f6e2eb",
+      "valueAfter": 5130500000
+    },
+    {
+      "at": 1790676579,
+      "daa": 583456797,
+      "kind": "redeem",
+      "navAfter": 4142966772,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "payout": 1077533228,
+      "shares": 621,
+      "sharesAfter": 2890,
+      "txid": "d01ca304ecec9de07f9953c0fdde73dcab97bb1458eeeb0d0d8c38f1ecf128a1",
+      "valueAfter": 4242966772
+    },
+    {
+      "at": 1790678155,
+      "daa": 583472818,
+      "kind": "deposit",
+      "navAfter": 9032966772,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "paid": 5000000000,
+      "price": 1433553,
+      "shares": 3411,
+      "sharesAfter": 6301,
+      "txid": "7a0bdb3f922c4c58a89356977140ccb4f8e71bced1379130285ae924bacd5a87",
+      "valueAfter": 9132966772
+    },
+    {
+      "at": 1790682344,
+      "daa": 583514711,
+      "kind": "writeoff",
+      "navAfter": 9022966772,
+      "principal": 500000000,
+      "sharesAfter": 6301,
+      "slot": 2,
+      "txid": "4e485c7c2ff2dda79988eb7f91b8981bc431e0613b96d79fb98e117f57143821",
+      "valueAfter": 9122966772
+    },
+    {
+      "amount": 3600000000,
+      "at": 1790773938,
+      "daa": 584426776,
+      "due": 585290676,
+      "kind": "lend",
+      "navAfter": 9012966772,
+      "sharesAfter": 6301,
+      "slot": 0,
+      "txid": "d4436c0381ad5002c1cb6174d7653cda753beebc52e1920fa2c6a91b8d4e25e8",
+      "valueAfter": 5512966772
+    },
+    {
+      "at": 1790774001,
+      "daa": 584427404,
+      "kind": "deposit",
+      "navAfter": 10002966772,
+      "owner": "kaspatest:qzxdcca8mq948nxw8rspygtsm09p8qqnauw3r5aphszratr06gzp6keuye0he",
+      "paid": 1100000000,
+      "price": 1430403,
+      "shares": 692,
+      "sharesAfter": 6993,
+      "txid": "5e5e5767ccfc5aaa782a83bdd5e3a132811ed76a214e89cb04edbd061a18144c",
+      "valueAfter": 6502966772
+    },
+    {
+      "amount": 3000000000,
+      "at": 1790774024,
+      "daa": 584427639,
+      "due": 587019539,
+      "kind": "lend",
+      "navAfter": 9992966772,
+      "sharesAfter": 6993,
+      "slot": 1,
+      "txid": "6e3505fa45c248552a6259f26b4855806d4ead6466c6c29a81b295594e3cdeb4",
+      "valueAfter": 3492966772
+    },
+    {
+      "at": 1790774184,
+      "daa": 584429222,
+      "kind": "deposit",
+      "navAfter": 109882966772,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "paid": 100000000000,
+      "price": 1428996,
+      "shares": 69902,
+      "sharesAfter": 76895,
+      "txid": "2557307eb3671bbf2aa5133fbbf96b474ce40dab295ded0975edfb95e9b8e4bc",
+      "valueAfter": 103382966772
+    },
+    {
+      "at": 1790774186,
+      "daa": 584429249,
+      "kind": "deposit",
+      "navAfter": 209772966772,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "paid": 100000000000,
+      "price": 1429001,
+      "shares": 69901,
+      "sharesAfter": 146796,
+      "txid": "d1966601d50c5c30d0bb7c5e8c9ea68ff1296a3a074f4cd97838b8a144cc04d9",
+      "valueAfter": 203272966772
+    },
+    {
+      "at": 1790774189,
+      "daa": 584429274,
+      "kind": "mark",
+      "marks": [
+        3600104083,
+        3000000000,
+        0
+      ],
+      "navAfter": 209763070855,
+      "sharesAfter": 146796,
+      "txid": "3fcf1f71d681e5dec066543ce5bf9bcd95f3e4f571e2c20295872850b9379e0b",
+      "valueAfter": 203262966772
+    },
+    {
+      "amount": 5000000000,
+      "at": 1790774214,
+      "daa": 584429505,
+      "due": 584465405,
+      "kind": "lend",
+      "navAfter": 209753070855,
+      "sharesAfter": 146796,
+      "slot": 2,
+      "txid": "32d97a786751fad79a63be170b1c4d1d41564c16608406c877646b8faf490563",
+      "valueAfter": 198252966772
+    },
+    {
+      "at": 1790776637,
+      "daa": 584453796,
+      "kind": "redeem",
+      "navAfter": 204891366364,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "payout": 5051704491,
+      "shares": 3411,
+      "sharesAfter": 143385,
+      "txid": "6ebbaa6dcb300d718c3a2027615bc415b536f1867049fa32e76a0dedd790bdb8",
+      "valueAfter": 193391262281
+    },
+    {
+      "at": 1790776639,
+      "daa": 584453825,
+      "kind": "redeem",
+      "navAfter": 105253992076,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "payout": 99827374288,
+      "shares": 69902,
+      "sharesAfter": 73483,
+      "txid": "84eae4e3f5e02d2b2fae418d09c515bdbf8229d56f6025e9b022ba533ce63ded",
+      "valueAfter": 93753887993
+    },
+    {
+      "at": 1790777426,
+      "daa": 584461220,
+      "kind": "deposit",
+      "navAfter": 205143992076,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "paid": 100000000000,
+      "price": 1432359,
+      "shares": 69738,
+      "sharesAfter": 143221,
+      "txid": "6483162f4663fb3700bcb3bee8b220b9c3f2e313f7c39825132f2daff625e694",
+      "valueAfter": 193643887993
+    },
+    {
+      "at": 1790777428,
+      "daa": 584461240,
+      "kind": "redeem",
+      "navAfter": 105270973933,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "payout": 100063018143,
+      "shares": 69901,
+      "sharesAfter": 73320,
+      "txid": "3a84cfbda0ffa0c44bb05389c7cc9b016781057172c7be8d3bd0a8f9358177a1",
+      "valueAfter": 93770869850
+    },
+    {
+      "at": 1790777675,
+      "daa": 584463751,
+      "kind": "mark",
+      "marks": [
+        3601540625,
+        3001253888,
+        5004756388
+      ],
+      "navAfter": 105268420751,
+      "sharesAfter": 73320,
+      "txid": "e13a2b9878d342aa404144f969a680a3462b562446bcf7e64af6b2554001e554",
+      "valueAfter": 93760869850
+    },
+    {
+      "amount": 5005000000,
+      "at": 1790777941,
+      "daa": 584466374,
+      "kind": "repay",
+      "navAfter": 105258664363,
+      "sharesAfter": 73320,
+      "slot": 2,
+      "txid": "f7dfcee9317818d49a1befecb8f6b8fcd3d4f8c23d90d983585502ef3f3c2728",
+      "valueAfter": 98755869850
+    },
+    {
+      "amount": 5000000000,
+      "at": 1790777946,
+      "daa": 584466421,
+      "due": 584502321,
+      "kind": "lend",
+      "navAfter": 105248664363,
+      "sharesAfter": 73320,
+      "slot": 2,
+      "txid": "11cfc358aee8bb5ec7881b1f442523c271c34d554db310d8dd1054bfb488dd82",
+      "valueAfter": 93745869850
     }
   ],
   "name": "Dawns TN10 credit vault",
@@ -80,6 +318,80 @@
       "price": 1000000,
       "shares": 2890,
       "txid": "ac742bd34b04d7ece19dba3ac5cd9db04aa50161c4009ceea1beee74224caaf1",
+      "value": 100000000
+    },
+    {
+      "at": 1790675632,
+      "index": 2,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "price": 1432699,
+      "redeemed": {
+        "at": 1790676580,
+        "payout": 1077533228,
+        "txid": "d01ca304ecec9de07f9953c0fdde73dcab97bb1458eeeb0d0d8c38f1ecf128a1"
+      },
+      "shares": 621,
+      "txid": "d22327593278d68a8ef999c4c9e1c5ce166101865ed0860b26b97f1095f6e2eb",
+      "value": 100000000
+    },
+    {
+      "at": 1790678156,
+      "index": 2,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "price": 1433553,
+      "redeemed": {
+        "at": 1790776638,
+        "payout": 5051704491,
+        "txid": "6ebbaa6dcb300d718c3a2027615bc415b536f1867049fa32e76a0dedd790bdb8"
+      },
+      "shares": 3411,
+      "txid": "7a0bdb3f922c4c58a89356977140ccb4f8e71bced1379130285ae924bacd5a87",
+      "value": 100000000
+    },
+    {
+      "at": 1790774002,
+      "index": 2,
+      "owner": "kaspatest:qzxdcca8mq948nxw8rspygtsm09p8qqnauw3r5aphszratr06gzp6keuye0he",
+      "price": 1430403,
+      "shares": 692,
+      "txid": "5e5e5767ccfc5aaa782a83bdd5e3a132811ed76a214e89cb04edbd061a18144c",
+      "value": 100000000
+    },
+    {
+      "at": 1790774185,
+      "index": 2,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "price": 1428996,
+      "redeemed": {
+        "at": 1790776639,
+        "payout": 99827374288,
+        "txid": "84eae4e3f5e02d2b2fae418d09c515bdbf8229d56f6025e9b022ba533ce63ded"
+      },
+      "shares": 69902,
+      "txid": "2557307eb3671bbf2aa5133fbbf96b474ce40dab295ded0975edfb95e9b8e4bc",
+      "value": 100000000
+    },
+    {
+      "at": 1790774187,
+      "index": 2,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "price": 1429001,
+      "redeemed": {
+        "at": 1790777428,
+        "payout": 100063018143,
+        "txid": "3a84cfbda0ffa0c44bb05389c7cc9b016781057172c7be8d3bd0a8f9358177a1"
+      },
+      "shares": 69901,
+      "txid": "d1966601d50c5c30d0bb7c5e8c9ea68ff1296a3a074f4cd97838b8a144cc04d9",
+      "value": 100000000
+    },
+    {
+      "at": 1790777426,
+      "index": 2,
+      "owner": "kaspatest:qpppf8c8tvzlcvp39shv4pfnqapet7jg82m6jrsfdt4f9nx7fvp07ay6whh0x",
+      "price": 1432359,
+      "shares": 69738,
+      "txid": "6483162f4663fb3700bcb3bee8b220b9c3f2e313f7c39825132f2daff625e694",
       "value": 100000000
     }
   ],
@@ -98,27 +410,27 @@
   "standard": "dawns-credit/0",
   "state": {
     "due": [
-      0,
-      0,
-      583465126
+      585290676,
+      587019539,
+      584502321
     ],
-    "epochIndex": 0,
-    "epochSpent": 1000000000,
+    "epochIndex": 29,
+    "epochSpent": 5000000000,
     "halted": false,
-    "markEpoch": -1,
+    "markEpoch": 29,
     "marks": [
-      0,
-      0,
-      500000000
+      3601540625,
+      3001253888,
+      5000000000
     ],
     "principal": [
-      0,
-      0,
-      500000000
+      3600000000,
+      3000000000,
+      5000000000
     ],
     "shareCovid": "09b1abb0b0b21a1003735c77ef222b1548d255d94c1272ef5e8f3bc111b3bbdb",
-    "shares": 2890
+    "shares": 73320
   },
   "tokenTx": "f6acd2d4ae8db47e5301896647e89db2655fead603d3fde3c91188d0fc5bcc34",
-  "value": 4250500000
+  "value": 93745869850
 }
