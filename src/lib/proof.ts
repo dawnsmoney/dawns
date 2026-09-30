@@ -198,7 +198,7 @@ function dexProof(s: Snapshot, p: ProtocolView): Proof {
 export function proofs(s: Snapshot): Proof[] {
   const out: Proof[] = [];
   if (s.bridge) out.push(bridgeProof(s, s.bridge));
-  const ps = s.protocols.filter((p) => p.source === "onchain" && ((p.lending && p.lending.suppliedUsd > 0) || (p.dex && p.tvl > 0)));
+  const ps = s.protocols.filter((p) => p.source === "onchain" && !p.floor && ((p.lending && p.lending.suppliedUsd > 0) || (p.dex && p.tvl > 0)));
   for (const p of ps) out.push(p.lending ? lendingProof(s, p) : dexProof(s, p));
   return [out[0], ...out.slice(1).sort((a, b) => b.usdValue - a.usdValue)].filter(Boolean) as Proof[];
 }
