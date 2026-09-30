@@ -18,16 +18,18 @@ type Update = {
 };
 
 const BRIDGE = { id: "igra-bridge", name: "Igra bridge" };
+// dawns' own vaults: watched and alerted like any protocol
+const OWN = [{ id: "nav-tn10", name: "dawns NAV vault (testnet)" }, { id: "fixed-tn10", name: "dawns fixed-term vault (testnet)" }, { id: "credit-tn10", name: "dawns credit vault (testnet)" }];
 
 /** Everything a chat can watch: protocols above the alert floor, the bridge, or all. */
 function targets(s: Snapshot) {
-  return [...s.protocols.filter((p) => !p.floor).map((p) => ({ id: p.id, name: p.name })), BRIDGE];
+  return [...s.protocols.filter((p) => !p.floor).map((p) => ({ id: p.id, name: p.name })), BRIDGE, ...OWN];
 }
 function resolve(s: Snapshot, arg: string) {
   const a = arg.trim().toLowerCase().replace(/^watch_/, "");
   if (!a) return null;
   if (a === "all" || a === "everything") return { id: "all", name: "all of Kaspa DeFi" };
-  const list = [...s.protocols.map((p) => ({ id: p.id, name: p.name })), BRIDGE];
+  const list = [...s.protocols.map((p) => ({ id: p.id, name: p.name })), BRIDGE, ...OWN];
   const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
   return list.find((p) => p.id === a) ?? list.find((p) => norm(p.name) === norm(a)) ?? list.find((p) => norm(p.name).startsWith(norm(a)) || p.id.startsWith(a)) ?? null;
 }
@@ -135,7 +137,7 @@ async function handleCommand(c: Chat, text: string) {
     case "/list": {
       const have = await subs(c.id);
       if (!have.length) return send(c.id, "This chat isn't watching anything yet. Send /watch.");
-      const nm = (id: string) => (id === "all" ? "Everything" : id === BRIDGE.id ? BRIDGE.name : s.protocols.find((p) => p.id === id)?.name ?? id);
+      const nm = (id: string) => (id === "all" ? "Everything" : id === BRIDGE.id ? BRIDGE.name : OWN.find((x) => x.id === id)?.name ?? s.protocols.find((p) => p.id === id)?.name ?? id);
       return send(c.id, `<b>Watching</b>\n${have.map((id) => `· ${esc(nm(id))}`).join("\n")}`);
     }
     case "/daily": {
@@ -161,7 +163,7 @@ async function handleCallback(q: NonNullable<Update["callback_query"]>) {
   if (!c || !id) return tg("answerCallbackQuery", { callback_query_id: q.id });
   const have = await subs(c.id);
   const s = await getSnapshot();
-  const name = id === "all" ? "Everything" : id === BRIDGE.id ? BRIDGE.name : s.protocols.find((p) => p.id === id)?.name ?? id;
+  const name = id === "all" ? "Everything" : id === BRIDGE.id ? BRIDGE.name : OWN.find((x) => x.id === id)?.name ?? s.protocols.find((p) => p.id === id)?.name ?? id;
   if (have.includes(id)) await sql().query("delete from telegram_subs where chat_id = $1 and protocol = $2", [c.id, id]);
   else await watch(c, id);
   const next = await subs(c.id);

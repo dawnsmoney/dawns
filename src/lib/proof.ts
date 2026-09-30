@@ -6,7 +6,7 @@ import type { BridgeState, ContractRow, OwnerAction, ProtocolView, Snapshot, Sta
  * and exactly where each figure is read. Nothing here is reported by the protocol.
  */
 
-export type ProofKind = "bridge" | "lending" | "dex";
+export type ProofKind = "bridge" | "lending" | "dex" | "vault";
 export type Unit = "USD" | "KAS";
 
 export interface ProofLine { label: string; sub?: string; value: number; share: number; chain?: string; href?: string }
@@ -23,7 +23,7 @@ export interface Proof {
   coverage: number | null;
   reservesLabel: string; reservesSub: string; owedLabel: string; owedSub: string; coverageSub: string;
   status: Status; statusText: string;
-  read: { chain: "igra" | "kasplex"; block: number; t: number } | null;
+  read: { chain: "igra" | "kasplex" | "tn10"; block: number; t: number } | null;
   usdValue: number;
   breakdown: { title: string; sub: string; rows: ProofLine[] };
   exits: { title: string; lead: string; rows: ProofExitRow[]; bars: ProofBar[]; waits: { label: string; value: number; color: string }[] };
@@ -33,6 +33,8 @@ export interface Proof {
   owner: OwnerAction[];
   checks: [string, string, string][];
   pending: [string, string][];
+  /** a vault's NAV after every move, from its ledger (dawns' own vaults) */
+  series?: { t: number[]; v: number[] };
 }
 
 export const ENTRY = "kaspa:ppvnxxzm0rr37zpnwux2f2ntvfpr4uqdpm7zsvsztg3en92r7gs0wkmr72q9n";

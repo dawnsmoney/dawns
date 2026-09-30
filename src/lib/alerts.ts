@@ -90,10 +90,11 @@ function dedupe(list: Signal[]) {
 
 /* ---------- 3. delivery ---------- */
 const ICON: Record<Status, string> = { crit: "🔴", warn: "🟠", info: "🔵", good: "🟢" };
-const link = (p: string | null) => (p === "igra-bridge" ? `${SITE}/bridge` : p ? `${SITE}/protocols/${p}` : SITE);
+const VAULTS: Record<string, string> = { "nav-tn10": "dawns NAV vault (testnet)", "fixed-tn10": "dawns fixed-term vault (testnet)", "credit-tn10": "dawns credit vault (testnet)" };
+const link = (p: string | null) => (p === "igra-bridge" ? `${SITE}/bridge` : p && VAULTS[p] ? `${SITE}/vaults/${p}` : p ? `${SITE}/protocols/${p}` : SITE);
 
 export function formatAlert(e: AlertEvent, names: Record<string, string>) {
-  const who = e.protocol === "igra-bridge" ? "Igra bridge" : e.protocol ? names[e.protocol] ?? e.protocol : "Kaspa DeFi";
+  const who = e.protocol === "igra-bridge" ? "Igra bridge" : e.protocol && VAULTS[e.protocol] ? VAULTS[e.protocol] : e.protocol ? names[e.protocol] ?? e.protocol : "Kaspa DeFi";
   if (e.kind === "resolved") return `${ICON.good} <b>Cleared</b> · ${esc(who)}\nNo longer true: ${esc(e.strong)}.\n<a href="${link(e.protocol)}">Open on dawns</a>`;
   const head = e.kind === "worse" ? "Escalated" : e.t === "crit" ? "Critical" : e.t === "warn" ? "Warning" : "Notice";
   return `${ICON[e.t]} <b>${head}</b> · ${esc(who)}\n<b>${esc(e.strong)}</b>${esc(e.rest)}\n<a href="${link(e.protocol)}">See the numbers</a>`;

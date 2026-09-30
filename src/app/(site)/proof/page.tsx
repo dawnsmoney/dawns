@@ -3,7 +3,7 @@ import { Banner } from "@/components/Banner";
 import { ProofIndex } from "@/components/proof";
 import { DataBridge } from "@/components/providers";
 import { getSnapshot } from "@/lib/snapshot";
-import { proofs } from "@/lib/proof";
+import { allProofs } from "@/lib/proof-vaults";
 import { toLite } from "@/lib/view";
 
 export const metadata: Metadata = {
@@ -14,7 +14,7 @@ export const revalidate = 120;
 
 export default async function Page() {
   const s = await getSnapshot();
-  const list = proofs(s);
+  const list = await allProofs(s);
   return (
     <>
       <DataBridge prov={s.prov} protocols={s.protocols.map(toLite)} signals={s.signals} />

@@ -5,16 +5,17 @@ import { Pill, SERIES } from "./bits";
 import { Alert, Check, External, Minus } from "./icons";
 import { Fresh } from "./Fresh";
 import { ProofEmbed, ProofRequest } from "./proof-client";
+import { OwnVaultsNote } from "./own-vaults";
 import type { Proof } from "@/lib/proof";
 import type { ProofHistory } from "@/lib/proof-history";
 import { proofHeadline, usdShort } from "@/lib/proof";
 
 const pct = (x: number, d = 1) => `${(x * 100).toFixed(d)}%`;
-const full = (p: Proof, v: number) => (p.unit === "KAS" ? `${Math.round(v).toLocaleString("en-US")} KAS` : `$${Math.round(v).toLocaleString("en-US")}`);
+const full = (p: Proof, v: number) => (p.unit === "KAS" ? `${v.toLocaleString("en-US", { maximumFractionDigits: p.kind === "vault" ? 2 : 0 })} KAS` : `$${Math.round(v).toLocaleString("en-US")}`);
 const shortV = (p: Proof, v: number) => (p.unit === "KAS" ? `${v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : v.toFixed(0)} KAS` : usdShort(v));
 const short = (a: string) => (a.startsWith("0x") && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
-const explorer = (chain: string, a: string) => `${chain === "kasplex" ? "https://explorer.kasplex.org" : "https://explorer.igralabs.com"}/address/${a}`;
-const KIND: Record<Proof["kind"], string> = { bridge: "Bridge", lending: "Lending", dex: "DEX" };
+const explorer = (chain: string, a: string) => (a.startsWith("kaspatest:") ? `https://tn10.kaspa.stream/addresses/${a}` : `${chain === "kasplex" ? "https://explorer.kasplex.org" : "https://explorer.igralabs.com"}/address/${a}`);
+const KIND: Record<Proof["kind"], string> = { bridge: "Bridge", lending: "Lending", dex: "DEX", vault: "dawns vault · testnet" };
 
 /** The strip under the title: what was read, when, and how often. */
 function Verified({ p }: { p: Proof }) {
@@ -23,8 +24,8 @@ function Verified({ p }: { p: Proof }) {
       <span className="prf-ok"><Check />Read on-chain</span>
       <div><small>Sources</small><b>{p.sources.length}</b></div>
       <div><small>Re-read</small><b>every 2 min</b></div>
-      <div><small>Last read</small><b>{p.read ? <>{p.read.chain === "kasplex" ? "Kasplex" : "Igra"} #{p.read.block.toLocaleString("en-US")} · <Fresh since={p.read.t} /></> : "—"}</b></div>
-      <div><small>Reported by {p.name}</small><b>nothing</b></div>
+      <div><small>Last read</small><b>{p.read ? <>{p.read.chain === "tn10" ? "TN10 DAA" : p.read.chain === "kasplex" ? "Kasplex" : "Igra"} #{p.read.block.toLocaleString("en-US")} · <Fresh since={p.read.t} /></> : "—"}</b></div>
+      <div><small>Reported by {p.kind === "vault" ? "the operator" : p.name}</small><b>{p.kind === "vault" ? "nothing taken on trust" : "nothing"}</b></div>
     </div>
   );
 }
@@ -53,6 +54,15 @@ function History({ p, h }: { p: Proof; h: ProofHistory | null }) {
     </div>
   );
   if (!h) return calc;
+  if (p.kind === "vault") return (
+    <div className="grid gA">
+      <div className="card">
+        <div className="c-head"><h3>NAV after every move</h3><span className="tag">from the vault&apos;s ledger</span></div>
+        <AreaChart label={`${p.name} NAV`} fmt="num" stats zero={false} dates={h.t} series={[{ name: "NAV", color: SERIES[2], values: h.reserves }]} height={240} />
+      </div>
+      {calc}
+    </div>
+  );
   const fmt = p.unit === "KAS" ? "num" : "usdFull";
   return (
     <div className="grid gA">
@@ -234,6 +244,7 @@ export function ProofBody({ p, h, origin, compact }: { p: Proof; h: ProofHistory
   return (
     <div className={`prf${compact ? " compact" : ""}`}>
       <Verified p={p} />
+      {p.kind === "vault" && <div style={{ marginTop: 18 }}><OwnVaultsNote id={p.id} here /></div>}
       <Headline p={p} />
       <section className="prf-sec"><h2>Reserves</h2><History p={p} h={h} /></section>
       <section className="prf-sec"><h2>Breakdown</h2><Breakdown p={p} /></section>
@@ -266,9 +277,8 @@ export function ProofBody({ p, h, origin, compact }: { p: Proof; h: ProofHistory
 }
 
 /** Every proof, as cards. */
-export function ProofIndex({ list }: { list: Proof[] }) {
+function ProofCards({ list }: { list: Proof[] }) {
   return (
-    <>
     <div className="prf-index">
       {list.map((p) => {
         const hl = proofHeadline(p);
@@ -286,6 +296,21 @@ export function ProofIndex({ list }: { list: Proof[] }) {
         );
       })}
     </div>
+  );
+}
+
+export function ProofIndex({ list }: { list: Proof[] }) {
+  const own = list.filter((p) => p.kind === "vault"), rest = list.filter((p) => p.kind !== "vault");
+  return (
+    <>
+    <ProofCards list={rest} />
+    {own.length > 0 && (
+      <section id="own" className="prf-own">
+        <h2>dawns&apos; own vaults <span className="tag">testnet</span></h2>
+        <OwnVaultsNote here />
+        <ProofCards list={own} />
+      </section>
+    )}
     <div className="grid gA prf-more">
       <div className="card">
         <div className="c-head"><h3>Run a vault or a protocol?</h3><span className="tag">custom proof</span></div>

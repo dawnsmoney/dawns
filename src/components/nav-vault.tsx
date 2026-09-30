@@ -8,6 +8,7 @@ import { SharePriceChart, HoldingGrid, LiquidityChart } from "@/components/share
 import { sharePoints, liquidPoints } from "@/lib/vaults/share-history";
 import { getNav, navFigures, navVault, readNavLive, termView, SOMPI, FIRST_PRICE, type NavSlug, type NavMandateDoc } from "@/lib/vaults/nav";
 import { VaultProof } from "@/components/vault-proof";
+import { OwnVaultsNote } from "@/components/own-vaults";
 
 
 const COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500"];
@@ -200,6 +201,7 @@ export async function NavVaultView({ slug }: { slug: NavSlug }) {
           </div>
         </div>
 
+        <OwnVaultsNote id={slug} />
         <Term m={m} daa={daa} createdAt={l.createdAt} />
         <Strategy slug={slug} m={m} f={f} />
 

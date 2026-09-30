@@ -5,7 +5,7 @@ import { Pill } from "@/components/bits";
 import { ProofBody } from "@/components/proof";
 import { DataBridge } from "@/components/providers";
 import { getSnapshot } from "@/lib/snapshot";
-import { proofOf } from "@/lib/proof";
+import { findProof } from "@/lib/proof-vaults";
 import { proofHistory } from "@/lib/proof-history";
 import { toLite } from "@/lib/view";
 import { SITE } from "@/lib/telegram";
@@ -14,13 +14,13 @@ export const revalidate = 120;
 type P = { params: Promise<{ id: string }> };
 
 export async function generateMetadata({ params }: P): Promise<Metadata> {
-  const p = proofOf(await getSnapshot(), (await params).id);
+  const p = await findProof(await getSnapshot(), (await params).id);
   return { title: p ? `${p.name} proof of reserves` : "Proof of reserves" };
 }
 
 export default async function Page({ params }: P) {
   const s = await getSnapshot();
-  const p = proofOf(s, (await params).id);
+  const p = await findProof(s, (await params).id);
   if (!p) notFound();
   const h = await proofHistory(s, p);
   return (

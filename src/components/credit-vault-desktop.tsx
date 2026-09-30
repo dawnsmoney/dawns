@@ -7,6 +7,7 @@ import { SharePriceChart, HoldingGrid, LiquidityChart } from "@/components/share
 import { BalanceSheet } from "@/components/balance-sheet";
 import { Basis, TokenFamily, type Stamp } from "@/components/research";
 import { VaultProof } from "@/components/vault-proof";
+import { OwnVaultsNote } from "@/components/own-vaults";
 import { sharePoints, liquidPoints } from "@/lib/vaults/share-history";
 import { LoanCard, LOAN_COLORS, LIQUID, CREDIT_STEPS, kas, dur } from "@/components/credit-vault";
 import { creditFigures, readCreditLive, SOMPI, FIRST_PRICE, DAA_PER_SEC, type CreditLedger, type CreditMandateDoc } from "@/lib/vaults/credit";
@@ -55,6 +56,7 @@ export async function CreditVaultDesktop({ l, m, reference }: { l: CreditLedger;
             <small className="muted">This vault runs <Link href={`/strategies/${m.strategy.id}`}>v{m.strategy.version} of its strategy</Link>, committed by hash in the mandate ({m.strategy.hash.slice(0, 12)}…): its terms cannot change under depositors. Anyone can launch one; dawns lists it because the checks below pass, not because it knows who runs it.</small>
           </div>
         )}
+        {reference && <OwnVaultsNote id="credit-tn10" />}
         <div className="card vault-hero">
           <div className="vault-top">
             <h2>{m.name}</h2>

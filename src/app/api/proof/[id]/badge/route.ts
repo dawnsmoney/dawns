@@ -1,5 +1,6 @@
 import { getSnapshot } from "@/lib/snapshot";
-import { proofOf, proofHeadline } from "@/lib/proof";
+import { proofHeadline } from "@/lib/proof";
+import { findProof } from "@/lib/proof-vaults";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 // rough widths for the badge's system font, so the pill fits its text
@@ -13,7 +14,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params;
   const light = new URL(req.url).searchParams.get("theme") === "light";
   const s = await getSnapshot().catch(() => null);
-  const p = s ? proofOf(s, id) : null;
+  const p = s ? await findProof(s, id) : null;
   const hl = p ? proofHeadline(p) : null;
   const tone = !p ? "#8A83A8" : p.status === "good" ? "#4ADE9B" : p.status === "warn" ? "#F5B83D" : "#FF6B6B";
   const top = "PROOF OF RESERVES · DAWNS";

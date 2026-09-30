@@ -35,6 +35,7 @@ const cached = unstable_cache(load, ["dawns-proof-history-v1"], { revalidate: 60
 
 /** dawns' stored readings; without a database, the hourly history the snapshot already carries. */
 export async function proofHistory(s: Snapshot, p: Proof): Promise<ProofHistory | null> {
+  if (p.series) return p.series.t.length >= 3 ? { t: p.series.t, reserves: p.series.v, owed: [], kind: "reserves" } : null;
   const h = await cached(p.id, p.kind).catch(() => null);
   if (h) return h;
   if (p.kind === "bridge" && s.bridge?.history && s.bridge.history.length >= 3)

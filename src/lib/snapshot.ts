@@ -8,6 +8,7 @@ import { readInfinityPools, INFINITY_POOLS } from "./chain/zealous";
 import { readZealousFarm, ZEALOUS_FARM } from "./chain/farms";
 import { ownerActions, txLink } from "./chain/owner-actions";
 import { readOwn } from "./history";
+import { vaultProofs } from "./proof-vaults";
 import { buildOpportunities } from "./opportunities";
 import { explorerAddress, explorerBlock, type ChainKey } from "./chain/clients";
 import { kaspaProtocols, llamaProtocol, llamaPrices, llamaChange24h, dexSummary, feesSummary, type LlamaProtocol, type LlamaListItem } from "./llama";
@@ -701,6 +702,9 @@ export async function buildSnapshot(): Promise<Snapshot> {
       }
     }
   }
+  // dawns' own vaults, under the same rules: marks ahead of the chain, withdrawals
+  // waiting for cash, loans past due, a halt
+  try { signals.push(...(await vaultProofs()).signals); } catch { /* a testnet read failed: no vault signals this run */ }
   if (bridge) {
     const kas = (n: number) => `${Math.round(n).toLocaleString("en-US")} KAS`;
     prov["bridge-cov"] = {

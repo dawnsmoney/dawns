@@ -1938,3 +1938,12 @@ html{touch-action:manipulation}
 .strat-c{position:absolute;top:-4px;width:2px;height:20px;background:var(--crit);opacity:.7}
 @media (max-width:760px){.strat-row{grid-template-columns:1fr}}
 .strat-via{display:block;font:500 12px var(--display);color:#FFE1B8;text-decoration:none;margin-top:2px}
+.own-note{display:grid;gap:8px;padding:16px 20px;border-radius:18px;border:1px solid rgba(255,211,106,.28);background:rgba(255,211,106,.05)}
+.own-note p{margin:0;font-size:14.5px;color:var(--ink-2);line-height:1.55}
+.own-note p b{color:var(--ink)}
+.own-links{display:flex;gap:18px;flex-wrap:wrap;font:500 14px var(--display)}
+.own-links a{color:#FFE1B8;text-decoration:none}
+.own-note.compact{padding:12px 14px}
+.own-note.compact p{font-size:13.5px}
+.prf-own{margin-top:40px;display:grid;gap:18px}
+.prf-own h2{font-size:24px;display:flex;gap:10px;align-items:center}

@@ -3,6 +3,7 @@ import { AssetCoin } from "./bits";
 import { HAVES, WINS, type EarnOption, type Excluded, type Have, type Win } from "@/lib/earn";
 import type { Tag } from "@/lib/intel";
 import type { VaultCard } from "@/lib/vaults/registry";
+import { OwnVaultsNote } from "./own-vaults";
 
 const pct = (x: number, d = 1) => `${(x * 100).toFixed(d)}%`;
 const TONE: Record<Tag["tone"], string> = { up: "up", down: "down", warn: "warn", calm: "calm" };
@@ -82,6 +83,7 @@ export function EarnBody({ have, win, options, excluded, vaults, stamp }: { have
             </div>
           </article>
         ))}
+        {vaults.length > 0 && <OwnVaultsNote compact />}
         {!n && <p className="muted" style={{ margin: 0 }}>No option passes dawns&apos; rules for {h.label} {w.short} right now. Try a longer window, or see why below.</p>}
       </div>
 
