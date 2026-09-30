@@ -1,5 +1,5 @@
 {
-  "depositUntilDaa": 0,
+  "depositUntilDaa": 586993619,
   "destinations": [
     {
       "address": "kaspatest:qr3f4lp26q4h6f3p0m3930a8fe7ra20225wjh07nuxdmg4e2sfmrxrhnzmn2s",
@@ -21,7 +21,7 @@
   "epochLimitSompi": 10000000000,
   "exitFeeBps": 25,
   "manager": "dawns",
-  "maturityDaa": 0,
+  "maturityDaa": 590449619,
   "maxFeeSompi": 5000000,
   "maxMarkStepBps": 1000,
   "maxPerMoveSompi": 5000000000,
@@ -29,7 +29,7 @@
   "minKeepSompi": 100000000,
   "name": "Dawns TN10 fixed-term vault",
   "network": "testnet-10",
-  "notBeforeDaa": 0,
+  "notBeforeDaa": 584401519,
   "noteValueSompi": 100000000,
   "objective": "Fixed term on testnet-10: deposit KAS while the window is open, receive shares at NAV, redeem at NAV from maturity. Same covenant as the NAV vault; the network refuses a deposit after the window and a withdrawal before maturity. Destinations are Dawns-held strategy wallets standing in for real strategies.",
   "reserveFloorBps": 2000,
