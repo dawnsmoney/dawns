@@ -82,7 +82,7 @@ function bridgeProof(s: Snapshot, b: BridgeState): Proof {
       title: "Can holders get their KAS back?",
       lead: "Leaving burns iKAS on Igra at once; the guardian committee then pays the KAS on L1 from the Entry address. dawns matches every exit to its L1 payment.",
       rows: po ? [
-        { label: "Exits awaiting L1 payout", value: `${Math.round(po.unpaidKas).toLocaleString("en-US")} KAS`, sub: `${po.unpaid} exits${po.unchecked ? ` · ${po.unchecked} still being matched` : ""}` },
+        { label: "Exits with no L1 payment found yet", value: `${Math.round(po.unpaidKas).toLocaleString("en-US")} KAS`, sub: `${po.unpaid} exits${po.unchecked ? ` · ${po.unchecked} still being matched` : ""}` },
         { label: "Late: over 72 hours", value: String(po.late), sub: po.late ? `${Math.round(po.lateKas).toLocaleString("en-US")} KAS` : "none", tone: po.late ? "warn" : "good" },
         { label: "Typical payout time", value: po.medianHours != null ? hrs(po.medianHours) : "—", sub: "median, last 30 days" },
         { label: "Exits matched to an L1 payment", value: `${po.paid.toLocaleString("en-US")} of ${po.indexed.toLocaleString("en-US")}`, sub: "every exit dawns has indexed" },

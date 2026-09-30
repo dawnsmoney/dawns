@@ -206,32 +206,44 @@ type KasTx = {
 
 /**
  * An exit is paid when a Kaspa L1 transaction spends coins from the bridge Entry
- * address and sends exactly the unlock amount to the exit's payout address.
+ * address and sends the unlock amount to the exit's payout address.
+ *
+ * The committee pays in batches from the Entry address, so dawns reads the Entry
+ * address's own history (a few dozen transactions a day) back to the oldest exit it is
+ * checking, rather than each payout address's: many payout addresses are exchange
+ * deposit addresses with thousands of transactions, where the payment sinks out of reach.
  */
-export async function checkPayouts(limit = 60) {
+export async function checkPayouts(limit = 120) {
   const q = sql();
+  // v2 matcher: give every unmatched exit a fresh look once
+  if ((await getMeta("payouts:matcher")) !== "entry-v2") {
+    await q.query("update bridge_exits set checks = 0, last_checked = null where paid_tx is null");
+    await setMeta("payouts:matcher", "entry-v2");
+  }
   const due = (await q.query(
     `select tx, payout_address, amount_sompi::text as amount, extract(epoch from requested_at) * 1000 as at from bridge_exits
      where paid_tx is null and requested_at < now() - interval '2 minutes'
        and (last_checked is null or last_checked < now() - interval '20 minutes')
        and (requested_at > now() - interval '30 days' or checks < 3)
      order by last_checked asc nulls first, requested_at desc limit $1`, [limit])) as { tx: string; payout_address: string; amount: string; at: number }[];
+  if (!due.length) return "0 checked";
+  const earliest = Math.min(...due.map((e) => Number(e.at))) - 3600_000;
+  // the Entry address's spends, newest first, back to the oldest exit due
+  const txs: KasTx[] = [];
+  for (let page = 0; page < 60; page++) {
+    const r = await fetch(`${IGRA_BRIDGE.kaspaApi}/addresses/${IGRA_BRIDGE.entry}/full-transactions?limit=50&offset=${page * 50}&resolve_previous_outpoints=light`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    if (!r.ok) break;
+    const batch = (await r.json()) as KasTx[];
+    txs.push(...batch);
+    if (batch.length < 50 || Math.min(...batch.map((t) => t.block_time)) < earliest) break;
+  }
+  const spends = txs.filter((t) => t.is_accepted !== false && (t.inputs ?? []).some((i) => i.previous_outpoint_address === IGRA_BRIDGE.entry));
   const byAddr = new Map<string, typeof due>();
   for (const d of due) byAddr.set(d.payout_address, [...(byAddr.get(d.payout_address) ?? []), d]);
   let paid = 0;
   for (const [addr, exits] of byAddr) {
-    const earliest = Math.min(...exits.map((e) => Number(e.at))) - 3600_000;
-    const txs: KasTx[] = [];
-    for (let page = 0; page < 4; page++) {
-      const r = await fetch(`${IGRA_BRIDGE.kaspaApi}/addresses/${addr}/full-transactions?limit=50&offset=${page * 50}&resolve_previous_outpoints=light`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
-      if (!r.ok) break;
-      const batch = (await r.json()) as KasTx[];
-      txs.push(...batch);
-      if (batch.length < 50 || Math.min(...batch.map((t) => t.block_time)) < earliest) break;
-    }
     const taken = (await q.query("select paid_tx, paid_sompi::text as amount from bridge_exits where payout_address = $1 and paid_tx is not null", [addr])) as { paid_tx: string; amount: string }[];
-    const outs = txs
-      .filter((t) => t.is_accepted !== false && (t.inputs ?? []).some((i) => i.previous_outpoint_address === IGRA_BRIDGE.entry))
+    const outs = spends
       .flatMap((t) => (t.outputs ?? []).filter((o) => o.script_public_key_address === addr).map((o) => ({ tx: t.transaction_id, at: t.block_time, amount: String(o.amount) })))
       .sort((a, b) => a.at - b.at);
     // one L1 transaction can pay several exits: remove only the outputs already assigned
@@ -254,7 +266,7 @@ export async function checkPayouts(limit = 60) {
       } else await q.query("update bridge_exits set last_checked = now(), checks = checks + 1 where tx = $1", [e.tx]);
     }
   }
-  return `${due.length} checked, ${paid} matched to L1 payouts`;
+  return `${due.length} checked against ${spends.length} Entry spends (${txs.length} txs read), ${paid} matched to L1 payouts`;
 }
 
 export type { Address };
