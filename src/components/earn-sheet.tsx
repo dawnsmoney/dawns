@@ -1,13 +1,14 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { AreaChart } from "./charts";
 import { AssetCoin } from "./bits";
 import { WatchButton } from "./actions";
 import { UseOpportunity } from "./use-opportunity";
+import { planFor } from "@/lib/chain/act";
 import { EarnWatchToggle } from "./earn-watch";
 import { EarnTags } from "./earn";
 import { HAVES, earnName, lines, type Have } from "@/lib/earn";
 import type { OppIntel } from "@/lib/intel";
-import type { ActPlan } from "@/lib/act";
 import type { Opportunity, ProtocolView } from "@/lib/types";
 import { usd } from "@/lib/format";
 
@@ -19,7 +20,13 @@ const DAY = 86_400_000;
  * leave, what the chain enforces and what you would be trusting, then the deposit
  * itself (the same checked, wallet-signed flow as Opportunities). Desktop and phone.
  */
-export function EarnSheet({ o, p, it, plan, asOf, stamp }: { o: Opportunity; p: ProtocolView | undefined; it: OppIntel | undefined; plan: ActPlan; asOf: number; stamp: string }) {
+/** The deposit panel: planFor reads the chain (router, pool tokens), so it streams in after the sheet. */
+async function EarnUse({ o, protocols }: { o: Opportunity; protocols: ProtocolView[] }) {
+  const plan = await planFor(o, protocols);
+  return <UseOpportunity o={o} plan={plan} />;
+}
+
+export function EarnSheet({ o, p, protocols, it, asOf, stamp }: { o: Opportunity; p: ProtocolView | undefined; protocols: ProtocolView[]; it: OppIntel | undefined; asOf: number; stamp: string }) {
   const have: Have = HAVES.find((h) => o.assets.some(h.match))?.key ?? "kas";
   const tags = it?.tags.filter((t) => t.key !== "new") ?? [];
   const { leave, risk } = lines(o, have, tags);
@@ -105,7 +112,7 @@ export function EarnSheet({ o, p, it, plan, asOf, stamp }: { o: Opportunity; p: 
           <WatchButton id={o.protocol} label={`Alerts for ${o.pname}`} />
         </div>
         {have === "kas" && <p className="esheet-note">This runs on {o.chain === "igra" ? "Igra" : "Kasplex"}, where KAS is {o.chain === "igra" ? "iKAS" : "bridged KAS"}. Holding KAS on Kaspa itself? Bridge it first; <Link href="/bridge">the bridge page</Link> shows how exits are being paid.</p>}
-        <UseOpportunity o={o} plan={plan} />
+        <Suspense fallback={<div className="card sk" style={{ minHeight: 150 }} aria-busy="true"><p className="muted" style={{ margin: 0 }}><span className="pf-spin" aria-hidden />Checking the contracts on-chain…</p></div>}><EarnUse o={o} protocols={protocols} /></Suspense>
         <EarnWatchToggle opp={o.id} kind={o.kind} />
         <p className="muted" style={{ fontSize: 13, margin: "12px 0 0" }}>dawns builds and checks each transaction; your wallet signs it. dawns never holds your funds. Research, not advice.</p>
       </div>

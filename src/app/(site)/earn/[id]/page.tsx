@@ -22,7 +22,7 @@ export default async function Page({ params }: P) {
   return (
     <>
       <DataBridge prov={d.s.prov} protocols={d.s.protocols.map(toLite)} signals={d.s.signals} />
-      <div className="wrap" style={{ paddingTop: 110, paddingBottom: 40 }}><EarnSheet o={d.o} p={d.p} it={d.it} plan={d.plan} asOf={d.s.asOf} stamp={d.stamp} /></div>
+      <div className="wrap" style={{ paddingTop: 110, paddingBottom: 40 }}><EarnSheet o={d.o} p={d.p} it={d.it} protocols={d.s.protocols} asOf={d.s.asOf} stamp={d.stamp} /></div>
     </>
   );
 }
