@@ -179,13 +179,13 @@ export async function maybeDailyJournal(s: Snapshot, force = false): Promise<str
       prev ? `Yesterday's brief (${prev.day}):\n${prev.brief ?? ""}` : "This is the first entry.",
       prev?.digest ? `Yesterday's opportunities, to compare:\n${JSON.stringify(prev.digest.opportunities.map((o) => ({ id: o.id, apy: o.apy, sizeUsd: o.sizeUsd, exitNowUsd: o.exitNowUsd, status: o.status })))}` : "",
       open.length ? `Open paper positions:\n${JSON.stringify(open.map((p) => ({ ideaId: p.idea.id, oppId: p.idea.oppId, title: p.idea.title, thesis: p.idea.thesis, opened: p.idea.day, sizePct: p.idea.sizePct, horizonDays: p.idea.horizonDays, daysHeld: p.days, returnSoFar: r2(p.ret), lastApy: p.lastApy, exitIf: p.idea.exitIf })))}` : "No open paper positions.",
-      "Write today's entry with record_journal.",
+      "Write today's entry by calling the record_journal tool exactly once. Reply with nothing else.",
     ].filter(Boolean).join("\n\n");
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: MODEL(), max_tokens: 4000, system: SYSTEM, tools: [TOOL], tool_choice: { type: "tool", name: TOOL.name }, messages: [{ role: "user", content: user }] }),
+      body: JSON.stringify({ model: MODEL(), max_tokens: 4000, system: SYSTEM, tools: [TOOL], tool_choice: { type: "auto" }, messages: [{ role: "user", content: user }] }),
       signal: AbortSignal.timeout(180_000),
     });
     const j = (await res.json().catch(() => null)) as { content?: { type: string; input?: Record<string, unknown> }[]; usage?: Entry["usage"]; error?: { message?: string } } | null;
