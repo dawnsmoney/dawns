@@ -706,17 +706,25 @@ async fn pay_exact(client: &KaspaRpcClient, role: &str, to: &Address, want: i64)
     cs.retain(|x| x.entry.covenant_id.is_none());
     cs.sort_by_key(|x| std::cmp::Reverse(x.entry.amount));
     let fee = FEE as i64;
-    let pick = cs.iter().find(|x| { let v = x.entry.amount as i64; v - want - fee == 0 || v - want - fee >= KAS })
-        .map(|x| (x, want))
-        .or_else(|| cs.first().map(|x| (x, (x.entry.amount as i64 - fee - KAS).min(want))));
-    let Some((coin, amount)) = pick else { return Ok(None) };
+    // one coin if one is enough; otherwise the largest few together, so a borrower
+    // whose KAS is split across coins still repays in a single payment
+    let fits = |v: i64| v - want - fee == 0 || v - want - fee >= KAS;
+    let mut picked: Vec<&Coin> = Vec::new();
+    if let Some(c1) = cs.iter().filter(|x| fits(x.entry.amount as i64)).last() { picked.push(c1); }
+    else {
+        let mut total = 0i64;
+        for c1 in cs.iter().take(8) { picked.push(c1); total += c1.entry.amount as i64; if fits(total) { break; } }
+    }
+    let total: i64 = picked.iter().map(|x| x.entry.amount as i64).sum();
+    if picked.is_empty() { return Ok(None); }
+    let amount = if fits(total) { want } else { (total - fee - KAS).min(want) };
     if amount <= 0 { return Ok(None); }
-    let change = coin.entry.amount as i64 - amount - fee;
+    let change = total - amount - fee;
     let mut outs = vec![out(amount, pay_to_address_script(to))];
     if change > 0 { outs.push(out(change, pay_to_address_script(&from))); }
-    let mut tx = tx_of(vec![input(coin, P2PK_BUDGET)], outs, 0);
-    let entries = vec![coin.entry.clone()];
-    tx.inputs[0].signature_script = p2pk_sigscript(&sighash_sig(&tx, &entries, 0, &k)?)?;
+    let mut tx = tx_of(picked.iter().map(|c1| input(c1, P2PK_BUDGET)).collect(), outs, 0);
+    let entries: Vec<_> = picked.iter().map(|x| x.entry.clone()).collect();
+    for i in 0..picked.len() { tx.inputs[i].signature_script = p2pk_sigscript(&sighash_sig(&tx, &entries, i, &k)?)?; }
     tx.finalize();
     let id = client.submit_transaction((&tx).into(), false).await?;
     Ok(Some((amount, id.to_string())))
@@ -748,7 +756,9 @@ async fn credit_manage_pass(c: &mut CCtx, st: &CStrategy) -> Res<Option<String>>
     if st.test_borrowers_repay {
         for i in 0..slots {
             let Some((_, owed, back)) = loan_of(c, i) else { continue };
-            if at < c.state.due[i] { continue; }
+            // a little before the due time, so the sweep lands before any markdown can
+            let lead = (c.m.borrowers[i].term / 20).min(3_000);
+            if at < c.state.due[i] - lead { continue; }
             let (addr, _) = repay_account(&c.m, &c.cov, i)?;
             // wait while an earlier payment is still in the repayment account
             if coins(&c.client, &addr).await?.iter().any(|x| x.entry.covenant_id.is_none()) { continue; }
